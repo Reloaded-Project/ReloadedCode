@@ -1241,6 +1241,7 @@ dependencies = [
  "glob",
  "grep",
  "ignore",
+ "memchr",
  "regex",
  "reqwest",
  "rig-core",

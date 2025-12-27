@@ -17,6 +17,7 @@ schemars = "1.2.0"
 thiserror = "2.0"
 tokio = { version = "1", features = ["fs", "process", "time", "io-util"] }
 glob = "0.3"
+memchr = "2.7"
 ignore = "0.4"
 regex = "1.11"
 grep = "0.4"

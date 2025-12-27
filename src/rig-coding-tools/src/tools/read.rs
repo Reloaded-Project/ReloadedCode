@@ -2,13 +2,13 @@
 
 use crate::error::{ToolError, ToolResult};
 use crate::output::ToolOutput;
-use crate::util::{
-    truncate_line, validate_absolute_path, ESTIMATED_CHARS_PER_LINE, LIKELY_CHARS_PER_LINE_MAX,
-};
+use crate::util::{truncate_line, validate_absolute_path, ESTIMATED_CHARS_PER_LINE};
+use memchr::memchr;
 use rig::completion::ToolDefinition;
 use rig::tool::Tool;
 use schemars::{schema_for, JsonSchema};
 use serde::Deserialize;
+use std::borrow::Cow;
 use std::fmt::Write;
 use std::path::Path;
 use tokio::fs::File;
@@ -94,6 +94,49 @@ impl<const LINE_NUMBERS: bool> Tool for ReadTool<LINE_NUMBERS> {
     }
 }
 
+/// Strips trailing CR from a line (for CRLF handling).
+#[inline]
+fn strip_cr(line: &[u8]) -> &[u8] {
+    line.strip_suffix(b"\r").unwrap_or(line)
+}
+
+/// Processes a single line, appending it to output with optional line numbers.
+///
+/// This is the hot path - called for every line in the file within the requested range.
+/// Uses zero-copy where possible via [`Cow`].
+#[inline]
+fn process_line<const LINE_NUMBERS: bool>(
+    line_bytes: &[u8],
+    line_number: usize,
+    output: &mut String,
+    lines_output: &mut usize,
+) {
+    // Strip trailing CR for CRLF line endings
+    let line_bytes = strip_cr(line_bytes);
+
+    // Convert to string with lossy UTF-8 handling (zero-copy for valid UTF-8)
+    let content: Cow<'_, str> = String::from_utf8_lossy(line_bytes);
+
+    // Truncate long lines
+    let (truncated_content, _) = truncate_line(&content, MAX_LINE_LENGTH);
+
+    // Add newline separator for subsequent lines
+    // We do it here to avoid trailing newline at end of output
+    if *lines_output > 0 {
+        output.push('\n');
+    }
+
+    // Branch eliminated at compile time due to const generic
+    if LINE_NUMBERS {
+        // write! to String is infallible
+        let _ = write!(output, "L{}: {}", line_number, truncated_content);
+    } else {
+        output.push_str(truncated_content);
+    }
+
+    *lines_output += 1;
+}
+
 /// Reads a file and returns formatted content, optionally with line numbers.
 ///
 /// When `LINE_NUMBERS` is `true`, each line is prefixed with `L{number}: `.
@@ -116,11 +159,14 @@ async fn read_file<const LINE_NUMBERS: bool>(
     let path = Path::new(file_path);
     validate_absolute_path(path)?;
 
+    // Buffer for lines spanning multiple fills (rare case)
+    // Rare enough for me to not alloc. Most files are under `limit * ESTIMATED_CHARS_PER_LINE`.
+    let mut overflow: Vec<u8> = Vec::new();
+
     let file = File::open(path).await?;
     // Size buffer for expected content, rounded to next power of 2
     let buf_capacity = (limit * ESTIMATED_CHARS_PER_LINE).next_power_of_two();
     let mut reader = BufReader::with_capacity(buf_capacity, file);
-    let mut buffer = Vec::with_capacity(LIKELY_CHARS_PER_LINE_MAX);
 
     // Pre-allocate output based on expected content size
     let estimated_capacity = limit * ESTIMATED_CHARS_PER_LINE;
@@ -129,53 +175,73 @@ async fn read_file<const LINE_NUMBERS: bool>(
     let mut lines_output = 0usize;
 
     loop {
-        buffer.clear();
-        let bytes_read = reader.read_until(b'\n', &mut buffer).await?;
-
-        if bytes_read == 0 {
+        let buf = reader.fill_buf().await?;
+        if buf.is_empty() {
+            // EOF - handle any remaining overflow as final line (no trailing newline)
+            if !overflow.is_empty() {
+                line_number += 1;
+                if line_number >= offset && lines_output < limit {
+                    process_line::<LINE_NUMBERS>(
+                        &overflow,
+                        line_number,
+                        &mut output,
+                        &mut lines_output,
+                    );
+                }
+            }
             break;
         }
 
-        // Strip trailing newline characters
-        if buffer.last() == Some(&b'\n') {
-            buffer.pop();
-            if buffer.last() == Some(&b'\r') {
-                buffer.pop();
+        let mut pos = 0;
+        while pos < buf.len() {
+            if let Some(newline_offset) = memchr(b'\n', &buf[pos..]) {
+                let newline_pos = pos + newline_offset;
+                line_number += 1;
+
+                // Only process if within offset..offset+limit range
+                if line_number >= offset && lines_output < limit {
+                    if overflow.is_empty() {
+                        // Common case: process directly from buffer (zero-copy)
+                        process_line::<LINE_NUMBERS>(
+                            &buf[pos..newline_pos],
+                            line_number,
+                            &mut output,
+                            &mut lines_output,
+                        );
+                    } else {
+                        // Rare case: complete the accumulated line
+                        overflow.extend_from_slice(&buf[pos..newline_pos]);
+                        process_line::<LINE_NUMBERS>(
+                            &overflow,
+                            line_number,
+                            &mut output,
+                            &mut lines_output,
+                        );
+                        overflow.clear();
+                    }
+                } else if !overflow.is_empty() {
+                    // Line was being accumulated but we're skipping it
+                    overflow.clear();
+                }
+
+                pos = newline_pos + 1;
+
+                // Early exit if we've collected enough lines
+                if lines_output >= limit {
+                    break;
+                }
+            } else {
+                // No newline found - line spans buffer boundary
+                overflow.extend_from_slice(&buf[pos..]);
+                pos = buf.len();
             }
         }
 
-        line_number += 1;
+        reader.consume(pos);
 
-        // Skip lines before offset
-        if line_number < offset {
-            continue;
-        }
-
-        // Stop if we've output enough lines
         if lines_output >= limit {
             break;
         }
-
-        // Convert to string with lossy UTF-8 handling
-        let content = String::from_utf8_lossy(&buffer);
-
-        // Truncate long lines
-        let (truncated_content, _) = truncate_line(&content, MAX_LINE_LENGTH);
-
-        // Add newline separator for subsequent lines
-        if lines_output > 0 {
-            output.push('\n');
-        }
-
-        // Branch eliminated at compile time due to const generic
-        if LINE_NUMBERS {
-            // write! to String is infallible
-            let _ = write!(&mut output, "L{}: {}", line_number, truncated_content);
-        } else {
-            output.push_str(truncated_content);
-        }
-
-        lines_output += 1;
     }
 
     // Check if offset exceeded file length
