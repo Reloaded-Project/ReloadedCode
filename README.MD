@@ -5,7 +5,7 @@
 [![Docs.rs](https://docs.rs/llm-coding-tools-rig/badge.svg)](https://docs.rs/llm-coding-tools-rig)
 [![CI](https://github.com/Sewer56/llm-coding-tools/actions/workflows/rust.yml/badge.svg)](https://github.com/Sewer56/llm-coding-tools/actions)
 
-Coding tools for building LLM-powered development agents with [Rig](https://github.com/0xPlaygrounds/rig).
+Lightweight, high-performance coding tool implementations for LLM-powered development agents. Plug and play into your favourite frameworks like [Rig](https://github.com/0xPlaygrounds/rig).
 
 ## About This Workspace
 

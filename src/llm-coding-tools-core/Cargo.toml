@@ -2,7 +2,7 @@
 name = "llm-coding-tools-core"
 version = "0.1.0"
 edition = "2021"
-description = "Core types and utilities for coding tools - framework agnostic"
+description = "Lightweight, high-performance core types and utilities for coding tools - framework agnostic"
 repository = "https://github.com/Sewer56/llm-coding-tools"
 license = "Apache-2.0"
 include = ["src/**/*", "README.md"]

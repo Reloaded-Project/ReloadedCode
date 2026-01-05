@@ -3,7 +3,7 @@
 [![Crates.io](https://img.shields.io/crates/v/llm-coding-tools-rig.svg)](https://crates.io/crates/llm-coding-tools-rig)
 [![Docs.rs](https://docs.rs/llm-coding-tools-rig/badge.svg)](https://docs.rs/llm-coding-tools-rig)
 
-Rig framework Tool implementations for coding tools.
+Lightweight, high-performance Rig framework Tool implementations for coding tools.
 
 ## Features
 

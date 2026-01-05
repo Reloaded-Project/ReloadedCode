@@ -1,6 +1,6 @@
 # llm-coding-tools-core
 
-Core types and utilities for coding tools - framework agnostic.
+Lightweight, high-performance core types and utilities for coding tools - framework agnostic.
 
 ## Overview
 
