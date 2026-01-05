@@ -1,7 +1,8 @@
 //! Blocking web content fetching.
 
-use super::{categorize_reqwest_error, check_size, process_content, WebFetchOutput};
+use super::{categorize_reqwest_error, process_content, WebFetchOutput, MAX_RESPONSE_SIZE};
 use crate::error::{ToolError, ToolResult};
+use std::io::Read;
 use std::time::Duration;
 
 /// Fetches content from a URL and returns processed content.
@@ -14,7 +15,7 @@ pub fn fetch_url(
     url: &str,
     timeout: Duration,
 ) -> ToolResult<WebFetchOutput> {
-    let response = client
+    let mut response = client
         .get(url)
         .timeout(timeout)
         .send()
@@ -32,18 +33,40 @@ pub fn fetch_url(
         .unwrap_or("text/plain")
         .to_string();
 
-    // Check Content-Length if available
-    if let Some(len) = response.content_length() {
-        check_size(len as usize, url)?;
+    // Check Content-Length header if available for early rejection and preallocation
+    let content_length = response.content_length().map(|len| len as usize);
+    if let Some(len) = content_length {
+        if len > MAX_RESPONSE_SIZE {
+            return Err(ToolError::Http(format!(
+                "Response too large: {} bytes (max {}) for {}",
+                len, MAX_RESPONSE_SIZE, url
+            )));
+        }
     }
 
-    let bytes = response
-        .bytes()
-        .map_err(|e| ToolError::Http(e.to_string()))?;
+    // Stream response body with incremental size checks to avoid memory exhaustion
+    let mut bytes = content_length.map_or_else(Vec::new, Vec::with_capacity);
+    let mut total_len: usize = 0;
+    let mut buffer = [0u8; 8192];
 
-    check_size(bytes.len(), url)?;
+    loop {
+        let n = response
+            .read(&mut buffer)
+            .map_err(|e| ToolError::Http(e.to_string()))?;
+        if n == 0 {
+            break;
+        }
+        total_len += n;
+        if total_len > MAX_RESPONSE_SIZE {
+            return Err(ToolError::Http(format!(
+                "Response too large: {} bytes (max {}) for {}",
+                total_len, MAX_RESPONSE_SIZE, url
+            )));
+        }
+        bytes.extend_from_slice(&buffer[..n]);
+    }
 
-    let byte_length = bytes.len();
+    let byte_length = total_len;
     let raw_content = String::from_utf8_lossy(&bytes);
     let content = process_content(&raw_content, &content_type);
 
