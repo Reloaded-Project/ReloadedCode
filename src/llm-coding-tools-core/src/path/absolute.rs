@@ -15,6 +15,9 @@ use std::path::PathBuf;
 /// use llm_coding_tools_core::path::{PathResolver, AbsolutePathResolver};
 ///
 /// let resolver = AbsolutePathResolver;
+/// #[cfg(windows)]
+/// assert!(resolver.resolve("C:\\Users\\user\\file.txt").is_ok());
+/// #[cfg(not(windows))]
 /// assert!(resolver.resolve("/home/user/file.txt").is_ok());
 /// assert!(resolver.resolve("relative/path.txt").is_err());
 /// ```
@@ -41,9 +44,14 @@ mod tests {
     #[test]
     fn accepts_absolute_path() {
         let resolver = AbsolutePathResolver;
-        let result = resolver.resolve("/home/user/file.txt");
+        #[cfg(windows)]
+        let path = "C:\\Users\\user\\file.txt";
+        #[cfg(not(windows))]
+        let path = "/home/user/file.txt";
+        
+        let result = resolver.resolve(path);
         assert!(result.is_ok());
-        assert_eq!(result.unwrap(), PathBuf::from("/home/user/file.txt"));
+        assert_eq!(result.unwrap(), PathBuf::from(path));
     }
 
     #[test]
