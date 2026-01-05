@@ -105,8 +105,9 @@ impl<const LINE_NUMBERS: bool> Tool for GrepTool<LINE_NUMBERS> {
         for file in &result.files {
             let _ = writeln!(&mut output, "\n{}:", file.path);
             for m in &file.matches {
+                // Use floor_char_boundary to avoid panicking on UTF-8 multibyte boundaries
                 let truncated_text = if m.line_text.len() > MAX_LINE_LENGTH {
-                    &m.line_text[..MAX_LINE_LENGTH]
+                    &m.line_text[..m.line_text.floor_char_boundary(MAX_LINE_LENGTH)]
                 } else {
                     &m.line_text
                 };
@@ -187,5 +188,37 @@ mod tests {
             })
             .await;
         assert!(matches!(result, Err(ToolError::InvalidPattern(_))));
+    }
+
+    #[tokio::test]
+    async fn truncates_long_lines_at_utf8_boundary() {
+        let dir = TempDir::new().unwrap();
+
+        // Create a line that's > MAX_LINE_LENGTH (2000) bytes with multibyte chars at the boundary.
+        // Use 1998 ASCII chars + "日本語" (9 bytes for 3 chars) = 2007 bytes total.
+        // Truncating at byte 2000 would land inside the multibyte sequence without floor_char_boundary.
+        let long_line = format!("match_me {}{}", "a".repeat(1989), "日本語");
+        assert!(
+            long_line.len() > 2000,
+            "test setup: line must exceed MAX_LINE_LENGTH"
+        );
+
+        std::fs::write(dir.path().join("utf8_test.txt"), &long_line).unwrap();
+
+        let tool: GrepTool<true> = GrepTool::new();
+        let result = tool
+            .call(GrepArgs {
+                pattern: "match_me".to_string(),
+                path: dir.path().to_string_lossy().to_string(),
+                include: None,
+                limit: None,
+            })
+            .await
+            .unwrap();
+
+        // Should not panic and output should be valid UTF-8
+        assert!(result.content.contains("Found 1 matches"));
+        assert!(result.content.contains("L1:"));
+        // The output should be valid UTF-8 (this is implicitly tested by using .contains on a String)
     }
 }
