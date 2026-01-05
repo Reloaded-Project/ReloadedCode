@@ -28,7 +28,7 @@ Example usage (NOTE: The agents below are fictional examples for illustration on
 <example_agent_descriptions>
 "code-reviewer": use this agent after you are done writing a significant piece of code
 "greeting-responder": use this agent when to respond to user greetings with a friendly joke
-</example_agent_description>
+</example_agent_descriptions>
 
 <example>
 user: "Please write a function that checks if a number is prime"
