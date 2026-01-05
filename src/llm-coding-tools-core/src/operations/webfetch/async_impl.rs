@@ -1,6 +1,6 @@
 //! Async web content fetching.
 
-use super::{categorize_reqwest_error, process_content, WebFetchOutput, MAX_RESPONSE_SIZE};
+use super::{categorize_reqwest_error, check_size, process_content, WebFetchOutput};
 use crate::error::{ToolError, ToolResult};
 use std::time::Duration;
 
@@ -36,12 +36,7 @@ pub async fn fetch_url(
     // Check Content-Length header if available for early rejection and preallocation
     let content_length = response.content_length().map(|len| len as usize);
     if let Some(len) = content_length {
-        if len > MAX_RESPONSE_SIZE {
-            return Err(ToolError::Http(format!(
-                "Response too large: {} bytes (max {}) for {}",
-                len, MAX_RESPONSE_SIZE, url
-            )));
-        }
+        check_size(len, url)?;
     }
 
     // Stream response body with incremental size checks to avoid memory exhaustion
@@ -54,12 +49,7 @@ pub async fn fetch_url(
         .map_err(|e| ToolError::Http(e.to_string()))?
     {
         total_len += chunk.len();
-        if total_len > MAX_RESPONSE_SIZE {
-            return Err(ToolError::Http(format!(
-                "Response too large: {} bytes (max {}) for {}",
-                total_len, MAX_RESPONSE_SIZE, url
-            )));
-        }
+        check_size(total_len, url)?;
         bytes.extend_from_slice(&chunk);
     }
 

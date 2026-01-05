@@ -42,6 +42,7 @@ pub(crate) fn categorize_reqwest_error(e: reqwest::Error, url: &str) -> ToolErro
 }
 
 /// Returns an error if the response size exceeds the maximum.
+#[inline]
 pub(crate) fn check_size(len: usize, url: &str) -> ToolResult<()> {
     if len > MAX_RESPONSE_SIZE {
         return Err(ToolError::Http(format!(
