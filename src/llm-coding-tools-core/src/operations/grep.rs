@@ -81,13 +81,9 @@ pub fn grep_search<R: PathResolver>(
             Err(_) => continue,
         };
 
-        let file_type = match entry.file_type() {
-            Some(ft) if ft.is_file() => ft,
+        match entry.file_type() {
+            Some(ft) if ft.is_file() => {}
             _ => continue,
-        };
-
-        if file_type.is_symlink() {
-            continue;
         }
 
         let entry_path = entry.path();
