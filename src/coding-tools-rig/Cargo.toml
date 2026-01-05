@@ -10,7 +10,7 @@ readme = "README.md"
 
 [dependencies]
 # Core tool operations (file read/write/edit, glob, grep, bash, etc.)
-coding-tools-core = { version = "0.1.0", path = "../coding-tools-core", features = ["async"] }
+coding-tools-core = { version = "0.1.0", path = "../coding-tools-core", features = ["tokio"] }
 
 # Implements rig_core::tool::Tool trait for each tool
 rig-core = { version = "0.27", default-features = false, features = ["reqwest-rustls"] }

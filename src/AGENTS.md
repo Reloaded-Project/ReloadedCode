@@ -2,6 +2,14 @@
 
 Basic coding tools for rig based LLM agents
 
+# Feature Flags (coding-tools-core)
+
+- `tokio` (default): Async mode with tokio runtime. Enables async function signatures.
+- `blocking`: Sync/blocking mode. Mutually exclusive with `tokio`/`async`.
+- `async`: Base async signatures (internal use). Do not enable directly; use `tokio`.
+
+The `async` and `blocking` features are mutually exclusive - enabling both causes a compile error.
+
 # Project Structure
 
 - `coding-tools-core/` - Framework-agnostic core library

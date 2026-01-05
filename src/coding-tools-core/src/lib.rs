@@ -1,3 +1,4 @@
+#![warn(missing_docs)]
 //! Core types and utilities for coding tools.
 //!
 //! This crate provides framework-agnostic building blocks:
@@ -11,7 +12,12 @@
 //! - `tokio` (default): Enables async via tokio runtime (implies `async`).
 //!   When disabled, all operations are synchronous.
 
-#![warn(missing_docs)]
+// Validate feature combinations at compile time
+#[cfg(all(feature = "async", not(feature = "tokio")))]
+compile_error!("Feature `async` requires a runtime. Enable `tokio` feature instead.");
+
+#[cfg(all(feature = "async", feature = "blocking"))]
+compile_error!("Features `async` and `blocking` are mutually exclusive.");
 
 pub mod error;
 pub mod fs;

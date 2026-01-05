@@ -9,10 +9,12 @@ include = ["src/**/*"]
 readme = "README.md"
 
 [features]
-default = ["async"]
-# Enables async function signatures and async-only modules (task requires async)
-async = ["dep:async-trait", "dep:reqwest", "dep:tokio"]
-# Enables blocking/sync mode - mutually exclusive with async
+default = ["tokio"]
+# Base async signatures - requires a runtime, do not enable directly
+async = ["dep:async-trait"]
+# Async with tokio runtime (default)
+tokio = ["async", "dep:tokio", "dep:reqwest"]
+# Blocking/sync mode - mutually exclusive with async
 blocking = ["maybe-async/is_sync", "dep:reqwest", "reqwest?/blocking"]
 
 [dependencies]
