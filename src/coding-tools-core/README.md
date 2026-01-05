@@ -20,6 +20,7 @@ use coding_tools_core::util::{truncate_text, format_numbered_line};
 
 ## Design Principles
 
-- Zero `rig-core` or framework-specific dependencies
+- No framework-specific dependencies, plug and play into any LLM framework/library
+    - See [coding-tools-rig](https://crates.io/crates/coding-tools-rig) for an integration example with [rig](https://crates.io/crates/rig)
 - Minimal dependency footprint
-- Performance-oriented with zero-cost abstractions
+- Performance-oriented (optimized) with zero-cost abstractions
