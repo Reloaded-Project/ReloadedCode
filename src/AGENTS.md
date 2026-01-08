@@ -17,9 +17,9 @@ The `async` and `blocking` features are mutually exclusive - enabling both cause
   - `src/output.rs` - Tool output formatting
   - `src/util.rs` - Shared utilities
 - `llm-coding-tools-rig/` - Rig framework Tool implementations
-   - `src/absolute/` - Unrestricted file system tools
-   - `src/allowed/` - Sandboxed file system tools
-   - `src/bash.rs`, `src/task.rs`, etc. - Standalone tools
+  - `src/absolute/` - Unrestricted file system tools
+  - `src/allowed/` - Sandboxed file system tools
+  - `src/bash.rs`, `src/task.rs`, etc. - Standalone tools
 
 # Code & Performance Guidelines
 
