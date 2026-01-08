@@ -16,6 +16,12 @@ pub async fn execute_command(
     timeout: Duration,
 ) -> ToolResult<BashOutput> {
     if let Some(dir) = workdir {
+        if !dir.is_absolute() {
+            return Err(ToolError::InvalidPath(format!(
+                "working directory must be an absolute path: {}",
+                dir.display()
+            )));
+        }
         if !dir.is_dir() {
             return Err(ToolError::InvalidPath(format!(
                 "working directory does not exist: {}",
