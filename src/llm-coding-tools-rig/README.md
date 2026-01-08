@@ -44,11 +44,15 @@ File tools (Read, Write, Edit, Glob, Grep) come in two variants:
 ```rust
 use llm_coding_tools_rig::absolute::{ReadTool, WriteTool, EditTool, GlobTool, GrepTool};
 
-let read: ReadTool<true> = ReadTool::new();  // <true> enables line numbers
+let read = ReadTool::new();   // LINE_NUMBERS defaults to true
 let write = WriteTool::new();
 let edit = EditTool::new();
 let glob = GlobTool::new();
-let grep: GrepTool<true> = GrepTool::new();
+let grep = GrepTool::new();
+
+// Disable line numbers with explicit generic:
+let read_raw = ReadTool::<false>::new();
+let grep_raw = GrepTool::<false>::new();
 ```
 
 **`allowed::*`** - Sandboxed to configured directories:
