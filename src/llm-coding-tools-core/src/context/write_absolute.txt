@@ -1,7 +1,48 @@
-Writes a file to the local filesystem.
+Writes a file to the local filesystem. Creates parent directories if they don't exist.
 
 Usage:
 - This tool will overwrite the existing file if there is one at the provided path.
-- ALWAYS prefer editing existing files in the codebase. NEVER write new files unless explicitly required.
+- If this is an existing file, you MUST use the Read tool first to read the file's contents. This tool will fail if you did not read the file first.
+- ALWAYS prefer editing existing files in the codebase using the Edit tool. NEVER write new files unless explicitly required.
 - NEVER proactively create documentation files (*.md) or README files. Only create documentation files if explicitly requested by the User.
 - Only use emojis if the user explicitly requests it. Avoid writing emojis to files unless asked.
+
+## Parameters
+
+- `file_path`: Absolute path for the file to write (required)
+- `content`: Content to write to the file (required)
+
+## When to Use This Tool
+
+- Creating new files that don't exist yet
+- Completely rewriting a file when most content changes
+- Writing generated output (build artifacts, reports, etc.)
+- Creating new source files when explicitly requested
+
+## When NOT to Use This Tool
+
+- Modifying existing files - use Edit tool instead (more precise, less error-prone)
+- Creating documentation unless explicitly requested
+- Writing files you haven't read first (if they exist)
+
+## Examples
+
+Creating a new file:
+```
+file_path: "/home/user/project/src/new_module.rs"
+content: "//! New module\n\npub fn hello() {\n    println!(\"Hello!\");\n}\n"
+```
+
+## Best Practices
+
+1. ALWAYS read existing files with Read tool before overwriting them
+2. Prefer Edit tool for making changes to existing files - it's safer and more precise
+3. When creating new files, ensure the content is complete and correct
+4. Don't create files proactively - wait for explicit user requests
+5. Use absolute paths only - relative paths will be rejected
+
+## Error Handling
+
+- If you try to overwrite a file you haven't read, the operation will fail
+- Permission errors will be returned if you can't write to the location
+- Parent directories are created automatically if they don't exist

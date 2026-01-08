@@ -1,10 +1,81 @@
-- Fast content search tool that works with any codebase size
+Fast content search tool built on ripgrep. Works with any codebase size.
+
 - Searches within configured allowed directories only
-- Searches file contents using regular expressions
-- Supports full regex syntax (eg. "log.*Error", "function\s+\w+", etc.)
-- Filter files by pattern with the include parameter (eg. "*.js", "*.{ts,tsx}")
 - Paths can be relative to allowed directories; paths outside will be rejected
-- Returns file paths and line numbers with at least one match sorted by modification time
+- Searches file contents using regular expressions
+- Supports full regex syntax (e.g., "log.*Error", "function\\s+\\w+")
+- Filter files by pattern with the `include` parameter (e.g., "*.rs", "*.{ts,tsx}")
+- Returns file paths, line numbers, and matching content sorted by modification time (newest first)
 - Use this tool when you need to find files containing specific patterns
-- If you need to identify/count the number of matches within files, use the Bash tool with `rg` (ripgrep) directly. Do NOT use `grep`.
 - When you are doing an open-ended search that may require multiple rounds of globbing and grepping, use the Task tool instead
+
+IMPORTANT: ALWAYS use Grep for search tasks. NEVER invoke `grep` or `rg` as a Bash command. The Grep tool has been optimized for correct permissions and access.
+
+## Parameters
+
+- `pattern`: Regex pattern to search for in file contents (required)
+- `path`: Directory path to search in - can be relative or absolute within allowed directories (required)
+- `include`: Optional file glob filter (e.g., "*.rs", "*.{ts,tsx}")
+- `limit`: Maximum number of matches to return (default: 100, max: 2000)
+
+## Pattern Syntax Notes (ripgrep-based)
+
+- Literal braces need escaping: use `interface\\{\\}` to find `interface{}` in Go code
+- Use `\\b` for word boundaries: `\\bfoo\\b` matches "foo" but not "foobar"
+- Use `\\s` for whitespace, `\\w` for word characters
+- Use `.*` for any characters: `error.*failed` matches "error: connection failed"
+- Use `|` for alternation: `TODO|FIXME` matches either
+- Patterns match within single lines only; multiline patterns are not supported
+
+## When to Use This Tool
+
+- Finding function definitions: `fn\\s+process_`
+- Finding usages of a variable or function: `\\bmy_function\\(`
+- Finding TODO comments: `TODO|FIXME|HACK`
+- Finding error messages: `error.*failed`
+- Finding imports: `^use\\s+`
+
+## When NOT to Use This Tool
+
+- Finding files by name - use Glob instead
+- Reading entire file contents - use Read instead
+- Complex multi-step research - use Task tool instead
+
+## Examples
+
+Find all function definitions:
+```
+pattern: "fn\\s+\\w+"
+path: "."
+include: "*.rs"
+```
+
+Find TODO comments:
+```
+pattern: "TODO|FIXME"
+path: "."
+```
+
+Find usage of a specific function:
+```
+pattern: "\\bprocess_request\\("
+path: "src"
+```
+
+Find error handling patterns:
+```
+pattern: "Err\\(|Error::"
+path: "."
+include: "*.rs"
+limit: 50
+```
+
+## Best Practices
+
+1. You can call multiple tools in a single response. It is always better to speculatively perform multiple searches in parallel if they are potentially useful.
+2. Use the `include` parameter to narrow searches to relevant file types
+3. Use word boundaries (`\\b`) to avoid partial matches
+4. Escape special regex characters when searching for literal text
+5. Start with broader patterns and refine based on results
+6. Use `limit` parameter if you expect many matches but only need a sample
+7. Paths outside allowed directories will be rejected
