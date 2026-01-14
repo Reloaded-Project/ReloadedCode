@@ -105,8 +105,9 @@ pub fn glob_files<R: PathResolver>(
 mod tests {
     use super::*;
     use crate::path::AbsolutePathResolver;
-    use std::fs::{self, File};
+    use std::fs::{self, File, FileTimes};
     use std::io::Write;
+    use std::time::{Duration, SystemTime};
     use tempfile::TempDir;
 
     fn create_test_tree() -> TempDir {
@@ -137,6 +138,46 @@ mod tests {
         let resolver = AbsolutePathResolver;
         let result = glob_files(&resolver, "**/*", dir.path().to_str().unwrap()).unwrap();
         assert!(!result.files.iter().any(|f| f.contains("target")));
+    }
+
+    #[test]
+    fn glob_sorts_by_mtime_desc() {
+        let dir = TempDir::new().unwrap();
+        let base = dir.path();
+        let resolver = AbsolutePathResolver;
+
+        let older_path = base.join("older.txt");
+        let newer_path = base.join("newer.txt");
+        let older_time = SystemTime::UNIX_EPOCH + Duration::from_secs(1);
+        let newer_time = SystemTime::UNIX_EPOCH + Duration::from_secs(2);
+
+        let older_file = File::create(&older_path).unwrap();
+        older_file
+            .set_times(FileTimes::new().set_modified(older_time))
+            .unwrap();
+        let newer_file = File::create(&newer_path).unwrap();
+        newer_file
+            .set_times(FileTimes::new().set_modified(newer_time))
+            .unwrap();
+
+        let result = glob_files(&resolver, "**/*.txt", base.to_str().unwrap()).unwrap();
+
+        let newer_index = result
+            .files
+            .iter()
+            .position(|path| path.ends_with("newer.txt"))
+            .unwrap();
+        let older_index = result
+            .files
+            .iter()
+            .position(|path| path.ends_with("older.txt"))
+            .unwrap();
+
+        assert!(
+            newer_index < older_index,
+            "expected newer file before older: {:?}",
+            result.files
+        );
     }
 
     #[test]
