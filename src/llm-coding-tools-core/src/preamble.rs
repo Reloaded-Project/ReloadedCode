@@ -91,9 +91,16 @@ impl<const ENV: bool> PreambleBuilder<ENV> {
         Self::default()
     }
 
-    /// Records context and returns tool unchanged for ToolSet.
+    /// Records context and returns tool unchanged.
     ///
-    /// Use this to wrap tools when adding to `ToolSet::builder()`:
+    /// Use this to wrap tools before registering them with your tool collection:
+    /// ```ignore
+    /// let mut pb = PreambleBuilder::new();
+    /// let my_tool = pb.track(MyTool::new());
+    /// // register my_tool with your tool collection
+    /// ```
+    ///
+    /// For example, if working with rig's ToolSet builder:
     /// ```ignore
     /// let mut pb = PreambleBuilder::new();
     /// let toolset = ToolSet::builder()

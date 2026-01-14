@@ -74,12 +74,15 @@ pub async fn read_file<R: PathResolver, const LINE_NUMBERS: bool>(
 
     let estimated_capacity = limit * ESTIMATED_CHARS_PER_LINE;
     let mut output = String::with_capacity(estimated_capacity);
+    // Holds a partial line that spans multiple buffers.
     let mut overflow: Vec<u8> = Vec::new();
     let mut line_number = 0usize;
     let mut lines_output = 0usize;
 
+    // Stream buffered chunks, splitting into lines as we go.
     loop {
         let buf = reader.fill_buf().await?;
+        // Flush any trailing partial line at EOF.
         if buf.is_empty() {
             if !overflow.is_empty() {
                 line_number += 1;
@@ -97,12 +100,15 @@ pub async fn read_file<R: PathResolver, const LINE_NUMBERS: bool>(
 
         let mut pos = 0;
         while pos < buf.len() {
+            // Fast newline search to delimit lines.
             if let Some(newline_offset) = memchr(b'\n', &buf[pos..]) {
                 let newline_pos = pos + newline_offset;
                 line_number += 1;
 
+                // Only emit lines within the requested window.
                 if line_number >= offset && lines_output < limit {
                     if overflow.is_empty() {
+                        // Fast path: line is fully in this buffer.
                         process_line::<LINE_NUMBERS>(
                             &buf[pos..newline_pos],
                             line_number,
@@ -110,6 +116,7 @@ pub async fn read_file<R: PathResolver, const LINE_NUMBERS: bool>(
                             &mut lines_output,
                         );
                     } else {
+                        // Slow path: prepend buffered fragment.
                         overflow.extend_from_slice(&buf[pos..newline_pos]);
                         process_line::<LINE_NUMBERS>(
                             &overflow,
