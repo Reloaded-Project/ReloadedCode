@@ -40,24 +40,14 @@ pub enum ToolError {
     /// JSON serialization/deserialization failed.
     #[error("JSON error: {0}")]
     Json(#[from] serde_json::Error),
-
-    /// Regex compilation or matching failed.
-    #[error("regex error: {0}")]
-    Regex(#[from] regex::Error),
 }
 
 /// Result type alias for tool operations.
 pub type ToolResult<T> = Result<T, ToolError>;
 
-impl From<glob::PatternError> for ToolError {
-    fn from(e: glob::PatternError) -> Self {
+impl From<globset::Error> for ToolError {
+    fn from(e: globset::Error) -> Self {
         ToolError::InvalidPattern(e.to_string())
-    }
-}
-
-impl From<glob::GlobError> for ToolError {
-    fn from(e: glob::GlobError) -> Self {
-        ToolError::Io(e.into_error())
     }
 }
 
@@ -80,7 +70,7 @@ mod tests {
 
     #[test]
     fn tool_error_from_glob_pattern_error() {
-        let glob_err = glob::Pattern::new("[invalid").unwrap_err();
+        let glob_err = globset::Glob::new("[invalid").unwrap_err();
         let err: ToolError = glob_err.into();
         assert!(matches!(err, ToolError::InvalidPattern(_)));
     }

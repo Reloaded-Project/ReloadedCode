@@ -2,7 +2,7 @@
 
 use crate::error::{ToolError, ToolResult};
 use crate::path::PathResolver;
-use glob::Pattern;
+use globset::Glob;
 use grep_regex::RegexMatcher;
 use grep_searcher::sinks::UTF8;
 use grep_searcher::{BinaryDetection, Searcher, SearcherBuilder};
@@ -59,8 +59,8 @@ pub fn grep_search<R: PathResolver>(
         RegexMatcher::new(pattern).map_err(|e| ToolError::InvalidPattern(e.to_string()))?;
 
     // Optional filename filter via glob.
-    let glob_pattern = include
-        .map(|g| Pattern::new(g).map_err(|e| ToolError::InvalidPattern(e.to_string())))
+    let glob_matcher = include
+        .map(|pattern| Glob::new(pattern).map(|glob| glob.compile_matcher()))
         .transpose()?;
 
     let mut searcher = SearcherBuilder::new()
@@ -91,12 +91,12 @@ pub fn grep_search<R: PathResolver>(
         let entry_path = entry.path();
 
         // Apply include glob to basename when requested.
-        if let Some(ref glob) = glob_pattern {
+        if let Some(ref matcher) = glob_matcher {
             let file_name = match entry_path.file_name().and_then(|n| n.to_str()) {
                 Some(name) => name,
                 None => continue,
             };
-            if !glob.matches(file_name) {
+            if !matcher.is_match(file_name) {
                 continue;
             }
         }

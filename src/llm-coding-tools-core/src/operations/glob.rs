@@ -2,7 +2,7 @@
 
 use crate::error::{ToolError, ToolResult};
 use crate::path::PathResolver;
-use glob::Pattern;
+use globset::Glob;
 use ignore::WalkBuilder;
 use serde::Serialize;
 use std::time::SystemTime;
@@ -36,8 +36,7 @@ pub fn glob_files<R: PathResolver>(
         )));
     }
 
-    let compiled_pattern =
-        Pattern::new(pattern).map_err(|e| ToolError::InvalidPattern(e.to_string()))?;
+    let matcher = Glob::new(pattern)?.compile_matcher();
 
     let mut files_with_mtime: Vec<(String, SystemTime)> = Vec::new();
 
@@ -75,7 +74,7 @@ pub fn glob_files<R: PathResolver>(
             continue;
         }
 
-        if !compiled_pattern.matches(&rel_path) {
+        if !matcher.is_match(&rel_path) {
             continue;
         }
 

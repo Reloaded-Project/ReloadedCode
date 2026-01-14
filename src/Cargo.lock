@@ -963,7 +963,7 @@ name = "llm-coding-tools-core"
 version = "0.1.0"
 dependencies = [
  "async-trait",
- "glob",
+ "globset",
  "grep-regex",
  "grep-searcher",
  "html-to-markdown-rs",
@@ -971,7 +971,6 @@ dependencies = [
  "maybe-async",
  "memchr",
  "parking_lot",
- "regex",
  "reqwest 0.13.1",
  "schemars",
  "serde",

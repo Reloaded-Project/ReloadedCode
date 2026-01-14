@@ -31,13 +31,12 @@ schemars = "1.2"
 # Sync RwLock for TodoState (no tokio dependency)
 parking_lot = "0.12"
 
-# Glob and grep tool implementations
-glob = "0.3"          # Pattern matching for glob_files
-grep-regex = "0.1"    # Regex matcher for grep_search
-grep-searcher = "0.1" # File content searching for grep_search
-ignore = "0.4"        # Respects .gitignore when walking directories
-memchr = "2.7"        # Fast newline detection in read_file
-regex = "1.12"        # ToolError includes regex::Error conversion
+# Glob and grep tool implementations (aligned with ripgrep)
+globset = "0.4.18"       # Glob matching with ripgrep-optimized engine
+grep-regex = "0.1.14"    # Regex matcher for grep_search
+grep-searcher = "0.1.16" # File content searching for grep_search
+ignore = "0.4.25"        # Respects .gitignore when walking directories
+memchr = "2.6.3"         # Fast newline detection in read_file
 
 # Webfetch tool converts HTML to markdown for LLM-friendly output
 html-to-markdown-rs = "2.20"
