@@ -8,7 +8,7 @@ use rig::tool::Tool;
 use schemars::{schema_for, JsonSchema};
 use serde::Deserialize;
 use std::fmt::Write;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
 const DEFAULT_LIMIT: usize = 100;
 const MAX_LIMIT: usize = 2000;
@@ -42,12 +42,8 @@ pub struct GrepTool<const LINE_NUMBERS: bool = true> {
 impl<const LINE_NUMBERS: bool> GrepTool<LINE_NUMBERS> {
     /// Creates a new grep tool restricted to the given directories.
     pub fn new(allowed_paths: impl IntoIterator<Item = impl AsRef<Path>>) -> ToolResult<Self> {
-        let paths: Vec<PathBuf> = allowed_paths
-            .into_iter()
-            .map(|p| p.as_ref().to_path_buf())
-            .collect();
         Ok(Self {
-            resolver: AllowedPathResolver::new(paths)?,
+            resolver: AllowedPathResolver::new(allowed_paths)?,
         })
     }
 

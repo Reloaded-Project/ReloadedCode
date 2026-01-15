@@ -7,7 +7,7 @@ use rig::completion::ToolDefinition;
 use rig::tool::Tool;
 use schemars::{schema_for, JsonSchema};
 use serde::Deserialize;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
 /// Arguments for the glob tool.
 #[derive(Debug, Deserialize, JsonSchema)]
@@ -27,12 +27,8 @@ pub struct GlobTool {
 impl GlobTool {
     /// Creates a new glob tool restricted to the given directories.
     pub fn new(allowed_paths: impl IntoIterator<Item = impl AsRef<Path>>) -> ToolResult<Self> {
-        let paths: Vec<PathBuf> = allowed_paths
-            .into_iter()
-            .map(|p| p.as_ref().to_path_buf())
-            .collect();
         Ok(Self {
-            resolver: AllowedPathResolver::new(paths)?,
+            resolver: AllowedPathResolver::new(allowed_paths)?,
         })
     }
 

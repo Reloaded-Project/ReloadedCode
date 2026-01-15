@@ -2,7 +2,8 @@
 
 use super::PathResolver;
 use crate::error::{ToolError, ToolResult};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
+use std::sync::Arc;
 
 /// Path resolver that restricts access to allowed directories.
 ///
@@ -32,7 +33,7 @@ use std::path::PathBuf;
 #[derive(Debug, Clone)]
 pub struct AllowedPathResolver {
     /// Canonicalized allowed base directories.
-    allowed_paths: Vec<PathBuf>,
+    allowed_paths: Arc<[PathBuf]>,
 }
 
 impl AllowedPathResolver {
@@ -41,14 +42,15 @@ impl AllowedPathResolver {
     /// Each directory is canonicalized during construction to ensure
     /// consistent path comparison. Returns an error if any directory
     /// doesn't exist or can't be canonicalized.
-    pub fn new(allowed_paths: Vec<PathBuf>) -> ToolResult<Self> {
-        let canonicalized: Result<Vec<_>, _> = allowed_paths
+    pub fn new(allowed_paths: impl IntoIterator<Item = impl AsRef<Path>>) -> ToolResult<Self> {
+        let canonicalized: Result<Arc<[PathBuf]>, _> = allowed_paths
             .into_iter()
             .map(|p| {
-                p.canonicalize().map_err(|e| {
+                let path = p.as_ref();
+                path.canonicalize().map_err(|e| {
                     ToolError::InvalidPath(format!(
                         "failed to canonicalize allowed path '{}': {}",
-                        p.display(),
+                        path.display(),
                         e
                     ))
                 })
@@ -69,8 +71,13 @@ impl AllowedPathResolver {
     ///
     /// Caller must ensure paths are actually canonical. Using non-canonical
     /// paths may allow path traversal attacks.
-    pub fn from_canonical(allowed_paths: Vec<PathBuf>) -> Self {
-        Self { allowed_paths }
+    pub fn from_canonical(allowed_paths: impl IntoIterator<Item = impl AsRef<Path>>) -> Self {
+        Self {
+            allowed_paths: allowed_paths
+                .into_iter()
+                .map(|p| p.as_ref().to_path_buf())
+                .collect(),
+        }
     }
 
     /// Returns the allowed base directories.
@@ -84,7 +91,7 @@ impl PathResolver for AllowedPathResolver {
         let input_path = PathBuf::from(path);
 
         // Try each allowed base directory in order
-        for base in &self.allowed_paths {
+        for base in self.allowed_paths.iter() {
             let candidate = base.join(&input_path);
 
             // Try to canonicalize for existing paths
