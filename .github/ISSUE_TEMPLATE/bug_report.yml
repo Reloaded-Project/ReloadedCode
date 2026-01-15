@@ -77,8 +77,8 @@ body:
   - type: input
     id: version
     attributes:
-      label: "rig-coding-tools version"
-      description: The version of rig-coding-tools you're using
+      label: "llm-coding-tools version"
+      description: The version of llm-coding-tools you're using
       placeholder: e.g. 0.1.0
     validations:
       required: true

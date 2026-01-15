@@ -1,0 +1,49 @@
+Reads a file from the local filesystem. You can access any file directly by using this tool.
+Assume this tool is able to read all files on the machine. If the User provides a path to a file assume that path is valid. It is okay to read a file that does not exist; an error will be returned.
+
+Usage:
+- The `file_path` parameter must be an absolute path, not a relative path
+- By default, it reads up to 2000 lines starting from line 1
+- You can optionally specify `offset` (1-indexed starting line) and `limit` (max lines), but it's recommended to read the whole file by not providing these parameters
+- Any lines longer than 2000 characters will be truncated
+- Results are returned with line numbers prefixed in "L{n}: content" format (e.g., "L1: first line")
+- This tool can read image files (eg PNG, JPG, etc). When reading an image file the contents are presented visually.
+- This tool can only read files, not directories. To list directory contents, use bash with `ls`.
+- If you read a file that exists but has empty contents you will receive a system reminder warning in place of file contents.
+
+You can call multiple tools in a single response. It is always better to speculatively read multiple files as a batch that are potentially useful.
+
+## When to Use This Tool
+
+- Reading source code files to understand implementation
+- Viewing configuration files
+- Checking file contents before making edits
+- Reading log files for debugging
+- Viewing images and screenshots provided by the user
+
+## When NOT to Use This Tool
+
+- To list directory contents - use bash with `ls` instead
+- To search for patterns across files - use Grep instead
+- To find files by name - use Glob instead
+
+## Examples
+
+Reading a full file:
+```
+file_path: "/home/user/project/src/main.rs"
+```
+
+Reading specific lines (lines 100-200):
+```
+file_path: "/home/user/project/src/main.rs"
+offset: 100
+limit: 100
+```
+
+## Best Practices
+
+1. Read files before editing them - the Edit tool requires you to have read the file first
+2. When exploring a codebase, read multiple related files in parallel to save time
+3. For large files, consider reading specific sections using offset/limit if you know what you're looking for
+4. Always use absolute paths - relative paths will be rejected

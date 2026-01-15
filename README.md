@@ -1,1 +1,0 @@
-# rig-coding-tools

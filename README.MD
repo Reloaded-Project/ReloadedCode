@@ -1,49 +1,33 @@
-# rig-coding-tools
+# llm-coding-tools
 
-## Additional Setup Required!!
+[![Crates.io - llm-coding-tools-core](https://img.shields.io/crates/v/llm-coding-tools-core.svg)](https://crates.io/crates/llm-coding-tools-core)
+[![Crates.io - llm-coding-tools-rig](https://img.shields.io/crates/v/llm-coding-tools-rig.svg)](https://crates.io/crates/llm-coding-tools-rig)
+[![Docs.rs](https://docs.rs/llm-coding-tools-rig/badge.svg)](https://docs.rs/llm-coding-tools-rig)
+[![CI](https://github.com/Sewer56/llm-coding-tools/actions/workflows/rust.yml/badge.svg)](https://github.com/Sewer56/llm-coding-tools/actions)
 
-<!-- DELETE THIS SECTION AFTER COMPLETING SETUP -->
+Lightweight, high-performance coding tool implementations for LLM-powered development agents. Plug and play into your favourite frameworks like [Rig](https://github.com/0xPlaygrounds/rig).
 
-Additional setup might be required.
-Once you do the stuff under this text, delete this section.
+## About This Workspace
 
-### Code Coverage
-To setup code coverage for this project:
+This workspace contains multiple Rust crates for integrating coding tools with LLM agents:
 
-1. Go to [Codecov][codecov], add your project.
-2. Go to [Settings -> Secrets and variables -> Actions][gh-actions-secrets] in your repo and add a repository secret named `CODECOV_TOKEN`.
-3. Do the same in [Settings -> Secrets and variables -> Dependabot][gh-actions-dependabot].
+- **[llm-coding-tools-core](./src/llm-coding-tools-core/)**: Framework-agnostic core operations and utilities
+- **[llm-coding-tools-rig](./src/llm-coding-tools-rig/)**: Rig framework-specific Tool implementations
 
-The instructions on the Codecov page will provide the token to use.
+## Features
 
+- **File Operations**: Read, write, edit files with line-numbered output
+- **Search**: Glob pattern matching and regex content search  
+- **Shell**: Cross-platform command execution with timeout
+- **Web**: URL fetching with HTML-to-markdown conversion
+- **Task Delegation**: Sub-agent spawning for complex workflows
+- **Path Security**: Choose between unrestricted or sandboxed file access
+- **Context Strings**: Embedded LLM guidance for tool usage
 
-### Setup API Key (crates.io)
+## Feature Flags (llm-coding-tools-core)
 
-You'll need to set up an API key to publish to `crates.io` on tag.
-
-- Generate your API key in [crates.io (Account Settings -> API Tokens)][crates-io-key].
-- Go to [Settings -> Secrets and variables -> Actions][gh-actions-secrets] in your repo and add environment secret named `CRATES_IO_TOKEN`.
-- Paste your API key.
-
-
-
-
-### Fill in README Documentation
-
-This repository uses a two-level README structure:
-
-| File | Purpose | What to Write |
-|------|---------|---------------|
-| `README.MD` (this file) | GitHub landing page | Project overview, quick start example, badges |
-| [`src/rig-coding-tools/README.MD`](./src/rig-coding-tools/README.MD) | crates.io page | Detailed features, installation, comprehensive usage examples |
-
------------------------
-
-[![Crates.io](https://img.shields.io/crates/v/rig-coding-tools.svg)](https://crates.io/crates/rig-coding-tools)
-[![Docs.rs](https://docs.rs/rig-coding-tools/badge.svg)](https://docs.rs/rig-coding-tools)
-[![CI](https://github.com/Sewer56/rig-coding-tools/actions/workflows/rust.yml/badge.svg)](https://github.com/Sewer56/rig-coding-tools/actions)
-
-Basic coding tools for rig based LLM agents
+- `tokio` (default): Async mode with tokio runtime
+- `blocking`: Sync/blocking mode, mutually exclusive with `async`
 
 ## Quick Start
 
@@ -51,33 +35,60 @@ Add to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-rig-coding-tools = "0.1.0"
+llm-coding-tools-rig = "0.1"
 ```
 
 ```rust
-// TODO: Add a minimal example showing the most common use case
+use llm_coding_tools_rig::absolute::{ReadTool, WriteTool, GlobTool};
+use llm_coding_tools_rig::{BashTool, PreambleBuilder, TodoTools};
+use rig::tool::ToolSet;
+
+// Track tools and generate LLM guidance
+let mut pb = PreambleBuilder::new();
+let todos = TodoTools::new();
+
+let toolset = ToolSet::builder()
+    .static_tool(pb.track(ReadTool::<true>::new()))
+    .static_tool(pb.track(WriteTool::new()))
+    .static_tool(pb.track(GlobTool::new()))
+    .static_tool(pb.track(BashTool::new()))
+    .static_tool(pb.track(todos.read))
+    .static_tool(pb.track(todos.write))
+    .build();
+
+// Generate preamble for agent system prompt
+let preamble = pb.build();
+
+// Use with rig agent:
+// let agent = client.agent("gpt-4o")
+//     .preamble(&preamble)
+//     .tools(toolset)
+//     .build();
 ```
-See the [rig-coding-tools crate documentation](./src/rig-coding-tools/README.MD) for detailed usage.
 
-## Crates
+## Examples
 
-- [rig-coding-tools](./src/rig-coding-tools/README.MD): Core library <!-- TODO: Update description -->
+```bash
+# Basic toolset setup
+cargo run --example basic -p llm-coding-tools-rig
 
-## Developer Manual
+# Complete agent configuration (recommended starting point)
+cargo run --example full_agent -p llm-coding-tools-rig
 
-For step-by-step development guidance, see the [Developer Manual](https://reloaded-project.github.io/reloaded-templates-rust/manual/).
+# Sandboxed file access
+cargo run --example sandboxed -p llm-coding-tools-rig
+```
+
+## Documentation
+
+- [llm-coding-tools-core README](./src/llm-coding-tools-core/README.md)
+- [llm-coding-tools-rig README](./src/llm-coding-tools-rig/README.md)
+- [Developer Guidelines](./src/AGENTS.md)
 
 ## Contributing
 
-We welcome contributions! See the [Contributing Guide](https://reloaded-project.github.io/reloaded-templates-rust/manual/#contributing) for details.
+Contributions are welcome! Please ensure all tests pass and the code follows our guidelines.
 
 ## License
 
 Licensed under [Apache 2.0](./LICENSE).
-
-[codecov]: https://app.codecov.io
-[gh-actions-secrets]: https://github.com/Sewer56/rig-coding-tools/settings/secrets/actions
-[gh-actions-dependabot]: https://github.com/Sewer56/rig-coding-tools/settings/secrets/dependabot
-[gh-pages]: https://github.com/Sewer56/rig-coding-tools/settings/pages
-[crates-io-key]: https://crates.io/settings/tokens
-[nuget-key]: https://www.nuget.org/account/apikeys

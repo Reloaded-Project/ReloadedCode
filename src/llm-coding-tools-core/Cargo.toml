@@ -1,0 +1,61 @@
+[package]
+name = "llm-coding-tools-core"
+version = "0.1.0"
+edition = "2021"
+description = "Lightweight, high-performance core types and utilities for coding tools - framework agnostic"
+repository = "https://github.com/Sewer56/llm-coding-tools"
+license = "Apache-2.0"
+include = ["src/**/*", "README.md"]
+readme = "README.md"
+
+[features]
+default = ["tokio"]
+# Base async signatures - requires a runtime, do not enable directly
+async = ["dep:async-trait"]
+# Async with tokio runtime (default)
+tokio = ["async", "dep:tokio", "dep:reqwest"]
+# Blocking/sync mode - mutually exclusive with async
+blocking = ["maybe-async/is_sync", "dep:reqwest", "reqwest?/blocking"]
+
+[dependencies]
+# Tool outputs (BashOutput, GrepOutput, etc.) serialize to JSON for LLM consumption
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+
+# ToolError type uses thiserror for ergonomic error definitions
+thiserror = "2.0"
+
+# Todo types derive JsonSchema for LLM tool parameter validation
+schemars = "1.2"
+
+# Sync RwLock for TodoState (no tokio dependency)
+parking_lot = "0.12"
+
+# Glob and grep tool implementations (aligned with ripgrep)
+globset = "0.4.18"       # Glob matching with ripgrep-optimized engine
+grep-regex = "0.1.14"    # Regex matcher for grep_search
+grep-searcher = "0.1.16" # File content searching for grep_search
+ignore = "0.4.25"        # Respects .gitignore when walking directories
+memchr = "2.6.3"         # Fast newline detection in read_file
+
+# Webfetch tool converts HTML to markdown for LLM-friendly output
+html-to-markdown-rs = "2.20"
+reqwest = { version = "0.13", default-features = false, features = [
+    "rustls",
+    "rustls-native-certs",
+], optional = true }
+
+# Unifies async/sync code via procedural macros
+maybe-async = "0.2"
+
+# TaskExecutor trait requires async methods
+async-trait = { version = "0.1", optional = true }
+
+# Async file I/O, process execution, and timeouts
+tokio = { version = "1.49", features = ["fs", "io-util", "process", "time"], optional = true }
+
+[dev-dependencies]
+tempfile = "3.24"
+# For async tests (when async feature enabled)
+tokio = { version = "1.49", features = ["rt", "macros"] }
+wiremock = "0.6"
