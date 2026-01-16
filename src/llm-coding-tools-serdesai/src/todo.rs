@@ -10,7 +10,6 @@ use llm_coding_tools_core::context::ToolContext;
 use llm_coding_tools_core::operations::{read_todos, write_todos};
 use serde::Deserialize;
 use serdes_ai::tools::{RunContext, Tool, ToolDefinition, ToolError, ToolResult};
-use std::sync::Arc;
 
 // Re-export core types
 pub use llm_coding_tools_core::{Todo, TodoPriority, TodoState, TodoStatus};
@@ -32,12 +31,12 @@ struct TodoReadArgs {}
 /// Tool for writing/replacing the todo list.
 #[derive(Debug, Clone)]
 pub struct TodoWriteTool {
-    state: Arc<TodoState>,
+    state: TodoState,
 }
 
 impl TodoWriteTool {
-    /// Creates a new todo write tool with the given shared state.
-    pub fn new(state: Arc<TodoState>) -> Self {
+    /// Creates a new todo write tool with the given state.
+    pub fn new(state: TodoState) -> Self {
         Self { state }
     }
 }
@@ -68,12 +67,12 @@ impl ToolContext for TodoWriteTool {
 /// Tool for reading the current todo list.
 #[derive(Debug, Clone)]
 pub struct TodoReadTool {
-    state: Arc<TodoState>,
+    state: TodoState,
 }
 
 impl TodoReadTool {
-    /// Creates a new todo read tool with the given shared state.
-    pub fn new(state: Arc<TodoState>) -> Self {
+    /// Creates a new todo read tool with the given state.
+    pub fn new(state: TodoState) -> Self {
         Self { state }
     }
 }
@@ -104,13 +103,13 @@ impl ToolContext for TodoReadTool {
 
 /// Creates a pair of todo tools with shared state.
 ///
-/// Returns `(TodoReadTool, TodoWriteTool, Arc<TodoState>)` for cases where
+/// Returns `(TodoReadTool, TodoWriteTool, TodoState)` for cases where
 /// the caller needs access to the underlying state.
-pub fn create_todo_tools() -> (TodoReadTool, TodoWriteTool, Arc<TodoState>) {
-    let state = Arc::new(TodoState::new());
+pub fn create_todo_tools() -> (TodoReadTool, TodoWriteTool, TodoState) {
+    let state = TodoState::new();
     (
-        TodoReadTool::new(Arc::clone(&state)),
-        TodoWriteTool::new(Arc::clone(&state)),
+        TodoReadTool::new(state.clone()),
+        TodoWriteTool::new(state.clone()),
         state,
     )
 }
@@ -144,9 +143,9 @@ mod tests {
 
     #[tokio::test]
     async fn shared_state_works() {
-        let state = Arc::new(TodoState::new());
-        let write_tool = TodoWriteTool::new(Arc::clone(&state));
-        let read_tool = TodoReadTool::new(Arc::clone(&state));
+        let state = TodoState::new();
+        let write_tool = TodoWriteTool::new(state.clone());
+        let read_tool = TodoReadTool::new(state);
 
         let write_args = serde_json::json!({
             "todos": [{ "id": "shared", "content": "Shared task", "status": "in_progress", "priority": "low" }]
