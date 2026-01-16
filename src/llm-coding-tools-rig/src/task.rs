@@ -63,7 +63,7 @@ impl TaskTool<MockTaskExecutor> {
 }
 
 impl<E: TaskExecutor + 'static> Tool for TaskTool<E> {
-    const NAME: &'static str = "task";
+    const NAME: &'static str = "Task";
 
     type Error = ToolError;
     type Args = TaskArgs;
@@ -86,7 +86,7 @@ impl<E: TaskExecutor + 'static> Tool for TaskTool<E> {
 }
 
 impl<E: TaskExecutor> ToolContext for TaskTool<E> {
-    const NAME: &'static str = "task";
+    const NAME: &'static str = "Task";
 
     fn context(&self) -> &'static str {
         llm_coding_tools_core::context::TASK

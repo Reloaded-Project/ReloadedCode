@@ -58,7 +58,7 @@ impl WebFetchTool {
 }
 
 impl Tool for WebFetchTool {
-    const NAME: &'static str = "webfetch";
+    const NAME: &'static str = "WebFetch";
 
     type Error = ToolError;
     type Args = WebFetchArgs;
@@ -88,7 +88,7 @@ impl Tool for WebFetchTool {
 }
 
 impl ToolContext for WebFetchTool {
-    const NAME: &'static str = "webfetch";
+    const NAME: &'static str = "WebFetch";
 
     fn context(&self) -> &'static str {
         llm_coding_tools_core::context::WEBFETCH

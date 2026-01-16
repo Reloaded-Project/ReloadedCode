@@ -30,7 +30,7 @@ impl WriteTool {
 }
 
 impl Tool for WriteTool {
-    const NAME: &'static str = "write";
+    const NAME: &'static str = "Write";
 
     type Error = ToolError;
     type Args = WriteToolArgs;
@@ -54,7 +54,7 @@ impl Tool for WriteTool {
 }
 
 impl ToolContext for WriteTool {
-    const NAME: &'static str = "write";
+    const NAME: &'static str = "Write";
 
     fn context(&self) -> &'static str {
         llm_coding_tools_core::context::WRITE_ABSOLUTE

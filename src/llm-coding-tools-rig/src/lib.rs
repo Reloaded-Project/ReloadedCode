@@ -11,7 +11,7 @@
 //!
 //! # Example
 //!
-//! ```ignore
+//! ```no_run
 //! use llm_coding_tools_rig::absolute::ReadTool;
 //! use llm_coding_tools_rig::BashTool;
 //! ```
@@ -82,7 +82,7 @@ mod tests {
         assert!(preamble.contains("absolute path")); // From READ_ABSOLUTE
 
         // Tools are returned unchanged
-        assert_eq!(<absolute::ReadTool<true> as rig::tool::Tool>::NAME, "read");
+        assert_eq!(<absolute::ReadTool<true> as rig::tool::Tool>::NAME, "Read");
         let _ = read;
         let _ = bash;
     }

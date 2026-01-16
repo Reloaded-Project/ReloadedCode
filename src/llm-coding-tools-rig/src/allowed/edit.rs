@@ -45,7 +45,7 @@ impl EditTool {
 }
 
 impl Tool for EditTool {
-    const NAME: &'static str = "edit";
+    const NAME: &'static str = "Edit";
 
     type Error = EditError;
     type Args = EditArgs;
@@ -75,7 +75,7 @@ impl Tool for EditTool {
 }
 
 impl ToolContext for EditTool {
-    const NAME: &'static str = "edit";
+    const NAME: &'static str = "Edit";
 
     fn context(&self) -> &'static str {
         llm_coding_tools_core::context::EDIT_ALLOWED

@@ -54,7 +54,7 @@ impl<const LINE_NUMBERS: bool> GrepTool<LINE_NUMBERS> {
 }
 
 impl<const LINE_NUMBERS: bool> Tool for GrepTool<LINE_NUMBERS> {
-    const NAME: &'static str = "grep";
+    const NAME: &'static str = "Grep";
 
     type Error = ToolError;
     type Args = GrepArgs;
@@ -135,7 +135,7 @@ impl<const LINE_NUMBERS: bool> Tool for GrepTool<LINE_NUMBERS> {
 }
 
 impl<const LINE_NUMBERS: bool> ToolContext for GrepTool<LINE_NUMBERS> {
-    const NAME: &'static str = "grep";
+    const NAME: &'static str = "Grep";
 
     fn context(&self) -> &'static str {
         llm_coding_tools_core::context::GREP_ALLOWED

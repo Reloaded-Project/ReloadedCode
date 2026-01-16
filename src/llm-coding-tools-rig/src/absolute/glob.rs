@@ -30,7 +30,7 @@ impl GlobTool {
 }
 
 impl Tool for GlobTool {
-    const NAME: &'static str = "glob";
+    const NAME: &'static str = "Glob";
 
     type Error = ToolError;
     type Args = GlobArgs;
@@ -54,7 +54,7 @@ impl Tool for GlobTool {
 }
 
 impl ToolContext for GlobTool {
-    const NAME: &'static str = "glob";
+    const NAME: &'static str = "Glob";
 
     fn context(&self) -> &'static str {
         llm_coding_tools_core::context::GLOB_ABSOLUTE

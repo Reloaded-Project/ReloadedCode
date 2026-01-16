@@ -37,7 +37,7 @@ impl TodoWriteTool {
 }
 
 impl Tool for TodoWriteTool {
-    const NAME: &'static str = "todowrite";
+    const NAME: &'static str = "TodoWrite";
 
     type Error = ToolError;
     type Args = TodoWriteArgs;
@@ -72,7 +72,7 @@ impl TodoReadTool {
 }
 
 impl Tool for TodoReadTool {
-    const NAME: &'static str = "todoread";
+    const NAME: &'static str = "TodoRead";
 
     type Error = ToolError;
     type Args = TodoReadArgs;
@@ -94,7 +94,7 @@ impl Tool for TodoReadTool {
 }
 
 impl ToolContext for TodoWriteTool {
-    const NAME: &'static str = "todowrite";
+    const NAME: &'static str = "TodoWrite";
 
     fn context(&self) -> &'static str {
         llm_coding_tools_core::context::TODO_WRITE
@@ -102,7 +102,7 @@ impl ToolContext for TodoWriteTool {
 }
 
 impl ToolContext for TodoReadTool {
-    const NAME: &'static str = "todoread";
+    const NAME: &'static str = "TodoRead";
 
     fn context(&self) -> &'static str {
         llm_coding_tools_core::context::TODO_READ

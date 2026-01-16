@@ -120,7 +120,7 @@ impl<const ENV: bool> PreambleBuilder<ENV> {
     /// ```
     ///
     /// For example, if working with rig's ToolSet builder:
-    /// ```ignore
+    /// ```text
     /// let mut pb = PreambleBuilder::new();
     /// let toolset = ToolSet::builder()
     ///     .static_tool(pb.track(ReadTool::new()))

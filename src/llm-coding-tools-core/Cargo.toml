@@ -36,10 +36,10 @@ globset = "0.4.18"       # Glob matching with ripgrep-optimized engine
 grep-regex = "0.1.14"    # Regex matcher for grep_search
 grep-searcher = "0.1.16" # File content searching for grep_search
 ignore = "0.4.25"        # Respects .gitignore when walking directories
-memchr = "2.6.3"         # Fast newline detection in read_file
+memchr = "2.7.6"         # Fast newline detection in read_file
 
 # Webfetch tool converts HTML to markdown for LLM-friendly output
-html-to-markdown-rs = "2.20"
+html-to-markdown-rs = "2.22"
 reqwest = { version = "0.13", default-features = false, features = [
     "rustls",
     "rustls-native-certs",

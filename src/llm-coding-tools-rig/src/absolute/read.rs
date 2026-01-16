@@ -45,7 +45,7 @@ impl<const LINE_NUMBERS: bool> ReadTool<LINE_NUMBERS> {
 }
 
 impl<const LINE_NUMBERS: bool> Tool for ReadTool<LINE_NUMBERS> {
-    const NAME: &'static str = "read";
+    const NAME: &'static str = "Read";
 
     type Error = ToolError;
     type Args = ReadArgs;
@@ -72,7 +72,7 @@ impl<const LINE_NUMBERS: bool> Tool for ReadTool<LINE_NUMBERS> {
 }
 
 impl<const LINE_NUMBERS: bool> ToolContext for ReadTool<LINE_NUMBERS> {
-    const NAME: &'static str = "read";
+    const NAME: &'static str = "Read";
 
     fn context(&self) -> &'static str {
         llm_coding_tools_core::context::READ_ABSOLUTE

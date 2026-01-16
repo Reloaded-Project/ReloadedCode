@@ -45,7 +45,7 @@ impl BashTool {
 }
 
 impl Tool for BashTool {
-    const NAME: &'static str = "bash";
+    const NAME: &'static str = "Bash";
 
     type Error = ToolError;
     type Args = BashArgs;
@@ -71,7 +71,7 @@ impl Tool for BashTool {
 }
 
 impl ToolContext for BashTool {
-    const NAME: &'static str = "bash";
+    const NAME: &'static str = "Bash";
 
     fn context(&self) -> &'static str {
         llm_coding_tools_core::context::BASH

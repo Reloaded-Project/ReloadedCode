@@ -1,0 +1,36 @@
+[package]
+name = "llm-coding-tools-serdesai"
+version = "0.1.0"
+edition = "2024"
+description = "Lightweight, high-performance serdesAI framework Tool implementations for coding tools"
+repository = "https://github.com/Sewer56/llm-coding-tools"
+license = "Apache-2.0"
+readme = "README.md"
+include = ["src/**/*", "examples/**/*", "README.md"]
+
+[dependencies]
+# Core tool operations (file read/write/edit, glob, grep, bash, etc.)
+llm-coding-tools-core = { version = "0.1.0", path = "../llm-coding-tools-core", features = [
+    "tokio",
+] }
+
+# serdes-ai provides Tool trait, ToolDefinition, RunContext
+serdes-ai = "0.1"
+
+# Tool trait is async - async-trait is NOT re-exported from serdes-ai
+async-trait = "0.1"
+
+# Tool parameters use serde for deserialization, serde_json for schema
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+
+# HTTP client for webfetch tool
+reqwest = { version = "0.13", default-features = false, features = [
+    "rustls",
+    "rustls-native-certs",
+] }
+
+[dev-dependencies]
+tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
+tempfile = "3"
+wiremock = "0.6"

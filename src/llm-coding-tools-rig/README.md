@@ -81,12 +81,6 @@ Reads files from disk.
 Executes shell commands.
 ```
 
-Run the full example app:
-
-```bash
-OPENAI_API_KEY=... cargo run --example full_agent -p llm-coding-tools-rig
-```
-
 ## Usage
 
 File tools come in `absolute::*` (unrestricted) and `allowed::*` (sandboxed) variants:
@@ -112,9 +106,6 @@ Context strings are re-exported in `llm_coding_tools_rig::context` (e.g., `BASH`
 ```bash
 # Basic toolset setup with PreambleBuilder
 cargo run --example basic -p llm-coding-tools-rig
-
-# Complete agent configuration (recommended starting point)
-cargo run --example full_agent -p llm-coding-tools-rig
 
 # Sandboxed file access with allowed::* tools
 cargo run --example sandboxed -p llm-coding-tools-rig
