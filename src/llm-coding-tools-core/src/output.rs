@@ -1,5 +1,6 @@
 //! Common output types for tool responses.
 
+use crate::operations::WebFetchOutput;
 use serde::Serialize;
 
 /// Wrapper for tool output with truncation metadata.
@@ -44,6 +45,15 @@ impl From<&str> for ToolOutput {
     }
 }
 
+impl From<WebFetchOutput> for ToolOutput {
+    fn from(output: WebFetchOutput) -> Self {
+        Self::new(format!(
+            "[{} - {} bytes]\n\n{}",
+            output.content_type, output.byte_length, output.content
+        ))
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -79,5 +89,17 @@ mod tests {
         let output = ToolOutput::truncated("content");
         let json = serde_json::to_string(&output).unwrap();
         assert!(json.contains("truncated"));
+    }
+
+    #[test]
+    fn tool_output_from_webfetch_output() {
+        let webfetch = WebFetchOutput {
+            content: "Hello, world!".to_string(),
+            content_type: "text/plain".to_string(),
+            byte_length: 13,
+        };
+        let output: ToolOutput = webfetch.into();
+        assert_eq!(output.content, "[text/plain - 13 bytes]\n\nHello, world!");
+        assert!(!output.truncated);
     }
 }

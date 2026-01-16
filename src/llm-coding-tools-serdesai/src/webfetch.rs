@@ -75,16 +75,7 @@ impl<Deps: Send + Sync> Tool<Deps> for WebFetchTool {
         let timeout = Duration::from_millis(args.timeout_ms);
         let result = fetch_url(&self.client, &args.url, timeout).await;
 
-        to_serdes_result(
-            "WebFetch",
-            result.map(|output| {
-                let content = format!(
-                    "[{} - {} bytes]\n\n{}",
-                    output.content_type, output.byte_length, output.content
-                );
-                ToolOutput::new(content)
-            }),
-        )
+        to_serdes_result("WebFetch", result.map(ToolOutput::from))
     }
 }
 

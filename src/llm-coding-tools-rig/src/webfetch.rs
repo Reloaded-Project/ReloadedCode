@@ -78,12 +78,7 @@ impl Tool for WebFetchTool {
     async fn call(&self, args: Self::Args) -> Result<Self::Output, Self::Error> {
         let timeout = Duration::from_millis(args.timeout_ms);
         let result = fetch_url(&self.client, &args.url, timeout).await?;
-
-        let content = format!(
-            "[{} - {} bytes]\n\n{}",
-            result.content_type, result.byte_length, result.content
-        );
-        Ok(ToolOutput::new(content))
+        Ok(result.into())
     }
 }
 
