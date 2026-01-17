@@ -3,6 +3,7 @@
 use super::BashOutput;
 use crate::error::{ToolError, ToolResult};
 use process_wrap::std::*;
+use std::io::Read;
 use std::path::Path;
 use std::process::Stdio;
 use std::thread;
@@ -65,34 +66,65 @@ pub fn execute_command(
         .spawn()
         .map_err(|e| ToolError::Execution(e.to_string()))?;
 
+    // Take stdout/stderr handles to drain them in separate threads.
+    // If the child produces more output than the pipe buffer can hold (~64KB on
+    // Linux, ~4KB on Windows), it blocks waiting for the parent to read. Without
+    // concurrent draining, the child would never exit and we'd always hit the
+    // timeout. By draining pipes concurrently with polling try_wait(), the child
+    // can always make progress.
+    let stdout_handle = child.stdout().take();
+    let stderr_handle = child.stderr().take();
+
+    // Spawn threads to drain stdout/stderr concurrently
+    let stdout_thread = thread::spawn(move || {
+        let mut buf = Vec::new();
+        if let Some(mut stdout) = stdout_handle {
+            let _ = stdout.read_to_end(&mut buf);
+        }
+        buf
+    });
+
+    let stderr_thread = thread::spawn(move || {
+        let mut buf = Vec::new();
+        if let Some(mut stderr) = stderr_handle {
+            let _ = stderr.read_to_end(&mut buf);
+        }
+        buf
+    });
+
     let start = Instant::now();
 
     // Poll for completion with timeout
-    loop {
+    let exit_status = loop {
         match child.try_wait() {
-            Ok(Some(status)) => {
-                let output = child
-                    .wait_with_output()
-                    .map_err(|e| ToolError::Execution(e.to_string()))?;
-                return Ok(BashOutput {
-                    exit_code: status.code(),
-                    stdout: String::from_utf8_lossy(&output.stdout).into_owned(),
-                    stderr: String::from_utf8_lossy(&output.stderr).into_owned(),
-                });
-            }
+            Ok(Some(status)) => break Ok(status),
             Ok(None) => {
                 if start.elapsed() >= timeout {
                     // Kill entire process tree via Job Object (Windows) or process group (Unix)
                     let _ = child.kill();
-                    return Err(ToolError::Timeout(format!(
+                    break Err(ToolError::Timeout(format!(
                         "command timed out after {}ms",
                         timeout.as_millis()
                     )));
                 }
                 thread::sleep(Duration::from_millis(10));
             }
-            Err(e) => return Err(ToolError::Execution(e.to_string())),
+            Err(e) => break Err(ToolError::Execution(e.to_string())),
         }
+    };
+
+    // Join pipe-draining threads (they will complete once child exits or is killed)
+    let stdout_data = stdout_thread.join().unwrap_or_default();
+    let stderr_data = stderr_thread.join().unwrap_or_default();
+
+    // Return result
+    match exit_status {
+        Ok(status) => Ok(BashOutput {
+            exit_code: status.code(),
+            stdout: String::from_utf8_lossy(&stdout_data).into_owned(),
+            stderr: String::from_utf8_lossy(&stderr_data).into_owned(),
+        }),
+        Err(e) => Err(e),
     }
 }
 
@@ -159,5 +191,41 @@ mod tests {
         let result = execute_command(cmd, None, Duration::from_secs(5)).unwrap();
 
         assert_eq!(result.exit_code, Some(42));
+    }
+
+    /// Test that large output (exceeding pipe buffer) doesn't deadlock.
+    /// Pipe buffers are typically 64KB on Linux, 4KB on Windows.
+    /// This test would hang/timeout with the old implementation that
+    /// waited for process exit before reading pipes.
+    #[test]
+    fn large_output_does_not_deadlock() {
+        use std::io::Write;
+
+        // Create a temp file with large content, then cat/type it
+        // Use tempfile::Builder to create directory without dot prefix
+        let temp_dir = tempfile::Builder::new()
+            .prefix("llmtest")
+            .tempdir()
+            .unwrap();
+        let large_file = temp_dir.path().join("large.txt");
+        {
+            let mut file = std::fs::File::create(&large_file).unwrap();
+            // Write 100KB of 'x' characters (single line to avoid newline issues)
+            let content = "x".repeat(102400);
+            file.write_all(content.as_bytes()).unwrap();
+        }
+
+        let cmd = if cfg!(target_os = "windows") {
+            // type command on Windows
+            format!("type {}", large_file.display())
+        } else {
+            format!("cat {}", large_file.display())
+        };
+
+        let result = execute_command(&cmd, None, Duration::from_secs(30)).unwrap();
+
+        assert_eq!(result.exit_code, Some(0));
+        // Verify we got all the output (102400 bytes written)
+        assert_eq!(result.stdout.len(), 102400);
     }
 }

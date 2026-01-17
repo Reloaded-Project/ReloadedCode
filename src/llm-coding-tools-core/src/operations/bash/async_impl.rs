@@ -65,20 +65,35 @@ pub async fn execute_command(
         .spawn()
         .map_err(|e| ToolError::Execution(e.to_string()))?;
 
-    // Take stdout/stderr handles before waiting so we can read them
-    // This is necessary because we need to keep the child alive to call kill() on timeout
-    let mut stdout_handle = child.stdout().take();
-    let mut stderr_handle = child.stderr().take();
+    // Take stdout/stderr handles to drain them in separate tasks.
+    // This prevents deadlock when output exceeds pipe buffer (~64KB Linux, ~4KB Windows).
+    // We keep the child handle available so we can call kill() on timeout.
+    let mut stdout_pipe = child.stdout().take();
+    let mut stderr_pipe = child.stderr().take();
+
+    // Spawn tasks to drain pipes concurrently
+    let stdout_task = tokio::spawn(async move {
+        let mut buf = Vec::new();
+        if let Some(ref mut io) = stdout_pipe {
+            let _ = io.read_to_end(&mut buf).await;
+        }
+        buf
+    });
+
+    let stderr_task = tokio::spawn(async move {
+        let mut buf = Vec::new();
+        if let Some(ref mut io) = stderr_pipe {
+            let _ = io.read_to_end(&mut buf).await;
+        }
+        buf
+    });
 
     // Race between timeout and process completion
-    // We explicitly call child.kill() on timeout to kill the entire process tree
     tokio::select! {
         biased;  // Check timeout first for consistent behavior
 
         _ = tokio::time::sleep(timeout) => {
             // Timeout: explicitly kill the process tree (Job Object on Windows, process group on Unix)
-            // The kill() method on ChildWrapper handles the platform-specific killing
-            // Pin the boxed future from process-wrap's kill() method
             let _ = Pin::from(child.kill()).await;
             Err(ToolError::Timeout(format!(
                 "command timed out after {}ms",
@@ -89,16 +104,9 @@ pub async fn execute_command(
         status = child.wait() => {
             let status = status.map_err(|e| ToolError::Execution(e.to_string()))?;
 
-            // Read remaining stdout/stderr after process exits
-            let mut stdout_data = Vec::new();
-            let mut stderr_data = Vec::new();
-
-            if let Some(ref mut stdout) = stdout_handle {
-                let _ = stdout.read_to_end(&mut stdout_data).await;
-            }
-            if let Some(ref mut stderr) = stderr_handle {
-                let _ = stderr.read_to_end(&mut stderr_data).await;
-            }
+            // Join pipe-draining tasks (they complete once child exits or is killed)
+            let stdout_data = stdout_task.await.unwrap_or_default();
+            let stderr_data = stderr_task.await.unwrap_or_default();
 
             Ok(BashOutput {
                 exit_code: status.code(),
@@ -179,5 +187,43 @@ mod tests {
             .unwrap();
 
         assert_eq!(result.exit_code, Some(42));
+    }
+
+    /// Test that large output (exceeding pipe buffer) doesn't deadlock.
+    /// Pipe buffers are typically 64KB on Linux, 4KB on Windows.
+    /// This test would hang/timeout with the old implementation that
+    /// waited for process exit before reading pipes.
+    #[tokio::test]
+    async fn large_output_does_not_deadlock() {
+        use std::io::Write;
+
+        // Create a temp file with large content, then cat/type it
+        // Use tempfile::Builder to create directory without dot prefix
+        let temp_dir = tempfile::Builder::new()
+            .prefix("llmtest")
+            .tempdir()
+            .unwrap();
+        let large_file = temp_dir.path().join("large.txt");
+        {
+            let mut file = std::fs::File::create(&large_file).unwrap();
+            // Write 100KB of 'x' characters (single line to avoid newline issues)
+            let content = "x".repeat(102400);
+            file.write_all(content.as_bytes()).unwrap();
+        }
+
+        let cmd = if cfg!(target_os = "windows") {
+            // type command on Windows - path without quotes, use short 8.3 name if needed
+            format!("type {}", large_file.display())
+        } else {
+            format!("cat {}", large_file.display())
+        };
+
+        let result = execute_command(&cmd, None, Duration::from_secs(30))
+            .await
+            .unwrap();
+
+        assert_eq!(result.exit_code, Some(0));
+        // Verify we got all the output (102400 bytes written)
+        assert_eq!(result.stdout.len(), 102400);
     }
 }
