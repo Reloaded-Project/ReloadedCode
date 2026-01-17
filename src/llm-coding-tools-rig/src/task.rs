@@ -2,6 +2,7 @@
 //!
 //! Provides [`TaskTool`] for spawning sub-agents to handle complex tasks.
 
+use llm_coding_tools_core::tool_names;
 use llm_coding_tools_core::{ToolContext, ToolError, ToolOutput};
 use rig::completion::ToolDefinition;
 use rig::tool::Tool;
@@ -63,7 +64,7 @@ impl TaskTool<MockTaskExecutor> {
 }
 
 impl<E: TaskExecutor + 'static> Tool for TaskTool<E> {
-    const NAME: &'static str = "Task";
+    const NAME: &'static str = tool_names::TASK;
 
     type Error = ToolError;
     type Args = TaskArgs;
@@ -86,7 +87,7 @@ impl<E: TaskExecutor + 'static> Tool for TaskTool<E> {
 }
 
 impl<E: TaskExecutor> ToolContext for TaskTool<E> {
-    const NAME: &'static str = "Task";
+    const NAME: &'static str = tool_names::TASK;
 
     fn context(&self) -> &'static str {
         llm_coding_tools_core::context::TASK

@@ -2,6 +2,7 @@
 
 use llm_coding_tools_core::operations::glob_files;
 use llm_coding_tools_core::path::AllowedPathResolver;
+use llm_coding_tools_core::tool_names;
 use llm_coding_tools_core::{GlobOutput, ToolContext, ToolError, ToolResult};
 use rig::completion::ToolDefinition;
 use rig::tool::Tool;
@@ -39,7 +40,7 @@ impl GlobTool {
 }
 
 impl Tool for GlobTool {
-    const NAME: &'static str = "Glob";
+    const NAME: &'static str = tool_names::GLOB;
 
     type Error = ToolError;
     type Args = GlobArgs;
@@ -62,7 +63,7 @@ impl Tool for GlobTool {
 }
 
 impl ToolContext for GlobTool {
-    const NAME: &'static str = "Glob";
+    const NAME: &'static str = tool_names::GLOB;
 
     fn context(&self) -> &'static str {
         llm_coding_tools_core::context::GLOB_ALLOWED

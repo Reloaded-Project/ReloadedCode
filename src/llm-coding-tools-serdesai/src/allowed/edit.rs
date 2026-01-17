@@ -4,6 +4,7 @@ use async_trait::async_trait;
 use llm_coding_tools_core::ToolContext;
 use llm_coding_tools_core::operations::edit_file;
 use llm_coding_tools_core::path::AllowedPathResolver;
+use llm_coding_tools_core::tool_names;
 use serde::Deserialize;
 use serdes_ai::tools::{
     RunContext, SchemaBuilder, Tool, ToolDefinition, ToolError, ToolResult, ToolReturn,
@@ -65,16 +66,16 @@ impl<Deps: Send + Sync> Tool<Deps> for EditTool {
             .expect("schema build should not fail");
 
         ToolDefinition::new(
-            "Edit",
+            tool_names::EDIT,
             "Make exact string replacements in files within allowed directories. \
-             Paths are relative to configured base directories.",
+              Paths are relative to configured base directories.",
         )
         .with_parameters(schema)
     }
 
     async fn call(&self, _ctx: &RunContext<Deps>, args: serde_json::Value) -> ToolResult {
         let args: EditArgs = serde_json::from_value(args)
-            .map_err(|e| ToolError::validation_error("Edit", None, e.to_string()))?;
+            .map_err(|e| ToolError::validation_error(tool_names::EDIT, None, e.to_string()))?;
 
         let result = edit_file(
             &self.resolver,
@@ -90,7 +91,7 @@ impl<Deps: Send + Sync> Tool<Deps> for EditTool {
 }
 
 impl ToolContext for EditTool {
-    const NAME: &'static str = "Edit";
+    const NAME: &'static str = tool_names::EDIT;
 
     fn context(&self) -> &'static str {
         llm_coding_tools_core::context::EDIT_ALLOWED

@@ -7,6 +7,7 @@ use async_trait::async_trait;
 use llm_coding_tools_core::ToolOutput;
 use llm_coding_tools_core::context::ToolContext;
 use llm_coding_tools_core::operations::fetch_url;
+use llm_coding_tools_core::tool_names;
 use serde::Deserialize;
 use serdes_ai::tools::{RunContext, SchemaBuilder, Tool, ToolDefinition, ToolError, ToolResult};
 use std::time::Duration;
@@ -62,7 +63,7 @@ impl WebFetchTool {
 impl<Deps: Send + Sync> Tool<Deps> for WebFetchTool {
     fn definition(&self) -> ToolDefinition {
         ToolDefinition::new(
-            "WebFetch",
+            tool_names::WEBFETCH,
             "Fetch content from a URL. HTML is converted to markdown, JSON is prettified.",
         )
         .with_parameters(
@@ -82,16 +83,16 @@ impl<Deps: Send + Sync> Tool<Deps> for WebFetchTool {
 
     async fn call(&self, _ctx: &RunContext<Deps>, args: serde_json::Value) -> ToolResult {
         let args: WebFetchArgs = serde_json::from_value(args)
-            .map_err(|e| ToolError::validation_error("WebFetch", None, e.to_string()))?;
+            .map_err(|e| ToolError::validation_error(tool_names::WEBFETCH, None, e.to_string()))?;
         let timeout = Duration::from_millis(args.timeout_ms);
         let result = fetch_url(&self.client, &args.url, timeout).await;
 
-        to_serdes_result("WebFetch", result.map(ToolOutput::from))
+        to_serdes_result(tool_names::WEBFETCH, result.map(ToolOutput::from))
     }
 }
 
 impl ToolContext for WebFetchTool {
-    const NAME: &'static str = "WebFetch";
+    const NAME: &'static str = tool_names::WEBFETCH;
 
     fn context(&self) -> &'static str {
         llm_coding_tools_core::context::WEBFETCH

@@ -3,6 +3,7 @@
 //! Provides URL fetching with format conversion support.
 
 use llm_coding_tools_core::operations::fetch_url;
+use llm_coding_tools_core::tool_names;
 use llm_coding_tools_core::{ToolContext, ToolError, ToolOutput};
 use rig::completion::ToolDefinition;
 use rig::tool::Tool;
@@ -58,7 +59,7 @@ impl WebFetchTool {
 }
 
 impl Tool for WebFetchTool {
-    const NAME: &'static str = "WebFetch";
+    const NAME: &'static str = tool_names::WEBFETCH;
 
     type Error = ToolError;
     type Args = WebFetchArgs;
@@ -83,7 +84,7 @@ impl Tool for WebFetchTool {
 }
 
 impl ToolContext for WebFetchTool {
-    const NAME: &'static str = "WebFetch";
+    const NAME: &'static str = tool_names::WEBFETCH;
 
     fn context(&self) -> &'static str {
         llm_coding_tools_core::context::WEBFETCH

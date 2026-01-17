@@ -2,6 +2,7 @@
 
 use llm_coding_tools_core::operations::edit_file;
 use llm_coding_tools_core::path::AllowedPathResolver;
+use llm_coding_tools_core::tool_names;
 pub use llm_coding_tools_core::EditError;
 use llm_coding_tools_core::{ToolContext, ToolResult};
 use rig::completion::ToolDefinition;
@@ -45,7 +46,7 @@ impl EditTool {
 }
 
 impl Tool for EditTool {
-    const NAME: &'static str = "Edit";
+    const NAME: &'static str = tool_names::EDIT;
 
     type Error = EditError;
     type Args = EditArgs;
@@ -75,7 +76,7 @@ impl Tool for EditTool {
 }
 
 impl ToolContext for EditTool {
-    const NAME: &'static str = "Edit";
+    const NAME: &'static str = tool_names::EDIT;
 
     fn context(&self) -> &'static str {
         llm_coding_tools_core::context::EDIT_ALLOWED

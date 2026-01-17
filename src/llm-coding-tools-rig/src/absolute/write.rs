@@ -2,6 +2,7 @@
 
 use llm_coding_tools_core::operations::write_file;
 use llm_coding_tools_core::path::AbsolutePathResolver;
+use llm_coding_tools_core::tool_names;
 use llm_coding_tools_core::{ToolContext, ToolError};
 use rig::completion::ToolDefinition;
 use rig::tool::Tool;
@@ -30,7 +31,7 @@ impl WriteTool {
 }
 
 impl Tool for WriteTool {
-    const NAME: &'static str = "Write";
+    const NAME: &'static str = tool_names::WRITE;
 
     type Error = ToolError;
     type Args = WriteToolArgs;
@@ -54,7 +55,7 @@ impl Tool for WriteTool {
 }
 
 impl ToolContext for WriteTool {
-    const NAME: &'static str = "Write";
+    const NAME: &'static str = tool_names::WRITE;
 
     fn context(&self) -> &'static str {
         llm_coding_tools_core::context::WRITE_ABSOLUTE

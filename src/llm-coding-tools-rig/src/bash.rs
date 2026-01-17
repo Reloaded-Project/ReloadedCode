@@ -3,6 +3,7 @@
 //! Provides cross-platform shell command execution with timeout support.
 
 use llm_coding_tools_core::operations::execute_command;
+use llm_coding_tools_core::tool_names;
 use llm_coding_tools_core::{ToolContext, ToolError, ToolOutput};
 use rig::completion::ToolDefinition;
 use rig::tool::Tool;
@@ -45,7 +46,7 @@ impl BashTool {
 }
 
 impl Tool for BashTool {
-    const NAME: &'static str = "Bash";
+    const NAME: &'static str = tool_names::BASH;
 
     type Error = ToolError;
     type Args = BashArgs;
@@ -71,7 +72,7 @@ impl Tool for BashTool {
 }
 
 impl ToolContext for BashTool {
-    const NAME: &'static str = "Bash";
+    const NAME: &'static str = tool_names::BASH;
 
     fn context(&self) -> &'static str {
         llm_coding_tools_core::context::BASH

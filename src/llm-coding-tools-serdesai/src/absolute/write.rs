@@ -3,6 +3,7 @@
 use async_trait::async_trait;
 use llm_coding_tools_core::operations::write_file;
 use llm_coding_tools_core::path::AbsolutePathResolver;
+use llm_coding_tools_core::tool_names;
 use llm_coding_tools_core::{ToolContext, ToolOutput};
 use serde::Deserialize;
 use serdes_ai::tools::{RunContext, SchemaBuilder, Tool, ToolDefinition, ToolError, ToolResult};
@@ -42,7 +43,7 @@ impl<Deps: Send + Sync> Tool<Deps> for WriteTool {
             .expect("schema build should not fail");
 
         ToolDefinition::new(
-            "Write",
+            tool_names::WRITE,
             "Write content to a file, creating parent directories if needed. Overwrites existing files.",
         )
         .with_parameters(schema)
@@ -50,18 +51,18 @@ impl<Deps: Send + Sync> Tool<Deps> for WriteTool {
 
     async fn call(&self, _ctx: &RunContext<Deps>, args: serde_json::Value) -> ToolResult {
         let args: WriteArgs = serde_json::from_value(args)
-            .map_err(|e| ToolError::validation_error("Write", None, e.to_string()))?;
+            .map_err(|e| ToolError::validation_error(tool_names::WRITE, None, e.to_string()))?;
 
         let resolver = AbsolutePathResolver;
         let result = write_file(&resolver, &args.file_path, &args.content).await;
 
         // Convert String result to ToolOutput for consistent error handling
-        to_serdes_result("Write", result.map(ToolOutput::new))
+        to_serdes_result(tool_names::WRITE, result.map(ToolOutput::new))
     }
 }
 
 impl ToolContext for WriteTool {
-    const NAME: &'static str = "Write";
+    const NAME: &'static str = tool_names::WRITE;
 
     fn context(&self) -> &'static str {
         llm_coding_tools_core::context::WRITE_ABSOLUTE

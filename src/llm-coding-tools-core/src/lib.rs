@@ -26,6 +26,7 @@ pub mod operations;
 pub mod output;
 pub mod path;
 pub mod preamble;
+pub mod tool_names;
 pub mod util;
 
 pub use context::ToolContext;

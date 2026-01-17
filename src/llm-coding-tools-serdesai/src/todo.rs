@@ -7,6 +7,7 @@ use async_trait::async_trait;
 use llm_coding_tools_core::ToolOutput;
 use llm_coding_tools_core::context::ToolContext;
 use llm_coding_tools_core::operations::{read_todos, write_todos};
+use llm_coding_tools_core::tool_names;
 use serde::Deserialize;
 use serdes_ai::tools::{RunContext, SchemaBuilder, Tool, ToolDefinition, ToolError, ToolResult};
 
@@ -43,7 +44,11 @@ impl TodoWriteTool {
 #[async_trait]
 impl<Deps: Send + Sync> Tool<Deps> for TodoWriteTool {
     fn definition(&self) -> ToolDefinition {
-        ToolDefinition::new("TodoWrite", "Replace the todo list with new items.").with_parameters(
+        ToolDefinition::new(
+            tool_names::TODO_WRITE,
+            "Replace the todo list with new items.",
+        )
+        .with_parameters(
             SchemaBuilder::new()
                 .raw(
                     "todos",
@@ -77,15 +82,16 @@ impl<Deps: Send + Sync> Tool<Deps> for TodoWriteTool {
     }
 
     async fn call(&self, _ctx: &RunContext<Deps>, args: serde_json::Value) -> ToolResult {
-        let args: TodoWriteArgs = serde_json::from_value(args)
-            .map_err(|e| ToolError::validation_error("TodoWrite", None, e.to_string()))?;
+        let args: TodoWriteArgs = serde_json::from_value(args).map_err(|e| {
+            ToolError::validation_error(tool_names::TODO_WRITE, None, e.to_string())
+        })?;
         let result = write_todos(&self.state, args.todos);
-        to_serdes_result("TodoWrite", result.map(ToolOutput::new))
+        to_serdes_result(tool_names::TODO_WRITE, result.map(ToolOutput::new))
     }
 }
 
 impl ToolContext for TodoWriteTool {
-    const NAME: &'static str = "TodoWrite";
+    const NAME: &'static str = tool_names::TODO_WRITE;
 
     fn context(&self) -> &'static str {
         llm_coding_tools_core::context::TODO_WRITE
@@ -108,7 +114,7 @@ impl TodoReadTool {
 #[async_trait]
 impl<Deps: Send + Sync> Tool<Deps> for TodoReadTool {
     fn definition(&self) -> ToolDefinition {
-        ToolDefinition::new("TodoRead", "Read the current todo list.").with_parameters(
+        ToolDefinition::new(tool_names::TODO_READ, "Read the current todo list.").with_parameters(
             SchemaBuilder::new()
                 .build()
                 .expect("schema serialization should never fail"),
@@ -118,14 +124,14 @@ impl<Deps: Send + Sync> Tool<Deps> for TodoReadTool {
     async fn call(&self, _ctx: &RunContext<Deps>, args: serde_json::Value) -> ToolResult {
         // Validate JSON is a proper object (empty struct validates this)
         let _args: TodoReadArgs = serde_json::from_value(args)
-            .map_err(|e| ToolError::validation_error("TodoRead", None, e.to_string()))?;
+            .map_err(|e| ToolError::validation_error(tool_names::TODO_READ, None, e.to_string()))?;
         let content = read_todos(&self.state);
         Ok(crate::convert::output_to_return(ToolOutput::new(content)))
     }
 }
 
 impl ToolContext for TodoReadTool {
-    const NAME: &'static str = "TodoRead";
+    const NAME: &'static str = tool_names::TODO_READ;
 
     fn context(&self) -> &'static str {
         llm_coding_tools_core::context::TODO_READ

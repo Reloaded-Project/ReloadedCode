@@ -6,6 +6,7 @@ use crate::convert::to_serdes_result;
 use async_trait::async_trait;
 use llm_coding_tools_core::ToolOutput;
 use llm_coding_tools_core::context::ToolContext;
+use llm_coding_tools_core::tool_names;
 use serde::Deserialize;
 use serdes_ai::tools::{RunContext, SchemaBuilder, Tool, ToolDefinition, ToolError, ToolResult};
 use std::sync::Arc;
@@ -75,7 +76,11 @@ impl TaskTool<MockTaskExecutor> {
 #[async_trait]
 impl<Deps: Send + Sync, E: TaskExecutor + Send + Sync + 'static> Tool<Deps> for TaskTool<E> {
     fn definition(&self) -> ToolDefinition {
-        ToolDefinition::new("Task", "Delegate a task to a specialized sub-agent.").with_parameters(
+        ToolDefinition::new(
+            tool_names::TASK,
+            "Delegate a task to a specialized sub-agent.",
+        )
+        .with_parameters(
             SchemaBuilder::new()
                 .string("description", "Short 3-5 word task description", true)
                 .string("prompt", "Detailed instructions for the sub-agent", true)
@@ -92,15 +97,18 @@ impl<Deps: Send + Sync, E: TaskExecutor + Send + Sync + 'static> Tool<Deps> for 
 
     async fn call(&self, _ctx: &RunContext<Deps>, args: serde_json::Value) -> ToolResult {
         let args: TaskArgs = serde_json::from_value(args)
-            .map_err(|e| ToolError::validation_error("Task", None, e.to_string()))?;
+            .map_err(|e| ToolError::validation_error(tool_names::TASK, None, e.to_string()))?;
         let core_args = CoreTaskArgs::from(args);
         let result = self.executor.execute(&core_args).await;
-        to_serdes_result("Task", result.map(|r| ToolOutput::new(r.format())))
+        to_serdes_result(
+            tool_names::TASK,
+            result.map(|r| ToolOutput::new(r.format())),
+        )
     }
 }
 
 impl<E: TaskExecutor> ToolContext for TaskTool<E> {
-    const NAME: &'static str = "Task";
+    const NAME: &'static str = tool_names::TASK;
 
     fn context(&self) -> &'static str {
         llm_coding_tools_core::context::TASK

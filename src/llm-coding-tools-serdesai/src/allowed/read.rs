@@ -3,6 +3,7 @@
 use async_trait::async_trait;
 use llm_coding_tools_core::operations::read_file;
 use llm_coding_tools_core::path::AllowedPathResolver;
+use llm_coding_tools_core::tool_names;
 use llm_coding_tools_core::{ToolContext, ToolResult as CoreToolResult};
 use serde::Deserialize;
 use serdes_ai::tools::{RunContext, SchemaBuilder, Tool, ToolDefinition, ToolError, ToolResult};
@@ -86,22 +87,22 @@ impl<Deps: Send + Sync, const LINE_NUMBERS: bool> Tool<Deps> for ReadTool<LINE_N
             .build()
             .expect("schema build should not fail");
 
-        ToolDefinition::new("Read", description).with_parameters(schema)
+        ToolDefinition::new(tool_names::READ, description).with_parameters(schema)
     }
 
     async fn call(&self, _ctx: &RunContext<Deps>, args: serde_json::Value) -> ToolResult {
         let args: ReadArgs = serde_json::from_value(args)
-            .map_err(|e| ToolError::validation_error("Read", None, e.to_string()))?;
+            .map_err(|e| ToolError::validation_error(tool_names::READ, None, e.to_string()))?;
 
         let result =
             read_file::<_, LINE_NUMBERS>(&self.resolver, &args.file_path, args.offset, args.limit)
                 .await;
-        to_serdes_result("Read", result)
+        to_serdes_result(tool_names::READ, result)
     }
 }
 
 impl<const LINE_NUMBERS: bool> ToolContext for ReadTool<LINE_NUMBERS> {
-    const NAME: &'static str = "Read";
+    const NAME: &'static str = tool_names::READ;
 
     fn context(&self) -> &'static str {
         llm_coding_tools_core::context::READ_ALLOWED

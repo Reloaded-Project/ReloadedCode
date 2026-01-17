@@ -3,6 +3,7 @@
 //! Provides tools for reading and writing todo items.
 
 use llm_coding_tools_core::operations::{read_todos, write_todos};
+use llm_coding_tools_core::tool_names;
 use llm_coding_tools_core::{ToolContext, ToolError, ToolOutput};
 use rig::completion::ToolDefinition;
 use rig::tool::Tool;
@@ -37,7 +38,7 @@ impl TodoWriteTool {
 }
 
 impl Tool for TodoWriteTool {
-    const NAME: &'static str = "TodoWrite";
+    const NAME: &'static str = tool_names::TODO_WRITE;
 
     type Error = ToolError;
     type Args = TodoWriteArgs;
@@ -72,7 +73,7 @@ impl TodoReadTool {
 }
 
 impl Tool for TodoReadTool {
-    const NAME: &'static str = "TodoRead";
+    const NAME: &'static str = tool_names::TODO_READ;
 
     type Error = ToolError;
     type Args = TodoReadArgs;
@@ -94,7 +95,7 @@ impl Tool for TodoReadTool {
 }
 
 impl ToolContext for TodoWriteTool {
-    const NAME: &'static str = "TodoWrite";
+    const NAME: &'static str = tool_names::TODO_WRITE;
 
     fn context(&self) -> &'static str {
         llm_coding_tools_core::context::TODO_WRITE
@@ -102,7 +103,7 @@ impl ToolContext for TodoWriteTool {
 }
 
 impl ToolContext for TodoReadTool {
-    const NAME: &'static str = "TodoRead";
+    const NAME: &'static str = tool_names::TODO_READ;
 
     fn context(&self) -> &'static str {
         llm_coding_tools_core::context::TODO_READ

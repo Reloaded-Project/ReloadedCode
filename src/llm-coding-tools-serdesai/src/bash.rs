@@ -6,6 +6,7 @@ use crate::convert::to_serdes_result;
 use async_trait::async_trait;
 use llm_coding_tools_core::context::ToolContext;
 use llm_coding_tools_core::operations::execute_command;
+use llm_coding_tools_core::tool_names;
 use serde::Deserialize;
 use serdes_ai::tools::{RunContext, SchemaBuilder, Tool, ToolDefinition, ToolError, ToolResult};
 use std::path::{Path, PathBuf};
@@ -64,7 +65,7 @@ impl BashTool {
 impl<Deps: Send + Sync> Tool<Deps> for BashTool {
     fn definition(&self) -> ToolDefinition {
         ToolDefinition::new(
-            "Bash",
+            tool_names::BASH,
             "Execute a shell command with optional working directory and timeout.",
         )
         .with_parameters(
@@ -96,7 +97,7 @@ impl<Deps: Send + Sync> Tool<Deps> for BashTool {
 
     async fn call(&self, _ctx: &RunContext<Deps>, args: serde_json::Value) -> ToolResult {
         let args: BashArgs = serde_json::from_value(args)
-            .map_err(|e| ToolError::validation_error("Bash", None, e.to_string()))?;
+            .map_err(|e| ToolError::validation_error(tool_names::BASH, None, e.to_string()))?;
 
         // Use arg workdir, falling back to default_workdir
         let workdir: Option<&Path> = args
@@ -114,12 +115,15 @@ impl<Deps: Send + Sync> Tool<Deps> for BashTool {
 
         let result = execute_command(&args.command, workdir, timeout).await;
 
-        to_serdes_result("Bash", result.map(|output| output.format_output()))
+        to_serdes_result(
+            tool_names::BASH,
+            result.map(|output| output.format_output()),
+        )
     }
 }
 
 impl ToolContext for BashTool {
-    const NAME: &'static str = "Bash";
+    const NAME: &'static str = tool_names::BASH;
 
     fn context(&self) -> &'static str {
         llm_coding_tools_core::context::BASH

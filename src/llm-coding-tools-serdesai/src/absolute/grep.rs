@@ -4,6 +4,7 @@ use async_trait::async_trait;
 use llm_coding_tools_core::ToolContext;
 use llm_coding_tools_core::operations::{DEFAULT_MAX_LINE_LENGTH, grep_search};
 use llm_coding_tools_core::path::AbsolutePathResolver;
+use llm_coding_tools_core::tool_names;
 use serde::Deserialize;
 use serdes_ai::tools::{
     RunContext, SchemaBuilder, Tool, ToolDefinition, ToolError, ToolResult, ToolReturn,
@@ -76,17 +77,17 @@ impl<Deps: Send + Sync, const LINE_NUMBERS: bool> Tool<Deps> for GrepTool<LINE_N
             .build()
             .expect("schema build should not fail");
 
-        ToolDefinition::new("Grep", description).with_parameters(schema)
+        ToolDefinition::new(tool_names::GREP, description).with_parameters(schema)
     }
 
     async fn call(&self, _ctx: &RunContext<Deps>, args: serde_json::Value) -> ToolResult {
         let args: GrepArgs = serde_json::from_value(args)
-            .map_err(|e| ToolError::validation_error("Grep", None, e.to_string()))?;
+            .map_err(|e| ToolError::validation_error(tool_names::GREP, None, e.to_string()))?;
 
         let pattern = args.pattern.trim();
         if pattern.is_empty() {
             return Err(ToolError::validation_error(
-                "Grep",
+                tool_names::GREP,
                 Some("pattern".to_string()),
                 "pattern must not be empty".to_string(),
             ));
@@ -95,7 +96,7 @@ impl<Deps: Send + Sync, const LINE_NUMBERS: bool> Tool<Deps> for GrepTool<LINE_N
         let limit = args.limit.unwrap_or(DEFAULT_LIMIT).min(MAX_LIMIT);
         if limit == 0 {
             return Err(ToolError::validation_error(
-                "Grep",
+                tool_names::GREP,
                 Some("limit".to_string()),
                 "limit must be greater than zero".to_string(),
             ));
@@ -114,7 +115,7 @@ impl<Deps: Send + Sync, const LINE_NUMBERS: bool> Tool<Deps> for GrepTool<LINE_N
         let result = grep_search(&resolver, pattern, include, &args.path, limit);
 
         match result {
-            Err(e) => to_serdes_result("Grep", Err(e)),
+            Err(e) => to_serdes_result(tool_names::GREP, Err(e)),
             Ok(grep_output) => {
                 if grep_output.files.is_empty() {
                     return Ok(ToolReturn::text("No matches found."));
@@ -128,7 +129,7 @@ impl<Deps: Send + Sync, const LINE_NUMBERS: bool> Tool<Deps> for GrepTool<LINE_N
 }
 
 impl<const LINE_NUMBERS: bool> ToolContext for GrepTool<LINE_NUMBERS> {
-    const NAME: &'static str = "Grep";
+    const NAME: &'static str = tool_names::GREP;
 
     fn context(&self) -> &'static str {
         llm_coding_tools_core::context::GREP_ABSOLUTE

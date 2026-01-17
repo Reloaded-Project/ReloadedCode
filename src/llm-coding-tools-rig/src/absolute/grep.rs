@@ -2,6 +2,7 @@
 
 use llm_coding_tools_core::operations::{grep_search, DEFAULT_MAX_LINE_LENGTH};
 use llm_coding_tools_core::path::AbsolutePathResolver;
+use llm_coding_tools_core::tool_names;
 use llm_coding_tools_core::{ToolContext, ToolError, ToolOutput};
 use rig::completion::ToolDefinition;
 use rig::tool::Tool;
@@ -43,7 +44,7 @@ impl<const LINE_NUMBERS: bool> GrepTool<LINE_NUMBERS> {
 }
 
 impl<const LINE_NUMBERS: bool> Tool for GrepTool<LINE_NUMBERS> {
-    const NAME: &'static str = "Grep";
+    const NAME: &'static str = tool_names::GREP;
 
     type Error = ToolError;
     type Args = GrepArgs;
@@ -107,7 +108,7 @@ impl<const LINE_NUMBERS: bool> Tool for GrepTool<LINE_NUMBERS> {
 }
 
 impl<const LINE_NUMBERS: bool> ToolContext for GrepTool<LINE_NUMBERS> {
-    const NAME: &'static str = "Grep";
+    const NAME: &'static str = tool_names::GREP;
 
     fn context(&self) -> &'static str {
         llm_coding_tools_core::context::GREP_ABSOLUTE

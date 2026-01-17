@@ -2,6 +2,7 @@
 
 use llm_coding_tools_core::operations::read_file;
 use llm_coding_tools_core::path::AbsolutePathResolver;
+use llm_coding_tools_core::tool_names;
 use llm_coding_tools_core::{ToolContext, ToolError, ToolOutput};
 use rig::completion::ToolDefinition;
 use rig::tool::Tool;
@@ -45,7 +46,7 @@ impl<const LINE_NUMBERS: bool> ReadTool<LINE_NUMBERS> {
 }
 
 impl<const LINE_NUMBERS: bool> Tool for ReadTool<LINE_NUMBERS> {
-    const NAME: &'static str = "Read";
+    const NAME: &'static str = tool_names::READ;
 
     type Error = ToolError;
     type Args = ReadArgs;
@@ -72,7 +73,7 @@ impl<const LINE_NUMBERS: bool> Tool for ReadTool<LINE_NUMBERS> {
 }
 
 impl<const LINE_NUMBERS: bool> ToolContext for ReadTool<LINE_NUMBERS> {
-    const NAME: &'static str = "Read";
+    const NAME: &'static str = tool_names::READ;
 
     fn context(&self) -> &'static str {
         llm_coding_tools_core::context::READ_ABSOLUTE
