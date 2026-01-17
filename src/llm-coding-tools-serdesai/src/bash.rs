@@ -165,10 +165,27 @@ mod tests {
         assert!(result.is_err());
     }
 
+    /// Canonicalizes a path for comparison (resolves symlinks like /tmp -> /private/tmp on macOS).
+    #[cfg(not(windows))]
+    fn normalize_for_comparison(path: std::path::PathBuf) -> String {
+        path.canonicalize()
+            .unwrap_or(path)
+            .to_string_lossy()
+            .to_string()
+    }
+
+    /// Canonicalizes a path for comparison, stripping Windows' `\\?\` extended-length prefix.
+    #[cfg(windows)]
+    fn normalize_for_comparison(path: std::path::PathBuf) -> String {
+        let canonical = path.canonicalize().unwrap_or(path);
+        let s = canonical.to_string_lossy();
+        s.strip_prefix(r"\\?\").unwrap_or(&s).to_string()
+    }
+
     #[tokio::test]
     async fn workdir_parameter_changes_directory() {
         let temp_dir = std::env::temp_dir();
-        let temp_path = temp_dir.to_string_lossy();
+        let temp_path = temp_dir.to_string_lossy().to_string();
         let cmd = if cfg!(target_os = "windows") {
             "cd"
         } else {
@@ -182,29 +199,29 @@ mod tests {
         });
         let result = tool.call(&mock_ctx(), args).await.unwrap();
         let output = result.as_text().unwrap();
-        // Canonicalize both paths for comparison (handles symlinks like /tmp -> /private/tmp on macOS)
-        let expected = temp_dir.canonicalize().unwrap_or(temp_dir);
-        assert!(output.contains(expected.to_string_lossy().as_ref()));
+        // Canonicalize and normalize path for comparison
+        let expected = normalize_for_comparison(temp_dir);
+        assert!(output.contains(&expected));
     }
 
     #[tokio::test]
     async fn default_workdir_is_used() {
         let temp_dir = std::env::temp_dir();
-        let temp_path = temp_dir.to_string_lossy();
+        let temp_path = temp_dir.to_string_lossy().to_string();
         let cmd = if cfg!(target_os = "windows") {
             "cd"
         } else {
             "pwd"
         };
-        let tool = BashTool::new().with_default_workdir(&*temp_path);
+        let tool = BashTool::new().with_default_workdir(&temp_path);
         let args = serde_json::json!({
             "command": cmd
         });
         let result = tool.call(&mock_ctx(), args).await.unwrap();
         let output = result.as_text().unwrap();
-        // Canonicalize both paths for comparison (handles symlinks like /tmp -> /private/tmp on macOS)
-        let expected = temp_dir.canonicalize().unwrap_or(temp_dir);
-        assert!(output.contains(expected.to_string_lossy().as_ref()));
+        // Canonicalize and normalize path for comparison
+        let expected = normalize_for_comparison(temp_dir);
+        assert!(output.contains(&expected));
     }
 
     #[tokio::test]
