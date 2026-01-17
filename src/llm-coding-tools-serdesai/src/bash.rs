@@ -138,6 +138,22 @@ mod tests {
         RunContext::minimal("test-model")
     }
 
+    /// Strips Windows extended-length path prefix (`\\?\`) from canonicalized paths.
+    ///
+    /// On Windows, `std::fs::canonicalize()` returns UNC paths, but shell commands
+    /// like `cd` output normal paths. This helper normalizes for comparison.
+    #[allow(unused_variables)]
+    fn normalize_path(path: std::path::PathBuf) -> std::path::PathBuf {
+        #[cfg(windows)]
+        {
+            let s = path.to_string_lossy();
+            if let Some(stripped) = s.strip_prefix(r"\\?\") {
+                return std::path::PathBuf::from(stripped);
+            }
+        }
+        path
+    }
+
     #[tokio::test]
     async fn executes_echo() {
         let tool = BashTool::new();
@@ -183,7 +199,7 @@ mod tests {
         let result = tool.call(&mock_ctx(), args).await.unwrap();
         let output = result.as_text().unwrap();
         // Canonicalize both paths for comparison (handles symlinks like /tmp -> /private/tmp on macOS)
-        let expected = temp_dir.canonicalize().unwrap_or(temp_dir);
+        let expected = normalize_path(temp_dir.canonicalize().unwrap_or(temp_dir));
         assert!(output.contains(expected.to_string_lossy().as_ref()));
     }
 
@@ -203,7 +219,7 @@ mod tests {
         let result = tool.call(&mock_ctx(), args).await.unwrap();
         let output = result.as_text().unwrap();
         // Canonicalize both paths for comparison (handles symlinks like /tmp -> /private/tmp on macOS)
-        let expected = temp_dir.canonicalize().unwrap_or(temp_dir);
+        let expected = normalize_path(temp_dir.canonicalize().unwrap_or(temp_dir));
         assert!(output.contains(expected.to_string_lossy().as_ref()));
     }
 
