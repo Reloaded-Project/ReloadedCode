@@ -1,6 +1,6 @@
 //! Async shell command execution.
 
-use super::BashOutput;
+use super::{BashOutput, PIPE_BUFFER_CAPACITY};
 use crate::error::{ToolError, ToolResult};
 use process_wrap::tokio::*;
 use std::path::Path;
@@ -89,12 +89,12 @@ pub async fn execute_command(
             tokio::join!(
                 child.wait(),
                 async {
-                    let mut buf = Vec::with_capacity(32 * 1024);
+                    let mut buf = Vec::with_capacity(PIPE_BUFFER_CAPACITY);
                     let _ = stdout_pipe.read_to_end(&mut buf).await;
                     buf
                 },
                 async {
-                    let mut buf = Vec::with_capacity(32 * 1024);
+                    let mut buf = Vec::with_capacity(PIPE_BUFFER_CAPACITY);
                     let _ = stderr_pipe.read_to_end(&mut buf).await;
                     buf
                 }

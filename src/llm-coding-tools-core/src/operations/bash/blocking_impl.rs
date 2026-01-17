@@ -1,6 +1,6 @@
 //! Blocking shell command execution.
 
-use super::BashOutput;
+use super::{BashOutput, PIPE_BUFFER_CAPACITY};
 use crate::error::{ToolError, ToolResult};
 use process_wrap::std::*;
 use std::io::Read;
@@ -72,23 +72,19 @@ pub fn execute_command(
     // concurrent draining, the child would never exit and we'd always hit the
     // timeout. By draining pipes concurrently with polling try_wait(), the child
     // can always make progress.
-    let stdout_handle = child.stdout().take();
-    let stderr_handle = child.stderr().take();
+    let mut stdout_handle = child.stdout().take().expect("stdout was piped");
+    let mut stderr_handle = child.stderr().take().expect("stderr was piped");
 
     // Spawn threads to drain stdout/stderr concurrently
     let stdout_thread = thread::spawn(move || {
-        let mut buf = Vec::new();
-        if let Some(mut stdout) = stdout_handle {
-            let _ = stdout.read_to_end(&mut buf);
-        }
+        let mut buf = Vec::with_capacity(PIPE_BUFFER_CAPACITY);
+        let _ = stdout_handle.read_to_end(&mut buf);
         buf
     });
 
     let stderr_thread = thread::spawn(move || {
-        let mut buf = Vec::new();
-        if let Some(mut stderr) = stderr_handle {
-            let _ = stderr.read_to_end(&mut buf);
-        }
+        let mut buf = Vec::with_capacity(PIPE_BUFFER_CAPACITY);
+        let _ = stderr_handle.read_to_end(&mut buf);
         buf
     });
 
