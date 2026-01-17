@@ -68,6 +68,7 @@ pub use webfetch::{WebFetchArgs, WebFetchTool};
 #[cfg(test)]
 mod tests {
     use super::*;
+    use llm_coding_tools_core::tool_names;
 
     #[test]
     fn preamble_builder_with_real_tools() {
@@ -82,7 +83,10 @@ mod tests {
         assert!(preamble.contains("absolute path")); // From READ_ABSOLUTE
 
         // Tools are returned unchanged
-        assert_eq!(<absolute::ReadTool<true> as rig::tool::Tool>::NAME, "Read");
+        assert_eq!(
+            <absolute::ReadTool<true> as rig::tool::Tool>::NAME,
+            tool_names::READ
+        );
         let _ = read;
         let _ = bash;
     }
