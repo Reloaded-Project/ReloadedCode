@@ -65,7 +65,7 @@ jobs:
           cargo +stable binstall --no-confirm cargo-semver-checks --force
           rustup +stable target add ${{ matrix.target }}
 
-          for CRATE in "llm-coding-tools-core" "llm-coding-tools-rig"; do
+          for CRATE in "llm-coding-tools-core" "llm-coding-tools-rig" "llm-coding-tools-serdesai"; do
             SEARCH_RESULT=$(cargo search "^${CRATE}$" --limit 1)
             if echo "$SEARCH_RESULT" | grep -q "^${CRATE} "; then
               echo "Running semver checks for ${CRATE}..."
