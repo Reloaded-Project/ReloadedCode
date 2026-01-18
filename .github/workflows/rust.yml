@@ -84,6 +84,7 @@ jobs:
         run: |
           cargo doc -p llm-coding-tools-core --features tokio --document-private-items --no-deps --target ${{ matrix.target }}
           cargo doc -p llm-coding-tools-rig --document-private-items --no-deps --target ${{ matrix.target }}
+          cargo doc -p llm-coding-tools-serdesai --document-private-items --no-deps --target ${{ matrix.target }}
 
       - name: Run linter
         if: github.event_name == 'pull_request' || startsWith(github.ref, 'refs/tags/')
@@ -92,6 +93,7 @@ jobs:
         run: |
           cargo clippy -p llm-coding-tools-core --features tokio --target ${{ matrix.target }} -- -D warnings
           cargo clippy -p llm-coding-tools-rig --target ${{ matrix.target }} -- -D warnings
+          cargo clippy -p llm-coding-tools-serdesai --target ${{ matrix.target }} -- -D warnings
 
       - name: Run formatter check
         uses: actions-rust-lang/rustfmt@v1
