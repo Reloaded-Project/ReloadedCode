@@ -7,7 +7,7 @@
 //! - Security-conscious deployments limiting filesystem exposure
 //! - Project-scoped agents that shouldn't touch system files
 //!
-//! Run: cargo run --example sandboxed -p llm-coding-tools-rig
+//! Run: cargo run --example rig-sandboxed -p llm-coding-tools-rig
 
 use llm_coding_tools_rig::allowed::{EditTool, GlobTool, GrepTool, ReadTool, WriteTool};
 use llm_coding_tools_rig::{AllowedPathResolver, PreambleBuilder};

@@ -4,6 +4,10 @@ use crate::ToolOutput;
 use core::fmt::Write;
 use serde::Serialize;
 
+/// Default buffer capacity for stdout/stderr pipe reads.
+/// 32KB covers typical command output without reallocations.
+const PIPE_BUFFER_CAPACITY: usize = 32 * 1024;
+
 /// Result of shell command execution.
 #[derive(Debug, Clone, Serialize)]
 pub struct BashOutput {

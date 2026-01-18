@@ -167,8 +167,8 @@ mod tests {
 
     #[tokio::test]
     async fn workdir_parameter_changes_directory() {
-        let temp_dir = std::env::temp_dir();
-        let temp_path = temp_dir.to_string_lossy();
+        let temp = tempfile::TempDir::new().unwrap();
+        let temp_path = temp.path().to_string_lossy();
         let cmd = if cfg!(target_os = "windows") {
             "cd"
         } else {
@@ -182,29 +182,25 @@ mod tests {
         });
         let result = tool.call(&mock_ctx(), args).await.unwrap();
         let output = result.as_text().unwrap();
-        // Canonicalize both paths for comparison (handles symlinks like /tmp -> /private/tmp on macOS)
-        let expected = temp_dir.canonicalize().unwrap_or(temp_dir);
-        assert!(output.contains(expected.to_string_lossy().as_ref()));
+        assert!(output.contains(temp_path.as_ref()));
     }
 
     #[tokio::test]
     async fn default_workdir_is_used() {
-        let temp_dir = std::env::temp_dir();
-        let temp_path = temp_dir.to_string_lossy();
+        let temp = tempfile::TempDir::new().unwrap();
+        let temp_path = temp.path().to_string_lossy();
         let cmd = if cfg!(target_os = "windows") {
             "cd"
         } else {
             "pwd"
         };
-        let tool = BashTool::new().with_default_workdir(&*temp_path);
+        let tool = BashTool::new().with_default_workdir(temp_path.as_ref());
         let args = serde_json::json!({
             "command": cmd
         });
         let result = tool.call(&mock_ctx(), args).await.unwrap();
         let output = result.as_text().unwrap();
-        // Canonicalize both paths for comparison (handles symlinks like /tmp -> /private/tmp on macOS)
-        let expected = temp_dir.canonicalize().unwrap_or(temp_dir);
-        assert!(output.contains(expected.to_string_lossy().as_ref()));
+        assert!(output.contains(temp_path.as_ref()));
     }
 
     #[tokio::test]

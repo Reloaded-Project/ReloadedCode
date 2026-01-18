@@ -6,7 +6,7 @@
 //! - TodoTools with shared state
 //! - Generating and using the preamble string
 //!
-//! Run: cargo run --example basic -p llm-coding-tools-rig
+//! Run: cargo run --example rig-basic -p llm-coding-tools-rig
 
 use llm_coding_tools_rig::absolute::{GlobTool, GrepTool, ReadTool};
 use llm_coding_tools_rig::{BashTool, PreambleBuilder, TodoTools};

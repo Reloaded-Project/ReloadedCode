@@ -13,9 +13,9 @@ default = ["tokio"]
 # Base async signatures - requires a runtime, do not enable directly
 async = ["dep:async-trait"]
 # Async with tokio runtime (default)
-tokio = ["async", "dep:tokio", "dep:reqwest"]
+tokio = ["async", "dep:tokio", "dep:reqwest", "process-wrap/tokio1", "process-wrap/job-object", "process-wrap/process-group", "process-wrap/kill-on-drop"]
 # Blocking/sync mode - mutually exclusive with async
-blocking = ["maybe-async/is_sync", "dep:reqwest", "reqwest?/blocking"]
+blocking = ["maybe-async/is_sync", "dep:reqwest", "reqwest?/blocking", "process-wrap/std", "process-wrap/job-object", "process-wrap/process-group"]
 
 [dependencies]
 # Tool outputs (BashOutput, GrepOutput, etc.) serialize to JSON for LLM consumption
@@ -53,6 +53,9 @@ async-trait = { version = "0.1", optional = true }
 
 # Async file I/O, process execution, and timeouts
 tokio = { version = "1.49", features = ["fs", "io-util", "process", "time"], optional = true }
+
+# Cross-platform process tree management (Job Objects on Windows, process groups on Unix)
+process-wrap = { version = "9.0", default-features = false }
 
 [dev-dependencies]
 tempfile = "3.24"
