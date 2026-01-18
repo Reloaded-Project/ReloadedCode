@@ -24,18 +24,18 @@ async fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
     // === Build agent with tools - call .system_prompt() last ===
     let agent = AgentBuilder::<(), String>::from_model("openai:gpt-4o")?
         // File operations
-        .tool_impl(pb.track(ReadTool::<true>::new()))
-        .tool_impl(pb.track(GlobTool::new()))
-        .tool_impl(pb.track(GrepTool::<true>::new()))
+        .tool(pb.track(ReadTool::<true>::new()))
+        .tool(pb.track(GlobTool::new()))
+        .tool(pb.track(GrepTool::<true>::new()))
         // Shell execution
-        .tool_impl(pb.track(BashTool::new()))
+        .tool(pb.track(BashTool::new()))
         // Web content fetching
-        .tool_impl(pb.track(WebFetchTool::new()))
+        .tool(pb.track(WebFetchTool::new()))
         // Todo tools with shared state
-        .tool_impl(pb.track(todo_read))
-        .tool_impl(pb.track(todo_write))
+        .tool(pb.track(todo_read))
+        .tool(pb.track(todo_write))
         // System prompt last (after tracking all tools)
-        .system_prompt(&pb.build())
+        .system_prompt(pb.build())
         .build();
 
     // === Print tool info ===

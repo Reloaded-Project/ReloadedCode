@@ -35,12 +35,12 @@ async fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
     // === Build agent with sandboxed tools - call .system_prompt() last ===
     let mut pb = PreambleBuilder::<false>::new();
     let agent = AgentBuilder::<(), String>::from_model("openai:gpt-4o")?
-        .tool_impl(pb.track(read))
-        .tool_impl(pb.track(write))
-        .tool_impl(pb.track(edit))
-        .tool_impl(pb.track(glob))
-        .tool_impl(pb.track(grep))
-        .system_prompt(&pb.build())
+        .tool(pb.track(read))
+        .tool(pb.track(write))
+        .tool(pb.track(edit))
+        .tool(pb.track(glob))
+        .tool(pb.track(grep))
+        .system_prompt(pb.build())
         .build();
 
     // === Print info ===

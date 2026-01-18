@@ -43,13 +43,13 @@ async fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
 
     // Build agent with tools - call .system_prompt() last
     let agent = AgentBuilder::<(), String>::from_model("openai:gpt-4o")?
-        .tool_impl(pb.track(ReadTool::<true>::new()))
-        .tool_impl(pb.track(GlobTool::new()))
-        .tool_impl(pb.track(GrepTool::<true>::new()))
-        .tool_impl(pb.track(BashTool::new()))
-        .tool_impl(pb.track(todo_read))
-        .tool_impl(pb.track(todo_write))
-        .system_prompt(&pb.build())  // Last, after tracking all tools
+        .tool(pb.track(ReadTool::<true>::new()))
+        .tool(pb.track(GlobTool::new()))
+        .tool(pb.track(GrepTool::<true>::new()))
+        .tool(pb.track(BashTool::new()))
+        .tool(pb.track(todo_read))
+        .tool(pb.track(todo_write))
+        .system_prompt(pb.build())  // Last, after tracking all tools
         .build();
 
     // Run agent with tools
@@ -84,7 +84,7 @@ let sandboxed_write = AllowedWriteTool::new(allowed_paths).unwrap();
 
 Other tools: `BashTool`, `WebFetchTool`, `TaskTool`, `TodoReadTool`, `TodoWriteTool`.
 Use `PreambleBuilder` to track tools and pass `pb.build()` to `.system_prompt()`.
-Use `AgentBuilderExt::tool_impl()` to add tools that implement `Tool<Deps>` to the agent.
+Use `AgentBuilderExt::tool()` to add tools that implement `Tool<Deps>` to the agent.
 Context strings are re-exported in `llm_coding_tools_serdesai::context` (e.g., `BASH`, `READ_ABSOLUTE`).
 
 ## Examples

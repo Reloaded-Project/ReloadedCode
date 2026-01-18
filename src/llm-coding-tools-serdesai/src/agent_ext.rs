@@ -5,15 +5,19 @@
 //!
 //! # Example
 //!
-//! ```ignore
-//! use llm_coding_tools_serdesai::absolute::ReadTool;
+//! ```no_run
+//! use llm_coding_tools_serdesai::absolute::{ReadTool, GlobTool};
 //! use llm_coding_tools_serdesai::agent_ext::AgentBuilderExt;
 //! use serdes_ai::prelude::*;
 //!
+//! # fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
 //! let agent = AgentBuilder::<(), String>::from_model("openai:gpt-4o")?
+//!     .tool(ReadTool::<true>::new())
+//!     .tool(GlobTool::new())
 //!     .system_prompt("You are helpful.")
-//!     .tool_impl(ReadTool::<true>::new())
 //!     .build();
+//! # Ok(())
+//! # }
 //! ```
 
 use async_trait::async_trait;
@@ -54,17 +58,20 @@ pub trait AgentBuilderExt<Deps, Output> {
     ///
     /// # Example
     ///
-    /// ```ignore
-    /// use llm_coding_tools_serdesai::absolute::ReadTool;
+    /// ```no_run
+    /// use llm_coding_tools_serdesai::absolute::{ReadTool, GlobTool};
     /// use llm_coding_tools_serdesai::agent_ext::AgentBuilderExt;
     /// use serdes_ai::prelude::*;
     ///
+    /// # fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
     /// let agent = AgentBuilder::<(), String>::from_model("openai:gpt-4o")?
-    ///     .tool_impl(ReadTool::<true>::new())
-    ///     .tool_impl(GlobTool::new())
+    ///     .tool(ReadTool::<true>::new())
+    ///     .tool(GlobTool::new())
     ///     .build();
+    /// # Ok(())
+    /// # }
     /// ```
-    fn tool_impl<T: Tool<Deps> + 'static>(self, tool: T) -> Self;
+    fn tool<T: Tool<Deps> + 'static>(self, tool: T) -> Self;
 }
 
 impl<Deps, Output> AgentBuilderExt<Deps, Output> for AgentBuilder<Deps, Output>
@@ -72,7 +79,7 @@ where
     Deps: Send + Sync + 'static,
     Output: Send + Sync + 'static,
 {
-    fn tool_impl<T: Tool<Deps> + 'static>(self, tool: T) -> Self {
+    fn tool<T: Tool<Deps> + 'static>(self, tool: T) -> Self {
         let definition = tool.definition();
         self.tool_with_executor(definition, ToolAsExecutor(tool))
     }
