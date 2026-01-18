@@ -6,7 +6,7 @@ use llm_coding_tools_core::tool_names;
 use llm_coding_tools_core::{GlobOutput, ToolContext, ToolError};
 use rig::completion::ToolDefinition;
 use rig::tool::Tool;
-use schemars::{schema_for, JsonSchema};
+use schemars::{JsonSchema, schema_for};
 use serde::Deserialize;
 
 /// Arguments for the glob tool.
@@ -27,7 +27,7 @@ pub struct GlobTool {
 impl GlobTool {
     /// Creates a new glob tool with a shared resolver.
     ///
-    /// See [`ReadTool::new`] for usage example.
+    /// See [`ReadTool::new`](crate::allowed::read::ReadTool::new) for usage example.
     pub fn new(resolver: AllowedPathResolver) -> Self {
         Self { resolver }
     }

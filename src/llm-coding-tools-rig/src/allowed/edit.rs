@@ -33,7 +33,7 @@ pub struct EditTool {
 impl EditTool {
     /// Creates a new edit tool with a shared resolver.
     ///
-    /// See [`ReadTool::new`] for usage example.
+    /// See [`ReadTool::new`](crate::allowed::read::ReadTool::new) for usage example.
     pub fn new(resolver: AllowedPathResolver) -> Self {
         Self { resolver }
     }

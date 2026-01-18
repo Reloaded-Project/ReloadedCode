@@ -4,8 +4,8 @@ Only create commits when requested by the user. If unclear, ask first. When the 
 
 Git Safety Protocol:
 - NEVER update the git config
-- NEVER run destructive/irreversible git commands (like push --force, hard reset, etc) unless the user explicitly requests them
-- NEVER skip hooks (--no-verify, --no-gpg-sign, etc) unless the user explicitly requests it
+- NEVER run destructive/irreversible git commands (like push --force, hard reset, etc.) unless the user explicitly requests them
+- NEVER skip hooks (--no-verify, --no-gpg-sign, etc.) unless the user explicitly requests it
 - NEVER run force push to main/master, warn the user if they request it
 - Avoid git commit --amend. ONLY use --amend when ALL conditions are met:
   (1) User explicitly requested amend, OR commit SUCCEEDED but pre-commit hook auto-modified files that need including

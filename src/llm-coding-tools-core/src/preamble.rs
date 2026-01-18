@@ -346,12 +346,12 @@ impl PreambleBuilder<false> {
 
         // Supplemental context section
         if has_supplemental {
-            output.push_str("\n# Supplemental Context\n\n");
+            output.push_str("\n# Supplemental Context\n");
 
             for (name, context) in self.supplemental {
                 output.push_str("## ");
                 output.push_str(name);
-                output.push_str("\n\n");
+                output.push('\n');
                 output.push_str(context);
                 if !context.ends_with('\n') {
                     output.push('\n');
@@ -467,12 +467,12 @@ impl PreambleBuilder<true> {
 
         // Supplemental context section
         if has_supplemental {
-            output.push_str("\n# Supplemental Context\n\n");
+            output.push_str("\n# Supplemental Context\n");
 
             for (name, context) in self.supplemental {
                 output.push_str("## ");
                 output.push_str(name);
-                output.push_str("\n\n");
+                output.push('\n');
                 output.push_str(context);
                 if !context.ends_with('\n') {
                     output.push('\n');

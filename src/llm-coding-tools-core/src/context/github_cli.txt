@@ -1,6 +1,6 @@
 # GitHub CLI (gh) Operations
 
-Use the gh command via the Bash tool for ALL GitHub-related tasks including working with issues, pull requests, checks, and releases. If given a Github URL use the gh command to get the information needed.
+Use the gh command via the Bash tool for ALL GitHub-related tasks including working with issues, pull requests, checks, and releases. If given a GitHub URL use the gh command to get the information needed.
 
 ## Creating Pull Requests
 
@@ -40,4 +40,4 @@ Important:
 
 ## Other Common Operations
 
-- View comments on a Github PR: gh api repos/foo/bar/pulls/123/comments
+- View comments on a GitHub PR: gh api repos/foo/bar/pulls/123/comments
