@@ -1,7 +1,7 @@
 
 [workspace]
 resolver = "2"
-members = ["llm-coding-tools-core", "llm-coding-tools-rig", "llm-coding-tools-serdesai"]
+members = ["llm-coding-tools-core", "llm-coding-tools-rig", "llm-coding-tools-serdesai", "llm-coding-tools-subagents"]
 
 # Profile Build
 [profile.profile]

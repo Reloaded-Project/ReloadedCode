@@ -1,0 +1,27 @@
+[package]
+name = "llm-coding-tools-subagents"
+version = "0.1.0"
+edition = "2021"
+description = "Subagent configuration loading from OpenCode-style markdown files with YAML frontmatter"
+repository = "https://github.com/Sewer56/llm-coding-tools"
+license = "Apache-2.0"
+include = ["src/**/*", "README.md"]
+readme = "README.md"
+
+[dependencies]
+# YAML parsing for frontmatter
+serde = { version = "1.0", features = ["derive"] }
+serde_yaml = "0.9"
+serde_json = "1.0"
+
+# Preserve insertion order for permission maps
+indexmap = { version = "2.9", features = ["serde"] }
+
+# Error handling
+thiserror = "2.0"
+
+# Directory scanning with gitignore support
+ignore = "0.4.25"
+
+[dev-dependencies]
+tempfile = "3.24"
