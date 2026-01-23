@@ -15,17 +15,56 @@ pub struct FrontmatterParseResult<T> {
 
 /// Preprocesses YAML frontmatter to handle inline `key: value:with:colons`.
 ///
-/// Converts lines like `model: provider/model:tag` to block scalar format:
-/// ```yaml
+/// # Problem
+///
+/// YAML interprets colons as key-value separators. A value like `provider/model:tag`
+/// would be misparsed as a nested mapping. This function converts such lines to
+/// block scalar format, which treats the entire value as a literal string.
+///
+/// # Transformations
+///
+/// **Converted to block scalar** (value contains unquoted colon):
+///
+/// ```text
+/// Input:
+/// ---
+/// model: provider/model:tag
+/// api_url: http://localhost:8080
+/// ---
+///
+/// Output:
+/// ---
 /// model: |-
 ///   provider/model:tag
+/// api_url: |-
+///   http://localhost:8080
+/// ---
 /// ```
 ///
-/// This matches OpenCode's `preprocessFrontmatter` behavior.
-/// Uses `|-` (strip chomp) to avoid trailing newlines in scalar values.
+/// **Preserved unchanged** (already safe for YAML parsing):
 ///
-/// Note: This function normalizes CRLF to LF in the output. Use only for
-/// YAML parsing; preserve original content for the body.
+/// ```text
+/// Input:
+/// ---
+/// # comment: with:colon           # Comments are ignored
+/// description: No colons here     # No colon in value
+/// model: "provider/model:tag"     # Double-quoted
+/// model: 'provider/model:tag'     # Single-quoted
+/// content: |                      # Block scalar indicator
+///   line:with:colon
+/// items: ["a:b", "c:d"]           # Flow array syntax
+/// config: { "key": "a:b" }        # Flow mapping syntax
+/// ---
+///
+/// Output: (identical to input)
+/// ```
+///
+/// # Notes
+///
+/// - Uses `|-` (literal block, strip chomp) to avoid trailing newlines in values.
+/// - Normalizes CRLF to LF in output. Use only for YAML parsing; preserve
+///   original content for the body.
+/// - This matches OpenCode's `preprocessFrontmatter` behavior.
 pub fn preprocess_frontmatter(content: &str) -> String {
     // Normalize CRLF to LF for consistent processing
     let content = content.replace("\r\n", "\n");
