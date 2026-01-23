@@ -93,8 +93,8 @@ let sandboxed_read: AllowedReadTool<true> = AllowedReadTool::new(resolver.clone(
 let sandboxed_write = AllowedWriteTool::new(resolver);
 ```
 
-Other tools: `BashTool`, `WebFetchTool`, `TodoTools`.
-Use `SystemPromptBuilder` to register tools and pass `pb.build()` to `.preamble()`. Set `working_directory()` so the environment section is populated.
+Other tools: `BashTool`, `TaskTool`, `WebFetchTool`, `TodoTools`.
+Use `SystemPromptBuilder` to register tools and pass `pb.build()` to `.preamble()`. Set `working_directory()` so that environment section is populated.
 Context strings are re-exported in `llm_coding_tools_rig::context` (e.g., `BASH`, `READ_ABSOLUTE`).
 
 ## Examples

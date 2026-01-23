@@ -7,6 +7,7 @@ pub mod allowed;
 pub mod bash;
 mod common;
 pub mod convert;
+pub mod task;
 pub mod todo;
 pub mod webfetch;
 
@@ -46,5 +47,6 @@ pub use llm_coding_tools_core::{
 
 // Re-export standalone tools
 pub use bash::BashTool;
+pub use task::TaskTool;
 pub use todo::{TodoReadTool, TodoWriteTool, create_todo_tools};
 pub use webfetch::WebFetchTool;

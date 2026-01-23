@@ -14,6 +14,9 @@ llm-coding-tools-core = { version = "0.1.0", path = "../llm-coding-tools-core", 
     "tokio",
 ] }
 
+# Subagent registry and task tool core
+llm-coding-tools-subagents = { version = "0.1.0", path = "../llm-coding-tools-subagents" }
+
 # serdes-ai provides Tool trait, ToolDefinition, RunContext
 serdes-ai = "0.1"
 serdes-ai-models = { version = "0.1", features = ["openrouter"] }

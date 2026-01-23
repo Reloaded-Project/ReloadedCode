@@ -4,6 +4,7 @@
 pub mod absolute;
 pub mod allowed;
 pub mod bash;
+pub mod task;
 pub mod todo;
 pub mod webfetch;
 
@@ -42,6 +43,7 @@ pub mod allowed_tools {
 
 // Re-export standalone tools
 pub use bash::{BashArgs, BashTool};
+pub use task::{TaskArgs, TaskTool};
 pub use todo::{TodoReadArgs, TodoReadTool, TodoTools, TodoWriteArgs, TodoWriteTool};
 pub use webfetch::{WebFetchArgs, WebFetchTool};
 

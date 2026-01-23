@@ -545,4 +545,20 @@ mod tests {
         let combined = Ruleset::merged([&r1, &r2]);
         assert_eq!(combined.evaluate("a", "x"), PermissionAction::Allow);
     }
+
+    #[test]
+    fn allowed_tools_preserves_original_casing() {
+        let mut rules = Ruleset::new();
+        rules.push(Rule::new("bash", "*", PermissionAction::Allow));
+        rules.push(Rule::new("read", "*", PermissionAction::Allow));
+
+        // Input with mixed case
+        let tools = ["Bash", "READ", "Write"];
+        let allowed = rules.allowed_tools(tools.iter().copied());
+
+        // Output should preserve original casing
+        assert_eq!(allowed.len(), 2);
+        assert!(allowed.contains(&"Bash".to_string())); // Not "bash"
+        assert!(allowed.contains(&"READ".to_string())); // Not "read"
+    }
 }

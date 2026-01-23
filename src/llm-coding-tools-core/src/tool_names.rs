@@ -18,3 +18,5 @@ pub const WEBFETCH: &str = "WebFetch";
 pub const TODO_WRITE: &str = "TodoWrite";
 /// The "TodoRead" tool name constant.
 pub const TODO_READ: &str = "TodoRead";
+/// The "Task" tool name constant.
+pub const TASK: &str = "Task";
