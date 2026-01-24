@@ -1,7 +1,9 @@
 //! Frontmatter parsing for markdown files with YAML headers.
 
 use crate::error::{AgentConfigError, AgentConfigResult};
+use crlf_to_lf_inplace::crlf_to_lf_inplace;
 use serde::de::DeserializeOwned;
+use std::borrow::Cow;
 use std::path::Path;
 
 /// Result of parsing a markdown file with frontmatter.
@@ -9,11 +11,191 @@ use std::path::Path;
 pub struct FrontmatterParseResult<T> {
     /// Parsed frontmatter data.
     pub data: T,
-    /// Markdown content after frontmatter (raw, not trimmed).
+    /// Markdown content after frontmatter, trimmed of leading/trailing whitespace.
     pub content: String,
 }
 
+/// Parses a markdown file with YAML frontmatter.
+///
+/// The file must start with `---` (at position 0, optionally after BOM),
+/// followed by YAML, followed by `---` on its own line.
+/// Content after the closing `---` is the markdown body (trimmed at the edges).
+///
+/// # Errors
+///
+/// Returns [`AgentConfigError::MissingFrontmatter`] if no valid frontmatter found.
+/// Returns [`AgentConfigError::InvalidYaml`] if YAML parsing fails.
+pub fn parse_frontmatter<T: DeserializeOwned>(
+    content: &str,
+    path: &Path,
+) -> AgentConfigResult<FrontmatterParseResult<T>> {
+    let Some(parts) = split_frontmatter(content) else {
+        return Err(AgentConfigError::MissingFrontmatter {
+            path: path.to_path_buf(),
+        });
+    };
+
+    let yaml_preprocessed = preprocess_frontmatter_yaml(parts.yaml);
+    let data: T = serde_yaml::from_str(yaml_preprocessed.as_ref()).map_err(|e| {
+        AgentConfigError::InvalidYaml {
+            path: path.to_path_buf(),
+            message: e.to_string(),
+        }
+    })?;
+
+    let body = if parts.body.is_empty() {
+        String::new()
+    } else {
+        parts.body.to_string()
+    };
+
+    Ok(FrontmatterParseResult {
+        data,
+        content: body,
+    })
+}
+
+#[derive(Clone, Copy)]
+struct FrontmatterSlices<'a> {
+    yaml: &'a str,
+    body: &'a str,
+}
+
+#[inline]
+fn trim_ascii_whitespace(input: &str) -> &str {
+    let bytes = input.as_bytes();
+    let mut start = 0usize;
+    let mut end = bytes.len();
+
+    while start < end && bytes[start].is_ascii_whitespace() {
+        start += 1;
+    }
+    while end > start && bytes[end - 1].is_ascii_whitespace() {
+        end -= 1;
+    }
+
+    &input[start..end]
+}
+
+#[inline]
+fn split_frontmatter(content: &str) -> Option<FrontmatterSlices<'_>> {
+    let bytes = content.as_bytes();
+    let bom_len = if content.starts_with('\u{FEFF}') {
+        '\u{FEFF}'.len_utf8()
+    } else {
+        0
+    };
+    let start = &content[bom_len..];
+    if !start.starts_with("---") {
+        return None;
+    }
+
+    // Byte index after the opening "---" delimiter
+    let after_opener = bom_len + 3;
+    let tail = &content[after_opener..];
+    let end_offset = tail.find("\n---")?;
+    // Byte index of the newline before the closing "---"
+    let closing_newline = after_opener + end_offset;
+    let has_cr = closing_newline > 0 && bytes[closing_newline - 1] == b'\r';
+    let yaml_end = if has_cr {
+        closing_newline - 1
+    } else {
+        closing_newline
+    };
+
+    let yaml_start = tail
+        .find('\n')
+        .map(|n| after_opener + n + 1)
+        .unwrap_or(after_opener);
+
+    let yaml = if yaml_start <= yaml_end {
+        &content[yaml_start..yaml_end]
+    } else {
+        ""
+    };
+
+    // Byte index at the start of the closing "---" delimiter
+    let closing_start = closing_newline + 1;
+    // Byte index after the closing "---" delimiter
+    let after_closing = closing_start + 3;
+    let mut body_start = after_closing;
+    if after_closing < content.len() {
+        let rest = &bytes[after_closing..];
+        if has_cr {
+            if rest.starts_with(b"\r\n") {
+                body_start += 2;
+            } else if rest.starts_with(b"\n") {
+                body_start += 1;
+            }
+        } else if rest.starts_with(b"\n") {
+            body_start += 1;
+        } else if rest.starts_with(b"\r\n") {
+            body_start += 2;
+        }
+    }
+    let body = if body_start < content.len() {
+        trim_ascii_whitespace(&content[body_start..])
+    } else {
+        ""
+    };
+
+    Some(FrontmatterSlices { yaml, body })
+}
+
+#[inline]
+fn is_valid_key(key: &str) -> bool {
+    let bytes = key.as_bytes();
+    let Some((&first, rest)) = bytes.split_first() else {
+        return false;
+    };
+    if !(first.is_ascii_alphabetic() || first == b'_') {
+        return false;
+    }
+    rest.iter()
+        .all(|byte| byte.is_ascii_alphanumeric() || *byte == b'_' || *byte == b'-')
+}
+
+#[inline]
+fn block_scalar_parts(line: &str) -> Option<(&str, &str)> {
+    let trimmed = line.trim();
+    if trimmed.is_empty() || trimmed.starts_with('#') {
+        return None;
+    }
+
+    let first = *line.as_bytes().first()?;
+    if first == b' ' || first == b'\t' {
+        return None;
+    }
+
+    let colon_pos = line.find(':')?;
+    let key = line[..colon_pos].trim();
+    if !is_valid_key(key) {
+        return None;
+    }
+
+    let value = line[colon_pos + 1..].trim();
+    if value.is_empty() || value == ">" || value == "|" || value == "|-" || value == ">-" {
+        return None;
+    }
+
+    let first_value = value.as_bytes().first().copied();
+    if matches!(first_value, Some(b'"') | Some(b'\'')) {
+        return None;
+    }
+
+    if matches!(first_value, Some(b'{') | Some(b'[')) {
+        return None;
+    }
+
+    if !value.contains(':') {
+        return None;
+    }
+
+    Some((key, value))
+}
+
 /// Preprocesses YAML frontmatter to handle inline `key: value:with:colons`.
+/// The input is the YAML slice only (no `---` delimiters).
 ///
 /// # Problem
 ///
@@ -27,25 +209,20 @@ pub struct FrontmatterParseResult<T> {
 ///
 /// ```text
 /// Input:
-/// ---
 /// model: provider/model:tag
 /// api_url: http://localhost:8080
-/// ---
 ///
 /// Output:
-/// ---
 /// model: |-
 ///   provider/model:tag
 /// api_url: |-
 ///   http://localhost:8080
-/// ---
 /// ```
 ///
 /// **Preserved unchanged** (already safe for YAML parsing):
 ///
 /// ```text
 /// Input:
-/// ---
 /// # comment: with:colon           # Comments are ignored
 /// description: No colons here     # No colon in value
 /// model: "provider/model:tag"     # Double-quoted
@@ -54,7 +231,6 @@ pub struct FrontmatterParseResult<T> {
 ///   line:with:colon
 /// items: ["a:b", "c:d"]           # Flow array syntax
 /// config: { "key": "a:b" }        # Flow mapping syntax
-/// ---
 ///
 /// Output: (identical to input)
 /// ```
@@ -65,218 +241,61 @@ pub struct FrontmatterParseResult<T> {
 /// - Normalizes CRLF to LF in output. Use only for YAML parsing; preserve
 ///   original content for the body.
 /// - This matches OpenCode's `preprocessFrontmatter` behavior.
-pub fn preprocess_frontmatter(content: &str) -> String {
-    // Normalize CRLF to LF for consistent processing
-    let content = content.replace("\r\n", "\n");
-
-    // Frontmatter must start at position 0 (possibly after BOM)
-    let start = content.strip_prefix('\u{FEFF}').unwrap_or(&content);
-    if !start.starts_with("---") {
-        return content;
+fn preprocess_frontmatter_yaml(input: &str) -> Cow<'_, str> {
+    if input.is_empty() {
+        return Cow::Borrowed(input);
     }
 
-    let after_opener = if content.starts_with('\u{FEFF}') {
-        4
+    // Phase 1: CRLF normalization using fast memchr detection
+    let normalized: Cow<'_, str> = if memchr::memchr(b'\r', input.as_bytes()).is_some() {
+        let mut s = input.to_string();
+        crlf_to_lf_inplace(&mut s);
+        Cow::Owned(s)
     } else {
-        3
+        Cow::Borrowed(input)
     };
 
-    // Find closing --- (must be on its own line, search AFTER the opening ---)
-    // This handles empty frontmatter (---\n---) correctly
-    let Some(end_offset) = content[after_opener..].find("\n---") else {
-        return content;
-    };
-    let yaml_end = after_opener + end_offset;
-
-    // Handle empty frontmatter (---\n---)
-    if yaml_end == after_opener || content[after_opener..yaml_end].trim().is_empty() {
-        return content;
-    }
-
-    let frontmatter = &content[after_opener..yaml_end];
-    let mut result = Vec::with_capacity(frontmatter.lines().count());
-
-    for line in frontmatter.lines() {
-        let trimmed = line.trim();
-
-        // Skip comments and empty lines
-        if trimmed.is_empty() || trimmed.starts_with('#') {
-            result.push(line.to_string());
-            continue;
-        }
-
-        // FIX #1: Skip continuation lines (indented) - explicit char checks instead of predicate
-        if line.starts_with(' ') || line.starts_with('\t') {
-            result.push(line.to_string());
-            continue;
-        }
-
-        // Match key: value pattern
-        let Some(colon_pos) = line.find(':') else {
-            result.push(line.to_string());
-            continue;
-        };
-
-        // Trim whitespace from key (handles "key : value" pattern)
-        let key = line[..colon_pos].trim();
-
-        // Validate key is identifier-like (starts with letter/underscore, contains only alphanumeric/underscore/hyphen)
-        if !key
-            .chars()
-            .next()
-            .is_some_and(|c| c.is_ascii_alphabetic() || c == '_')
-        {
-            result.push(line.to_string());
-            continue;
-        }
-        if !key
-            .chars()
-            .all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-')
-        {
-            result.push(line.to_string());
-            continue;
-        }
-
-        let value = line[colon_pos + 1..].trim();
-
-        // Skip if value is empty, already quoted, or uses block scalar
-        if value.is_empty()
-            || value == ">"
-            || value == "|"
-            || value == "|-"
-            || value == ">-"
-            || value.starts_with('"')
-            || value.starts_with('\'')
-        {
-            result.push(line.to_string());
-            continue;
-        }
-
-        // Skip YAML flow syntax (maps/arrays) - don't corrupt { } or [ ]
-        if value.starts_with('{') || value.starts_with('[') {
-            result.push(line.to_string());
-            continue;
-        }
-
-        // If value contains a colon, convert to block scalar with strip chomp
-        // Use |- instead of | to avoid trailing newlines
-        if value.contains(':') {
-            result.push(format!("{key}: |-"));
-            result.push(format!("  {value}"));
-            continue;
-        }
-
-        result.push(line.to_string());
-    }
-
-    let processed = result.join("\n");
-
-    // Replace frontmatter in original content
-    let mut output = String::with_capacity(content.len() + 32);
-    output.push_str(&content[..after_opener]);
-    output.push_str(&processed);
-    output.push_str(&content[yaml_end..]);
-    output
+    // Phase 2: Block scalar conversion (input is now LF-only)
+    convert_block_scalars(normalized)
 }
 
-/// Parses a markdown file with YAML frontmatter.
-///
-/// The file must start with `---` (at position 0, optionally after BOM),
-/// followed by YAML, followed by `---` on its own line.
-/// Content after the closing `---` is the markdown body (preserved exactly).
-///
-/// # Errors
-///
-/// Returns [`AgentConfigError::MissingFrontmatter`] if no valid frontmatter found.
-/// Returns [`AgentConfigError::InvalidYaml`] if YAML parsing fails.
-pub fn parse_frontmatter<T: DeserializeOwned>(
-    content: &str,
-    path: &Path,
-) -> AgentConfigResult<FrontmatterParseResult<T>> {
-    // FIX #3: Work with original content for body extraction, only normalize YAML slice
+/// Converts lines with unquoted colons in values to block scalar format.
+/// Assumes input uses LF line endings only.
+#[inline]
+fn convert_block_scalars(input: Cow<'_, str>) -> Cow<'_, str> {
+    // Fast path: check if any conversion is needed
+    let needs_conversion = input.lines().any(|line| block_scalar_parts(line).is_some());
 
-    // Frontmatter must start at position 0 (possibly after BOM)
-    let start = content.strip_prefix('\u{FEFF}').unwrap_or(content);
-    if !start.starts_with("---") {
-        return Err(AgentConfigError::MissingFrontmatter {
-            path: path.to_path_buf(),
-        });
+    if !needs_conversion {
+        return input;
     }
 
-    let has_bom = content.starts_with('\u{FEFF}');
-    let after_opener = if has_bom { 4 } else { 3 };
+    // Calculate output size: for each converted line, we add "|-\n  " (5 chars)
+    // minus ": " (2 chars) = net +3 chars per conversion
+    let conversion_count = input
+        .lines()
+        .filter(|l| block_scalar_parts(l).is_some())
+        .count();
+    let mut output = String::with_capacity(input.len() + conversion_count * 3);
+    let mut first = true;
 
-    // FIX #2: Find closing --- by searching for "\n---" AFTER the opening "---"
-    // This handles empty frontmatter (---\n---) because the search starts after "---"
-    // and finds the "\n---" that follows immediately
-    let Some(end_offset) = content[after_opener..].find("\n---") else {
-        return Err(AgentConfigError::MissingFrontmatter {
-            path: path.to_path_buf(),
-        });
-    };
-    let yaml_end = after_opener + end_offset;
+    for line in input.lines() {
+        if !first {
+            output.push('\n');
+        } else {
+            first = false;
+        }
 
-    // Skip the newline after opening --- to get yaml_start
-    let yaml_start = content[after_opener..]
-        .find('\n')
-        .map(|n| after_opener + n + 1)
-        .unwrap_or(after_opener);
+        if let Some((key, value)) = block_scalar_parts(line) {
+            output.push_str(key);
+            output.push_str(": |-\n  ");
+            output.push_str(value);
+        } else {
+            output.push_str(line);
+        }
+    }
 
-    // Extract YAML slice (may be empty for ---\n---)
-    let yaml_str = if yaml_start <= yaml_end {
-        &content[yaml_start..yaml_end]
-    } else {
-        ""
-    };
-
-    // Normalize YAML slice only for parsing (handles CRLF in frontmatter)
-    let yaml_normalized = yaml_str.replace("\r\n", "\n");
-
-    // Preprocess to handle colons in values
-    let yaml_preprocessed = if yaml_normalized.is_empty() {
-        yaml_normalized
-    } else {
-        // Build a fake frontmatter document for preprocessing, then extract result
-        let fake_doc = format!("---\n{}\n---\n", yaml_normalized);
-        let processed = preprocess_frontmatter(&fake_doc);
-        // Extract the YAML between the delimiters
-        processed
-            .strip_prefix("---\n")
-            .and_then(|s| s.strip_suffix("\n---\n"))
-            .unwrap_or(&yaml_normalized)
-            .to_string()
-    };
-
-    // Find start of body content in ORIGINAL: after closing "---" and its trailing newline
-    let closing_start = yaml_end + 1; // Position of \n before closing ---
-    let after_closing = closing_start + 3; // Position after closing ---
-
-    // FIX #3: Compute body start from ORIGINAL content, skip only the single newline after ---
-    let content_start = if content[after_closing..].starts_with("\r\n") {
-        after_closing + 2
-    } else if content[after_closing..].starts_with('\n') {
-        after_closing + 1
-    } else {
-        after_closing
-    };
-
-    let data: T =
-        serde_yaml::from_str(&yaml_preprocessed).map_err(|e| AgentConfigError::InvalidYaml {
-            path: path.to_path_buf(),
-            message: e.to_string(),
-        })?;
-
-    // FIX #3: Return body from ORIGINAL content (preserves CRLF if present)
-    let body = if content_start < content.len() {
-        content[content_start..].to_string()
-    } else {
-        String::new()
-    };
-
-    Ok(FrontmatterParseResult {
-        data,
-        content: body,
-    })
+    Cow::Owned(output)
 }
 
 #[cfg(test)]
@@ -286,59 +305,59 @@ mod tests {
 
     #[test]
     fn preprocess_handles_colons_in_value() {
-        let input = "---\nmodel: provider/model:tag\n---\nbody";
-        let output = preprocess_frontmatter(input);
+        let input = "model: provider/model:tag";
+        let output = preprocess_frontmatter_yaml(input);
         assert!(output.contains("model: |-"));
         assert!(output.contains("  provider/model:tag"));
     }
 
     #[test]
     fn preprocess_preserves_quoted_values() {
-        let input = "---\nmodel: \"provider/model:tag\"\n---\nbody";
-        let output = preprocess_frontmatter(input);
+        let input = "model: \"provider/model:tag\"";
+        let output = preprocess_frontmatter_yaml(input);
         assert!(output.contains("model: \"provider/model:tag\""));
     }
 
     #[test]
     fn preprocess_preserves_block_scalars() {
-        let input = "---\ndesc: |\n  multiline\n---\nbody";
-        let output = preprocess_frontmatter(input);
-        assert_eq!(input, output);
+        let input = "desc: |\n  multiline";
+        let output = preprocess_frontmatter_yaml(input);
+        assert_eq!(input, output.as_ref());
     }
 
     #[test]
     fn preprocess_skips_comments() {
-        let input = "---\n# comment: with:colon\nmode: subagent\n---\nbody";
-        let output = preprocess_frontmatter(input);
+        let input = "# comment: with:colon\nmode: subagent";
+        let output = preprocess_frontmatter_yaml(input);
         assert!(output.contains("# comment: with:colon"));
     }
 
     #[test]
     fn preprocess_skips_flow_mappings() {
-        let input = "---\ntask: { \"*\": \"deny\" }\n---\nbody";
-        let output = preprocess_frontmatter(input);
+        let input = "task: { \"*\": \"deny\" }";
+        let output = preprocess_frontmatter_yaml(input);
         assert!(output.contains("task: { \"*\": \"deny\" }"));
     }
 
     #[test]
     fn preprocess_skips_flow_arrays() {
-        let input = "---\nitems: [\"a:b\", \"c:d\"]\n---\nbody";
-        let output = preprocess_frontmatter(input);
+        let input = "items: [\"a:b\", \"c:d\"]";
+        let output = preprocess_frontmatter_yaml(input);
         assert!(output.contains("items: [\"a:b\", \"c:d\"]"));
     }
 
     #[test]
     fn preprocess_handles_key_with_whitespace_around_colon() {
-        let input = "---\nmodel : provider/model:tag\n---\nbody";
-        let output = preprocess_frontmatter(input);
+        let input = "model : provider/model:tag";
+        let output = preprocess_frontmatter_yaml(input);
         assert!(output.contains("model: |-"));
         assert!(output.contains("  provider/model:tag"));
     }
 
     #[test]
     fn preprocess_handles_crlf_line_endings() {
-        let input = "---\r\nmodel: provider/model:tag\r\n---\r\nbody";
-        let output = preprocess_frontmatter(input);
+        let input = "model: provider/model:tag\r\napi_url: http://localhost:8080";
+        let output = preprocess_frontmatter_yaml(input);
         assert!(output.contains("model: |-"));
         assert!(output.contains("  provider/model:tag"));
     }
@@ -346,8 +365,8 @@ mod tests {
     #[test]
     fn preprocess_skips_indented_lines() {
         // FIX #1: Indented lines should be skipped (continuation of previous value)
-        let input = "---\ndesc: |\n  line:with:colons\n---\nbody";
-        let output = preprocess_frontmatter(input);
+        let input = "desc: |\n  line:with:colons";
+        let output = preprocess_frontmatter_yaml(input);
         // Should NOT convert the indented line
         assert!(output.contains("  line:with:colons"));
         assert!(!output.contains("  line: |-")); // Should not have nested block scalar
@@ -360,17 +379,16 @@ mod tests {
             parse_frontmatter(input, Path::new("test.md")).unwrap();
 
         assert_eq!(result.data.description, Some("Test agent".to_string()));
-        // Body preserves leading blank line
-        assert_eq!(result.content, "\nPrompt body here.");
+        assert_eq!(result.content, "Prompt body here.");
     }
 
     #[test]
-    fn parse_preserves_body_whitespace() {
+    fn parse_trims_body_whitespace() {
         let input = "---\nmode: primary\n---\n\n  indented\n\ntrailing\n";
         let result: FrontmatterParseResult<RawFrontmatter> =
             parse_frontmatter(input, Path::new("test.md")).unwrap();
 
-        assert_eq!(result.content, "\n  indented\n\ntrailing\n");
+        assert_eq!(result.content, "indented\n\ntrailing");
     }
 
     #[test]
@@ -403,23 +421,23 @@ mod tests {
     }
 
     #[test]
-    fn parse_preserves_crlf_in_body() {
-        // FIX #3: Body should preserve CRLF line endings exactly
+    fn parse_trims_crlf_in_body() {
+        // FIX #3: Body should preserve CRLF line endings in content
         let input = "---\nmode: subagent\n---\nline1\r\nline2\r\n";
         let result: FrontmatterParseResult<RawFrontmatter> =
             parse_frontmatter(input, Path::new("test.md")).unwrap();
 
-        assert_eq!(result.content, "line1\r\nline2\r\n");
+        assert_eq!(result.content, "line1\r\nline2");
     }
 
     #[test]
-    fn parse_preserves_crlf_body_with_crlf_frontmatter() {
+    fn parse_trims_crlf_body_with_crlf_frontmatter() {
         // FIX #3: CRLF in frontmatter should not affect body preservation
         let input = "---\r\nmode: subagent\r\n---\r\nbody\r\nline2\r\n";
         let result: FrontmatterParseResult<RawFrontmatter> =
             parse_frontmatter(input, Path::new("test.md")).unwrap();
 
-        assert_eq!(result.content, "body\r\nline2\r\n");
+        assert_eq!(result.content, "body\r\nline2");
     }
 
     #[test]

@@ -20,6 +20,12 @@ indexmap = { version = "2.9", features = ["serde"] }
 # Error handling
 thiserror = "2.0"
 
+# Fast CRLF to LF conversion
+crlf-to-lf-inplace = "0.1"
+
+# Fast byte searching
+memchr = "2.7"
+
 # Directory scanning with gitignore support
 ignore = "0.4.25"
 
@@ -29,3 +35,8 @@ async-trait = "0.1"
 [dev-dependencies]
 tempfile = "3.24"
 tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
+criterion = "0.5"
+
+[[bench]]
+name = "frontmatter"
+harness = false
