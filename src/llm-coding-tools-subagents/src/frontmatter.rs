@@ -149,6 +149,22 @@ fn is_valid_key(key: &str) -> bool {
         .all(|byte| byte.is_ascii_alphanumeric() || *byte == b'_' || *byte == b'-')
 }
 
+/// Checks if a YAML line contains an unquoted colon in the value that needs
+/// block scalar conversion.
+///
+/// Returns `Some((key, value))` if the line should be converted to block scalar
+/// format, `None` if it's already safe for YAML parsing.
+///
+/// # Returns `None` (no conversion needed) when:
+///
+/// - Line is empty or a comment (`# ...`)
+/// - Line is indented (continuation of a block scalar)
+/// - No colon found (not a key-value pair)
+/// - Key is not a valid YAML identifier
+/// - Value is empty or already a block scalar indicator (`|`, `>`, `|-`, `>-`)
+/// - Value is quoted (`"..."` or `'...'`)
+/// - Value is a flow sequence (`[...]`) or mapping (`{...}`)
+/// - Value doesn't contain a colon (no ambiguity to fix)
 #[inline]
 fn block_scalar_parts(line: &str) -> Option<(&str, &str)> {
     let trimmed = line.trim();
