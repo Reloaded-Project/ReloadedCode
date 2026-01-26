@@ -168,7 +168,7 @@ pub fn grep_search<R: PathResolver>(
     }
 
     // Sort newest files first.
-    files.sort_by(|a, b| b.mtime.cmp(&a.mtime));
+    files.sort_by_key(|file| std::cmp::Reverse(file.mtime));
 
     let mut match_count = 0;
     let mut truncate_at = files.len();

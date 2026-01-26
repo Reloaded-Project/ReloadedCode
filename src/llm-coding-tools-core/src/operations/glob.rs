@@ -87,7 +87,7 @@ pub fn glob_files<R: PathResolver>(
         files_with_mtime.push((rel_path, mtime));
     }
 
-    files_with_mtime.sort_by(|a, b| b.1.cmp(&a.1));
+    files_with_mtime.sort_by_key(|entry| std::cmp::Reverse(entry.1));
 
     let truncated = files_with_mtime.len() > MAX_RESULTS;
 

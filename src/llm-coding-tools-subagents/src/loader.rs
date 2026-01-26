@@ -115,7 +115,7 @@ fn load_agent_file(path: &Path, name: String) -> AgentConfigResult<AgentConfig> 
         source: e,
     })?;
 
-    let result = parse_frontmatter::<RawFrontmatter>(&content, path)?;
+    let result = parse_frontmatter::<RawFrontmatter>(content, path)?;
 
     Ok(AgentConfig::from_raw(name, result.data, result.content))
 }

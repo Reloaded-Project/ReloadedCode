@@ -1359,7 +1359,6 @@ dependencies = [
  "crlf-to-lf-inplace",
  "ignore",
  "indexmap",
- "memchr",
  "serde",
  "serde_json",
  "serde_yaml",

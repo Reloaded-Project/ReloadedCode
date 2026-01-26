@@ -1,6 +1,8 @@
 //! Benchmarks for frontmatter parsing.
 
-use criterion::{black_box, criterion_group, criterion_main, BenchmarkId, Criterion, Throughput};
+use criterion::{
+    black_box, criterion_group, criterion_main, BatchSize, BenchmarkId, Criterion, Throughput,
+};
 use llm_coding_tools_subagents::parse_frontmatter;
 use std::path::Path;
 
@@ -16,6 +18,7 @@ fn load_fixture() -> String {
 fn benchmark_parse_frontmatter(c: &mut Criterion) {
     let real_lf = load_fixture();
     let real_crlf = real_lf.replace('\n', "\r\n");
+    let path = Path::new("test.md");
 
     let mut group = c.benchmark_group("parse_frontmatter");
     group.throughput(Throughput::Bytes(real_lf.len() as u64));
@@ -24,9 +27,16 @@ fn benchmark_parse_frontmatter(c: &mut Criterion) {
         BenchmarkId::new("real_agent", "lf"),
         &real_lf,
         |b, input| {
-            b.iter(|| {
-                parse_frontmatter::<serde_json::Value>(black_box(input), Path::new("test.md"))
-            })
+            b.iter_batched(
+                || input.clone(),
+                |input| {
+                    black_box(parse_frontmatter::<serde_json::Value>(
+                        black_box(input),
+                        path,
+                    ))
+                },
+                BatchSize::SmallInput,
+            )
         },
     );
 
@@ -34,9 +44,16 @@ fn benchmark_parse_frontmatter(c: &mut Criterion) {
         BenchmarkId::new("real_agent", "crlf"),
         &real_crlf,
         |b, input| {
-            b.iter(|| {
-                parse_frontmatter::<serde_json::Value>(black_box(input), Path::new("test.md"))
-            })
+            b.iter_batched(
+                || input.clone(),
+                |input| {
+                    black_box(parse_frontmatter::<serde_json::Value>(
+                        black_box(input),
+                        path,
+                    ))
+                },
+                BatchSize::SmallInput,
+            )
         },
     );
 

@@ -23,8 +23,6 @@ thiserror = "2.0"
 # Fast CRLF to LF conversion
 crlf-to-lf-inplace = "0.1"
 
-# Fast byte searching
-memchr = "2.7"
 
 # Directory scanning with gitignore support
 ignore = "0.4.25"
