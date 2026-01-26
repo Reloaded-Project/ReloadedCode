@@ -209,7 +209,7 @@ dependencies = [
  "num-traits",
  "serde",
  "wasm-bindgen",
- "windows-link 0.2.1",
+ "windows-link",
 ]
 
 [[package]]
@@ -747,9 +747,9 @@ dependencies = [
 
 [[package]]
 name = "html-to-markdown-rs"
-version = "2.23.1"
+version = "2.23.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e1f4d6781ac8dd203853803d27054ca4153c7fd0f3956cb7fc95dc06f42a1c46"
+checksum = "ffbf49450676163bdf69fac2acf72674fcf2d2aaf690aa247368c567cc9afb2a"
 dependencies = [
  "astral-tl",
  "base64",
@@ -897,7 +897,7 @@ dependencies = [
  "js-sys",
  "log",
  "wasm-bindgen",
- "windows-core 0.62.2",
+ "windows-core",
 ]
 
 [[package]]
@@ -1395,7 +1395,7 @@ dependencies = [
  "libc",
  "redox_syscall",
  "smallvec",
- "windows-link 0.2.1",
+ "windows-link",
 ]
 
 [[package]]
@@ -1510,9 +1510,9 @@ dependencies = [
 
 [[package]]
 name = "process-wrap"
-version = "9.0.0"
+version = "9.0.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5e5fd83ab7fa55fd06f5e665e3fc52b8bca451c0486b8ea60ad649cd1c10a5da"
+checksum = "fd1395947e69c07400ef4d43db0051d6f773c21f647ad8b97382fc01f0204c60"
 dependencies = [
  "futures",
  "indexmap",
@@ -2084,9 +2084,9 @@ dependencies = [
 
 [[package]]
 name = "serdes-ai"
-version = "0.1.1"
+version = "0.1.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "529a55f25c8f40f691c1ccdbbd7e6e0f7c610365b0848a4affcdc5444cbbb9aa"
+checksum = "1b41e02386165cdb8fec83d80e7fb2e25bbca81d8b06dd6327a3e088ef50b82c"
 dependencies = [
  "futures",
  "serdes-ai-agent",
@@ -2105,9 +2105,9 @@ dependencies = [
 
 [[package]]
 name = "serdes-ai-agent"
-version = "0.1.1"
+version = "0.1.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "eb86956517388c219f8bdcd2d06a26323bcd209aa62e975986747f48d0764383"
+checksum = "ab26921f44708fefe66f55d09a95d422ac6f816699fcdde2aca849ae511eb613"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -2127,9 +2127,9 @@ dependencies = [
 
 [[package]]
 name = "serdes-ai-core"
-version = "0.1.1"
+version = "0.1.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0edca768fae68ebc176484581627d6138abeb68df0bd5643d0b858a54898986e"
+checksum = "e559e47c870ebbf11754414955c82f66881ae0ea407b2ad8645d3f08095b43bf"
 dependencies = [
  "anyhow",
  "base64",
@@ -2147,9 +2147,9 @@ dependencies = [
 
 [[package]]
 name = "serdes-ai-macros"
-version = "0.1.1"
+version = "0.1.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0866b17dfd0172f3d0f58126e6ad2572edff6be55fbce74d3a96e5d9bb150557"
+checksum = "571581d9db1b867d63869a8e3d0b4385bdb298e2fb00b858239e9e62a9121ea4"
 dependencies = [
  "darling",
  "proc-macro2",
@@ -2159,9 +2159,9 @@ dependencies = [
 
 [[package]]
 name = "serdes-ai-models"
-version = "0.1.1"
+version = "0.1.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "43e45f57f5d00cdcc56a4c455bdd29180dc79989321f88d6ad1a7872df8a6c85"
+checksum = "868bf595256250aafb77d682c510d7ff020917e0029c9e1049335f97b0f1ea23"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -2186,9 +2186,9 @@ dependencies = [
 
 [[package]]
 name = "serdes-ai-output"
-version = "0.1.1"
+version = "0.1.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d9a7840de58a2c7a353f01efa0001b97d7d771df9d8cf9dac16d726bda880cce"
+checksum = "e92f2be0e0bfa906aa659a87577df19c3c21b03789441b60ab72358af59afcd8"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -2207,9 +2207,9 @@ dependencies = [
 
 [[package]]
 name = "serdes-ai-providers"
-version = "0.1.1"
+version = "0.1.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d8066463375ef9f3d96808cf9c2d9d0889090d99f797150b0b3ea5dd16fb3b6b"
+checksum = "dab3153f7bb7e887c69e27d917b5026cd808de051d919044c8082351580d3a38"
 dependencies = [
  "async-trait",
  "base64",
@@ -2229,9 +2229,9 @@ dependencies = [
 
 [[package]]
 name = "serdes-ai-retries"
-version = "0.1.1"
+version = "0.1.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "42080e96dd393ab010836de92d19b3e28e023e788d0b2ebbd66fb2774b283111"
+checksum = "bd041889ed575bec15cf2a41981301c426456314c182344a65fc283cb38edb5d"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -2245,9 +2245,9 @@ dependencies = [
 
 [[package]]
 name = "serdes-ai-streaming"
-version = "0.1.1"
+version = "0.1.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e372252366e5b85da53ed1a3106ea4c1a4216f1dd39ebaaf1a7f04ddced3842b"
+checksum = "db4e0ba450710c7a9872aeb3f06188ae1862a98ac79d2c07dd5328d9cd9d45bf"
 dependencies = [
  "async-trait",
  "bytes",
@@ -2265,9 +2265,9 @@ dependencies = [
 
 [[package]]
 name = "serdes-ai-tools"
-version = "0.1.1"
+version = "0.1.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9acc8f423aaa6e83ff6bb2ecac6c51651e9e82a7f38a5e6acb929e68eaa13b55"
+checksum = "eb92d88d92c800774fbcbc6301eef5924113c7bb72fc5b48ad39b16bee5dbbc5"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -2285,9 +2285,9 @@ dependencies = [
 
 [[package]]
 name = "serdes-ai-toolsets"
-version = "0.1.1"
+version = "0.1.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a0749ffa1aad64623e00d00217dcf72aa95853d52159a4bfe89927c9308d7c67"
+checksum = "31e42a66b1cffefb9fd444ad46c4b5e04f5b0055dc7fed589d41d86ecce35d93"
 dependencies = [
  "async-trait",
  "indexmap",
@@ -2941,37 +2941,23 @@ dependencies = [
 
 [[package]]
 name = "windows"
-version = "0.61.3"
+version = "0.62.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9babd3a767a4c1aef6900409f85f5d53ce2544ccdfaa86dad48c91782c6d6893"
+checksum = "527fadee13e0c05939a6a05d5bd6eec6cd2e3dbd648b9f8e447c6518133d8580"
 dependencies = [
  "windows-collections",
- "windows-core 0.61.2",
+ "windows-core",
  "windows-future",
- "windows-link 0.1.3",
  "windows-numerics",
 ]
 
 [[package]]
 name = "windows-collections"
-version = "0.2.0"
+version = "0.3.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3beeceb5e5cfd9eb1d76b381630e82c4241ccd0d27f1a39ed41b2760b255c5e8"
+checksum = "23b2d95af1a8a14a3c7367e1ed4fc9c20e0a26e79551b1454d72583c97cc6610"
 dependencies = [
- "windows-core 0.61.2",
-]
-
-[[package]]
-name = "windows-core"
-version = "0.61.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c0fdd3ddb90610c7638aa2b3a3ab2904fb9e5cdbecc643ddb3647212781c4ae3"
-dependencies = [
- "windows-implement",
- "windows-interface",
- "windows-link 0.1.3",
- "windows-result 0.3.4",
- "windows-strings 0.4.2",
+ "windows-core",
 ]
 
 [[package]]
@@ -2982,19 +2968,19 @@ checksum = "b8e83a14d34d0623b51dce9581199302a221863196a1dde71a7663a4c2be9deb"
 dependencies = [
  "windows-implement",
  "windows-interface",
- "windows-link 0.2.1",
- "windows-result 0.4.1",
- "windows-strings 0.5.1",
+ "windows-link",
+ "windows-result",
+ "windows-strings",
 ]
 
 [[package]]
 name = "windows-future"
-version = "0.2.1"
+version = "0.3.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "fc6a41e98427b19fe4b73c550f060b59fa592d7d686537eebf9385621bfbad8e"
+checksum = "e1d6f90251fe18a279739e78025bd6ddc52a7e22f921070ccdc67dde84c605cb"
 dependencies = [
- "windows-core 0.61.2",
- "windows-link 0.1.3",
+ "windows-core",
+ "windows-link",
  "windows-threading",
 ]
 
@@ -3022,24 +3008,18 @@ dependencies = [
 
 [[package]]
 name = "windows-link"
-version = "0.1.3"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5e6ad25900d524eaabdbbb96d20b4311e1e7ae1699af4fb28c17ae66c80d798a"
-
-[[package]]
-name = "windows-link"
 version = "0.2.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f0805222e57f7521d6a62e36fa9163bc891acd422f971defe97d64e70d0a4fe5"
 
 [[package]]
 name = "windows-numerics"
-version = "0.2.0"
+version = "0.3.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9150af68066c4c5c07ddc0ce30421554771e528bde427614c61038bc2c92c2b1"
+checksum = "6e2e40844ac143cdb44aead537bbf727de9b044e107a0f1220392177d15b0f26"
 dependencies = [
- "windows-core 0.61.2",
- "windows-link 0.1.3",
+ "windows-core",
+ "windows-link",
 ]
 
 [[package]]
@@ -3048,18 +3028,9 @@ version = "0.6.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "02752bf7fbdcce7f2a27a742f798510f3e5ad88dbe84871e5168e2120c3d5720"
 dependencies = [
- "windows-link 0.2.1",
- "windows-result 0.4.1",
- "windows-strings 0.5.1",
-]
-
-[[package]]
-name = "windows-result"
-version = "0.3.4"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "56f42bd332cc6c8eac5af113fc0c1fd6a8fd2aa08a0119358686e5160d0586c6"
-dependencies = [
- "windows-link 0.1.3",
+ "windows-link",
+ "windows-result",
+ "windows-strings",
 ]
 
 [[package]]
@@ -3068,16 +3039,7 @@ version = "0.4.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7781fa89eaf60850ac3d2da7af8e5242a5ea78d1a11c49bf2910bb5a73853eb5"
 dependencies = [
- "windows-link 0.2.1",
-]
-
-[[package]]
-name = "windows-strings"
-version = "0.4.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "56e6c93f3a0c3b36176cb1327a4958a0353d5d166c2a35cb268ace15e91d3b57"
-dependencies = [
- "windows-link 0.1.3",
+ "windows-link",
 ]
 
 [[package]]
@@ -3086,7 +3048,7 @@ version = "0.5.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7837d08f69c77cf6b07689544538e017c1bfcf57e34b4c0ff58e6c2cd3b37091"
 dependencies = [
- "windows-link 0.2.1",
+ "windows-link",
 ]
 
 [[package]]
@@ -3122,7 +3084,7 @@ version = "0.61.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ae137229bcbd6cdf0f7b80a31df61766145077ddf49416a728b02cb3921ff3fc"
 dependencies = [
- "windows-link 0.2.1",
+ "windows-link",
 ]
 
 [[package]]
@@ -3162,7 +3124,7 @@ version = "0.53.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "4945f9f551b88e0d65f3db0bc25c33b8acea4d9e41163edf90dcd0b19f9069f3"
 dependencies = [
- "windows-link 0.2.1",
+ "windows-link",
  "windows_aarch64_gnullvm 0.53.1",
  "windows_aarch64_msvc 0.53.1",
  "windows_i686_gnu 0.53.1",
@@ -3175,11 +3137,11 @@ dependencies = [
 
 [[package]]
 name = "windows-threading"
-version = "0.1.0"
+version = "0.2.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b66463ad2e0ea3bbf808b7f1d371311c80e115c0b71d60efc142cafbcfb057a6"
+checksum = "3949bd5b99cafdf1c7ca86b43ca564028dfe27d66958f2470940f73d86d75b37"
 dependencies = [
- "windows-link 0.1.3",
+ "windows-link",
 ]
 
 [[package]]
