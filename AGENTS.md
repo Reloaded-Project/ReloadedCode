@@ -1,0 +1,1 @@
+Read @src/AGENTS.md
