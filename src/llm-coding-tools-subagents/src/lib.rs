@@ -48,7 +48,7 @@ mod task;
 pub use config::{AgentConfig, AgentMode, PermissionAction, PermissionRule};
 pub use error::AgentConfigError;
 pub use frontmatter::{parse_frontmatter, FrontmatterParseResult};
-pub use loader::load_agents;
+pub use loader::{load_agents, load_agents_registry, AgentLoader};
 pub use permission::{Rule, Ruleset};
 pub use registry::SubagentRegistry;
 pub use task::{TaskError, TaskInput, TaskOutput, TaskRunner, TaskToolCore};

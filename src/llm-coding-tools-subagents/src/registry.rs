@@ -148,6 +148,16 @@ impl SubagentRegistry {
     pub fn names(&self) -> impl Iterator<Item = &String> {
         self.agents.keys()
     }
+
+    /// Reserves capacity for additional agent entries.
+    pub(crate) fn reserve(&mut self, additional: usize) {
+        self.agents.reserve(additional);
+    }
+
+    /// Converts the registry into a map of agent configurations.
+    pub(crate) fn into_map(self) -> HashMap<String, AgentConfig> {
+        self.agents
+    }
 }
 
 impl FromIterator<AgentConfig> for SubagentRegistry {
