@@ -264,7 +264,8 @@ fn wildcard_match_impl(input: &[u8], pattern: &[u8]) -> bool {
             match_idx = i;
             p += 1;
         } else if let Some(star) = star_idx {
-            // Backtrack: try matching one more character with star
+            // Backtrack: star matches ≥0 chars. Let star consume one more
+            // character and retry matching the rest of the pattern from there.
             p = star + 1;
             match_idx += 1;
             i = match_idx;
