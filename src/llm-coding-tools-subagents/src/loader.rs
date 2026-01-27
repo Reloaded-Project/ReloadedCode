@@ -531,4 +531,52 @@ mod tests {
         assert!(registry.get("existing").is_some());
         assert!(registry.get("new").is_some());
     }
+
+    #[test]
+    fn agent_loader_loads_explicit_file_without_agent_prefix() {
+        let dir = TempDir::new().unwrap();
+        create_agent_file(
+            dir.path(),
+            "custom/explicit.md",
+            "---\nmode: subagent\ndescription: Explicit\n---\nBody",
+        );
+
+        let mut loader = AgentLoader::new();
+        loader.add_file(dir.path().join("custom/explicit.md"));
+
+        let registry = loader.load().unwrap();
+        let agent = registry.get("explicit").unwrap();
+        assert_eq!(agent.description, "Explicit");
+    }
+
+    #[test]
+    fn agent_loader_scans_directories_with_agent_patterns() {
+        let dir = TempDir::new().unwrap();
+        create_agent_file(dir.path(), "agent/one.md", "---\nmode: subagent\n---\nOne");
+        create_agent_file(
+            dir.path(),
+            "agents/nested/two.md",
+            "---\nmode: primary\n---\nTwo",
+        );
+
+        let mut loader = AgentLoader::new();
+        loader.add_directory(dir.path());
+
+        let registry = loader.load().unwrap();
+        assert!(registry.get("one").is_some());
+        assert!(registry.get("nested/two").is_some());
+    }
+
+    #[test]
+    fn agent_loader_overrides_existing_registry_entries() {
+        // Later insertions (from the loader) override earlier registry entries with the same name.
+        let mut registry = SubagentRegistry::new();
+        registry.insert(make_agent("override", "old"));
+
+        let mut loader = AgentLoader::new();
+        loader.add_config(make_agent("override", "new"));
+        loader.load_into_registry(&mut registry).unwrap();
+
+        assert_eq!(registry.get("override").unwrap().description, "new");
+    }
 }

@@ -6,18 +6,25 @@
 //! - Directory scanning for agent configs in `agent/**/*.md` and `agents/**/*.md`
 //! - Permission evaluation with wildcard pattern matching (last-match-wins)
 //! - Subagent registry with mode filtering and permission-aware access control
+//! - Flexible agent loading via [`AgentLoader`] for composing sources
 //!
 //! # Example
 //!
 //! ```no_run
-//! use llm_coding_tools_subagents::{load_agents, AgentConfig};
+//! use llm_coding_tools_subagents::{AgentLoader, SubagentRegistry};
 //! use std::path::Path;
 //!
-//! let agents = load_agents(&[Path::new("~/.opencode")]).unwrap();
-//! for (name, config) in &agents {
-//!     println!("{}: {}", name, config.description);
+//! let mut loader = AgentLoader::new();
+//! loader.add_directory(Path::new("/etc/opencode"));
+//! loader.add_file(Path::new("/path/to/custom_agent.md"));
+//!
+//! let registry = loader.load().unwrap();
+//! if let Some(agent) = registry.get("custom_agent") {
+//!     println!("{}", agent.description);
 //! }
 //! ```
+//!
+//! [`load_agents`] remains a convenience for directory-only scans.
 //!
 //! # Permission System
 //!
