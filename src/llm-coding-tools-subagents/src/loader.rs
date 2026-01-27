@@ -8,33 +8,6 @@ use indexmap::IndexMap;
 use std::fs;
 use std::path::Path;
 
-/// Checks if a relative path matches `agent/**/*.md` or `agents/**/*.md`.
-fn matches_agent_pattern(rel_path: &str) -> bool {
-    let is_agent_dir = rel_path.starts_with("agent/") || rel_path.starts_with("agents/");
-    let is_md_file = rel_path.ends_with(".md");
-    is_agent_dir && is_md_file
-}
-
-/// Derives agent name from relative path.
-///
-/// FIX #4: Use rel_path (relative to scan root) instead of absolute path.
-/// Strips leading `agent/` or `agents/` segment and `.md` extension.
-///
-/// Examples:
-/// - `agent/test.md` -> `"test"`
-/// - `agents/nested/deep.md` -> `"nested/deep"`
-fn derive_agent_name_from_rel(rel_path: &str) -> String {
-    let without_prefix = rel_path
-        .strip_prefix("agent/")
-        .or_else(|| rel_path.strip_prefix("agents/"))
-        .unwrap_or(rel_path);
-
-    without_prefix
-        .strip_suffix(".md")
-        .unwrap_or(without_prefix)
-        .to_string()
-}
-
 /// Loads all agent configurations from the given directories.
 ///
 /// Scans each directory for files matching `agent/**/*.md` or `agents/**/*.md`,
@@ -118,6 +91,33 @@ fn load_agent_file(path: &Path, name: String) -> AgentConfigResult<AgentConfig> 
     let result = parse_frontmatter::<RawFrontmatter>(content, path)?;
 
     Ok(AgentConfig::from_raw(name, result.data, result.content))
+}
+
+/// Checks if a relative path matches `agent/**/*.md` or `agents/**/*.md`.
+fn matches_agent_pattern(rel_path: &str) -> bool {
+    let is_agent_dir = rel_path.starts_with("agent/") || rel_path.starts_with("agents/");
+    let is_md_file = rel_path.ends_with(".md");
+    is_agent_dir && is_md_file
+}
+
+/// Derives agent name from relative path.
+///
+/// FIX #4: Use rel_path (relative to scan root) instead of absolute path.
+/// Strips leading `agent/` or `agents/` segment and `.md` extension.
+///
+/// Examples:
+/// - `agent/test.md` -> `"test"`
+/// - `agents/nested/deep.md` -> `"nested/deep"`
+fn derive_agent_name_from_rel(rel_path: &str) -> String {
+    let without_prefix = rel_path
+        .strip_prefix("agent/")
+        .or_else(|| rel_path.strip_prefix("agents/"))
+        .unwrap_or(rel_path);
+
+    without_prefix
+        .strip_suffix(".md")
+        .unwrap_or(without_prefix)
+        .to_string()
 }
 
 #[cfg(test)]
