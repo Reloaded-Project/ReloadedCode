@@ -5,7 +5,7 @@
 
 use crate::config::{AgentConfig, AgentMode};
 use crate::permission::Ruleset;
-use indexmap::IndexMap;
+use std::collections::HashMap;
 
 /// Registry of agent configurations with permission-aware filtering.
 ///
@@ -13,7 +13,7 @@ use indexmap::IndexMap;
 /// based on mode and permission rules.
 #[derive(Debug, Clone, Default)]
 pub struct SubagentRegistry {
-    agents: IndexMap<String, AgentConfig>,
+    agents: HashMap<String, AgentConfig>,
 }
 
 impl SubagentRegistry {
@@ -21,13 +21,13 @@ impl SubagentRegistry {
     #[inline]
     pub fn new() -> Self {
         Self {
-            agents: IndexMap::new(),
+            agents: HashMap::new(),
         }
     }
 
     /// Creates a registry from a map of agent configurations.
     #[inline]
-    pub fn from_map(agents: IndexMap<String, AgentConfig>) -> Self {
+    pub fn from_map(agents: HashMap<String, AgentConfig>) -> Self {
         Self { agents }
     }
 
@@ -152,7 +152,7 @@ impl SubagentRegistry {
 
 impl FromIterator<AgentConfig> for SubagentRegistry {
     fn from_iter<I: IntoIterator<Item = AgentConfig>>(iter: I) -> Self {
-        let agents: IndexMap<String, AgentConfig> = iter
+        let agents: HashMap<String, AgentConfig> = iter
             .into_iter()
             .map(|config| (config.name.clone(), config))
             .collect();
@@ -165,6 +165,7 @@ mod tests {
     use super::*;
     use crate::config::PermissionAction;
     use crate::permission::Rule;
+    use indexmap::IndexMap;
 
     fn make_agent(name: &str, mode: AgentMode) -> AgentConfig {
         AgentConfig {
@@ -176,7 +177,7 @@ mod tests {
             temperature: None,
             top_p: None,
             permission: IndexMap::new(),
-            options: IndexMap::new(),
+            options: HashMap::new(),
             prompt: String::new(),
         }
     }
@@ -300,7 +301,7 @@ mod tests {
 
     #[test]
     fn registry_from_map() {
-        let mut map = IndexMap::new();
+        let mut map = HashMap::new();
         map.insert("test".to_string(), make_agent("test", AgentMode::Subagent));
 
         let registry = SubagentRegistry::from_map(map);

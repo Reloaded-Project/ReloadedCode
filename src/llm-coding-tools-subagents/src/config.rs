@@ -2,6 +2,7 @@
 
 use indexmap::IndexMap;
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 
 /// Agent execution mode.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
@@ -61,7 +62,7 @@ pub(crate) struct RawFrontmatter {
     #[serde(default)]
     pub permission: IndexMap<String, PermissionRule>,
     #[serde(default)]
-    pub options: IndexMap<String, serde_json::Value>,
+    pub options: HashMap<String, serde_json::Value>,
 }
 
 /// Agent configuration loaded from a markdown file.
@@ -92,7 +93,7 @@ pub struct AgentConfig {
     pub permission: IndexMap<String, PermissionRule>,
     /// Arbitrary extra options.
     #[serde(default)]
-    pub options: IndexMap<String, serde_json::Value>,
+    pub options: HashMap<String, serde_json::Value>,
     /// Prompt body (markdown content after frontmatter, preserved exactly).
     #[serde(skip)]
     pub prompt: String,

@@ -4,7 +4,7 @@ use crate::config::{AgentConfig, RawFrontmatter};
 use crate::error::{AgentConfigError, AgentConfigResult};
 use crate::frontmatter::parse_frontmatter;
 use ignore::WalkBuilder;
-use indexmap::IndexMap;
+use std::collections::HashMap;
 use std::fs;
 use std::path::Path;
 
@@ -22,8 +22,8 @@ use std::path::Path;
 ///
 /// Returns the first error encountered when parsing agent files.
 /// Files that fail to parse will stop the loading process.
-pub fn load_agents(directories: &[&Path]) -> AgentConfigResult<IndexMap<String, AgentConfig>> {
-    let mut agents = IndexMap::new();
+pub fn load_agents(directories: &[&Path]) -> AgentConfigResult<HashMap<String, AgentConfig>> {
+    let mut agents = HashMap::new();
 
     for dir in directories {
         if !dir.is_dir() {
