@@ -1,7 +1,7 @@
 //! Benchmarks for agent parsing.
 
 use criterion::{black_box, criterion_group, criterion_main, BenchmarkId, Criterion, Throughput};
-use llm_coding_tools_subagents::AgentLoader;
+use llm_coding_tools_subagents::{AgentLoader, SubagentRegistry};
 
 /// Loads a real agent fixture file at runtime.
 fn load_fixture() -> String {
@@ -25,9 +25,12 @@ fn benchmark_parse_frontmatter(c: &mut Criterion) {
         |b, input| {
             b.iter(|| {
                 black_box({
-                    let mut loader = AgentLoader::new();
-                    loader.add_from_str(black_box(input), "benchmark");
-                    loader.load()
+                    let loader = AgentLoader::new();
+                    let mut registry = SubagentRegistry::new();
+                    loader
+                        .add_from_str(&mut registry, black_box(input), "benchmark")
+                        .unwrap();
+                    registry.len()
                 })
             })
         },
@@ -39,9 +42,12 @@ fn benchmark_parse_frontmatter(c: &mut Criterion) {
         |b, input| {
             b.iter(|| {
                 black_box({
-                    let mut loader = AgentLoader::new();
-                    loader.add_from_str(black_box(input), "benchmark");
-                    loader.load()
+                    let loader = AgentLoader::new();
+                    let mut registry = SubagentRegistry::new();
+                    loader
+                        .add_from_str(&mut registry, black_box(input), "benchmark")
+                        .unwrap();
+                    registry.len()
                 })
             })
         },

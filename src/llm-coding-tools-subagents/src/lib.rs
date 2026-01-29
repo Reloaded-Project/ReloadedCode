@@ -14,13 +14,10 @@
 //! use std::path::Path;
 //!
 //! let mut loader = AgentLoader::new();
-//! loader.add_directory(Path::new("/etc/opencode"));
-//! loader.add_file(Path::new("/path/to/custom_agent.md"));
-//!
-//! let registry = loader.load().unwrap();
-//! if let Some(agent) = registry.get("custom_agent") {
-//!     println!("{}", agent.description);
-//! }
+//! let mut registry = SubagentRegistry::new();
+//! loader.add_directory(&mut registry, Path::new("/etc/opencode"))?;
+//! loader.add_file(&mut registry, Path::new("/path/to/custom_agent.md"))?;
+//! # Ok::<(), llm_coding_tools_subagents::AgentLoadError>(())
 //! ```
 //!
 //! # Permission System

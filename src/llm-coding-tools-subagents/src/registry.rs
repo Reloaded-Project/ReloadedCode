@@ -148,11 +148,6 @@ impl SubagentRegistry {
     pub fn names(&self) -> impl Iterator<Item = &String> {
         self.agents.keys()
     }
-
-    /// Reserves capacity for additional agent entries.
-    pub(crate) fn reserve(&mut self, additional: usize) {
-        self.agents.reserve(additional);
-    }
 }
 
 impl FromIterator<AgentConfig> for SubagentRegistry {

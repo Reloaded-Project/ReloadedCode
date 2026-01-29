@@ -8,90 +8,123 @@ use ignore::WalkBuilder;
 use std::fs;
 use std::path::{Path, PathBuf};
 
-/// Builder for loading agent configs from files, directories, and in-memory configs into a [`SubagentRegistry`].
+/// Stateless loader for parsing and inserting agent configs into a [`SubagentRegistry`].
 ///
 /// [`AgentLoader`] provides a flexible way to assemble a [`SubagentRegistry`] from multiple sources:
 /// - Directories (scanned for `agent/**/*.md` and `agents/**/*.md`)
 /// - Individual files (names derived from file names, with optional override)
 /// - In-memory [`AgentConfig`] entries
 ///
-/// Later sources override earlier entries with the same name.
+/// Later insertions override earlier entries with the same name.
 ///
 /// # Example
 ///
 /// ```no_run
-/// use llm_coding_tools_subagents::AgentLoader;
+/// use llm_coding_tools_subagents::{AgentLoader, SubagentRegistry};
 /// use std::path::Path;
 ///
 /// let mut loader = AgentLoader::new();
-/// loader.add_directory(Path::new("~/.opencode"));
-/// loader.add_file(Path::new("/path/to/custom_agent.md"));
-///
-/// let registry = loader.load().unwrap();
+/// let mut registry = SubagentRegistry::new();
+/// loader.add_directory(&mut registry, Path::new("~/.opencode"))?;
+/// loader.add_file(&mut registry, Path::new("/path/to/custom_agent.md"))?;
+/// # Ok::<(), llm_coding_tools_subagents::AgentLoadError>(())
 /// ```
-#[derive(Debug, Clone, Default)]
-pub struct AgentLoader {
-    sources: Vec<AgentSource>,
-}
-
-/// Internal source enum to preserve insertion order and override semantics.
-#[derive(Debug, Clone)]
-enum AgentSource {
-    Directory(PathBuf),
-    File { path: PathBuf, name: Option<String> },
-    Config(Box<AgentConfig>),
-}
+#[derive(Debug, Clone, Copy, Default)]
+pub struct AgentLoader;
 
 impl AgentLoader {
-    /// Creates an empty loader.
+    /// Creates a new stateless loader.
     pub fn new() -> Self {
-        Self {
-            sources: Vec::new(),
+        Self
+    }
+
+    /// Adds all agents from a directory to the registry.
+    ///
+    /// # Arguments
+    ///
+    /// * `registry` - The registry to insert agents into
+    /// * `directory` - Root directory to scan for `agent/**/*.md` and `agents/**/*.md`
+    pub fn add_directory(
+        &self,
+        registry: &mut SubagentRegistry,
+        directory: impl Into<PathBuf>,
+    ) -> AgentLoadResult<()> {
+        let dir = directory.into();
+        load_directory_into_registry(registry, &dir)
+    }
+
+    /// Adds a single agent file (name derived from file name) to the registry.
+    ///
+    /// # Arguments
+    ///
+    /// * `registry` - The registry to insert the agent into
+    /// * `path` - Path to a markdown file with YAML frontmatter
+    pub fn add_file(
+        &self,
+        registry: &mut SubagentRegistry,
+        path: impl Into<PathBuf>,
+    ) -> AgentLoadResult<()> {
+        let path = path.into();
+        let derived_name = path
+            .file_stem()
+            .map(|stem| stem.to_string_lossy().into_owned())
+            .unwrap_or_default();
+        if derived_name.is_empty() {
+            return Err(AgentLoadError::SchemaValidation {
+                path: path.to_path_buf(),
+                message: "agent file name is empty".to_string(),
+            });
         }
+        let config = load_agent_file(&path, derived_name)?;
+        registry.insert(config);
+        Ok(())
     }
 
-    /// Creates a loader with preallocated capacity.
-    pub fn with_capacity(capacity: usize) -> Self {
-        Self {
-            sources: Vec::with_capacity(capacity),
-        }
-    }
-
-    /// Adds a directory to scan for `agent/**/*.md` or `agents/**/*.md`.
-    pub fn add_directory(&mut self, directory: impl Into<PathBuf>) -> &mut Self {
-        self.sources.push(AgentSource::Directory(directory.into()));
-        self
-    }
-
-    /// Adds a single agent file (name derived from file name).
-    pub fn add_file(&mut self, path: impl Into<PathBuf>) -> &mut Self {
-        self.sources.push(AgentSource::File {
-            path: path.into(),
-            name: None,
-        });
-        self
-    }
-
-    /// Adds a single agent file with an explicit name override.
+    /// Adds a single agent file with an explicit name override to the registry.
+    ///
+    /// The explicit name always overrides any frontmatter `name` field.
+    ///
+    /// # Arguments
+    ///
+    /// * `registry` - The registry to insert the agent into
+    /// * `path` - Path to a markdown file with YAML frontmatter
+    /// * `name` - Explicit agent name to use
     pub fn add_file_named(
-        &mut self,
+        &self,
+        registry: &mut SubagentRegistry,
         path: impl Into<PathBuf>,
         name: impl Into<String>,
-    ) -> &mut Self {
-        self.sources.push(AgentSource::File {
-            path: path.into(),
-            name: Some(name.into()),
-        });
-        self
+    ) -> AgentLoadResult<()> {
+        let path = path.into();
+        let override_name = name.into();
+        if override_name.is_empty() {
+            return Err(AgentLoadError::SchemaValidation {
+                path: path.to_path_buf(),
+                message: "agent name is empty".to_string(),
+            });
+        }
+        let mut config = load_agent_file(&path, String::new())?;
+        config.name = override_name;
+        registry.insert(config);
+        Ok(())
     }
 
-    /// Adds an in-memory [`AgentConfig`].
-    pub fn add_config(&mut self, config: AgentConfig) -> &mut Self {
-        self.sources.push(AgentSource::Config(Box::new(config)));
-        self
+    /// Adds an in-memory [`AgentConfig`] to the registry.
+    ///
+    /// # Arguments
+    ///
+    /// * `registry` - The registry to insert the agent into
+    /// * `config` - Fully constructed agent configuration
+    pub fn add_config(
+        &self,
+        registry: &mut SubagentRegistry,
+        config: AgentConfig,
+    ) -> AgentLoadResult<()> {
+        registry.insert(config);
+        Ok(())
     }
 
-    /// Adds an agent configuration from a raw markdown string.
+    /// Adds an agent configuration from a raw markdown string to the registry.
     ///
     /// The string should contain YAML frontmatter delimited by `---` followed
     /// by the prompt body. The agent name is derived from the `name` field
@@ -99,26 +132,21 @@ impl AgentLoader {
     ///
     /// # Arguments
     ///
+    /// * `registry` - The registry to insert the agent into
     /// * `markdown` - Raw markdown string with YAML frontmatter
     /// * `default_name` - Agent name to use if not specified in frontmatter
     pub fn add_from_str(
-        &mut self,
+        &self,
+        registry: &mut SubagentRegistry,
         markdown: impl Into<String>,
         default_name: impl Into<String>,
-    ) -> &mut Self {
+    ) -> AgentLoadResult<()> {
         let content = markdown.into();
         let name = default_name.into();
-
         match parse_agent::<RawFrontmatter>(content) {
             Ok(result) => {
-                let frontmatter_name = result.data.name.clone();
-                let mut config = AgentConfig::from_raw(name, result.data, result.content);
-
-                if let Some(name_override) = frontmatter_name {
-                    config.name = name_override;
-                }
-
-                self.sources.push(AgentSource::Config(Box::new(config)));
+                let config = AgentConfig::from_raw(name, result.data, result.content);
+                registry.insert(config);
             }
             Err(err) => {
                 let error_config = AgentConfig {
@@ -133,81 +161,32 @@ impl AgentLoader {
                     options: Default::default(),
                     prompt: String::new(),
                 };
-                self.sources
-                    .push(AgentSource::Config(Box::new(error_config)));
+                registry.insert(error_config);
             }
         }
-
-        self
+        Ok(())
     }
 
-    /// Adds an agent configuration from raw markdown bytes.
+    /// Adds an agent configuration from raw markdown bytes to the registry.
     ///
     /// A convenience wrapper around [`Self::add_from_str`] that converts bytes to UTF-8 string.
     /// Invalid UTF-8 bytes will result in a hidden agent with an error description.
     ///
     /// # Arguments
     ///
+    /// * `registry` - The registry to insert the agent into
     /// * `bytes` - Raw markdown bytes with YAML frontmatter
     /// * `default_name` - Agent name to use if not specified in frontmatter
     pub fn add_from_bytes(
-        &mut self,
+        &self,
+        registry: &mut SubagentRegistry,
         bytes: impl AsRef<[u8]>,
         default_name: impl Into<String>,
-    ) -> &mut Self {
-        match String::from_utf8(bytes.as_ref().to_vec()) {
-            Ok(content) => self.add_from_str(content, default_name),
-            Err(_) => self.add_from_str("", default_name),
+    ) -> AgentLoadResult<()> {
+        match std::str::from_utf8(bytes.as_ref()) {
+            Ok(content) => self.add_from_str(registry, content, default_name),
+            Err(_) => self.add_from_str(registry, "", default_name),
         }
-    }
-
-    /// Loads all configured sources into a new [`SubagentRegistry`].
-    pub fn load(self) -> AgentLoadResult<SubagentRegistry> {
-        let mut registry = SubagentRegistry::new();
-        self.load_into_registry(&mut registry)?;
-        Ok(registry)
-    }
-
-    /// Loads all configured sources into an existing [`SubagentRegistry`].
-    /// Later sources override earlier entries.
-    pub fn load_into_registry(self, registry: &mut SubagentRegistry) -> AgentLoadResult<()> {
-        let additional = self
-            .sources
-            .iter()
-            .filter(|source| !matches!(source, AgentSource::Directory(_)))
-            .count();
-        registry.reserve(additional);
-
-        for source in self.sources {
-            match source {
-                AgentSource::Directory(dir) => {
-                    load_directory_into_registry(registry, &dir)?;
-                }
-                AgentSource::File { path, name } => {
-                    let override_name = name;
-                    let derived_name = path
-                        .file_stem()
-                        .map(|stem: &std::ffi::OsStr| stem.to_string_lossy().into_owned())
-                        .unwrap_or_default();
-                    if derived_name.is_empty() {
-                        return Err(AgentLoadError::SchemaValidation {
-                            path: path.to_path_buf(),
-                            message: "agent file name is empty".to_string(),
-                        });
-                    }
-
-                    let mut config = load_agent_file(&path, derived_name)?;
-                    if let Some(name) = override_name {
-                        config.name = name;
-                    }
-                    registry.insert(config);
-                }
-                AgentSource::Config(config) => {
-                    registry.insert(*config);
-                }
-            }
-        }
-        Ok(())
     }
 }
 
@@ -360,9 +339,9 @@ mod tests {
             "---\nmode: subagent\ndescription: Test\n---\nPrompt",
         );
 
-        let mut loader = AgentLoader::new();
-        loader.add_directory(dir.path());
-        let registry = loader.load().unwrap();
+        let loader = AgentLoader::new();
+        let mut registry = SubagentRegistry::new();
+        loader.add_directory(&mut registry, dir.path()).unwrap();
 
         assert_eq!(registry.len(), 1);
         // Name should be "test-agent", not something derived from absolute path
@@ -378,9 +357,9 @@ mod tests {
             "---\nmode: subagent\ndescription: Test\n---\nPrompt",
         );
 
-        let mut loader = AgentLoader::new();
-        loader.add_directory(dir.path());
-        let registry = loader.load().unwrap();
+        let loader = AgentLoader::new();
+        let mut registry = SubagentRegistry::new();
+        loader.add_directory(&mut registry, dir.path()).unwrap();
 
         assert_eq!(registry.len(), 1);
         assert!(registry.get("test-agent").is_some());
@@ -397,9 +376,9 @@ mod tests {
             "---\nmode: primary\n---\nBody",
         );
 
-        let mut loader = AgentLoader::new();
-        loader.add_directory(dir.path());
-        let registry = loader.load().unwrap();
+        let loader = AgentLoader::new();
+        let mut registry = SubagentRegistry::new();
+        loader.add_directory(&mut registry, dir.path()).unwrap();
 
         assert_eq!(registry.len(), 1);
         assert!(registry.get("nested/deep").is_some());
@@ -415,9 +394,9 @@ mod tests {
             "---\nmode: subagent\n---\nReal",
         );
 
-        let mut loader = AgentLoader::new();
-        loader.add_directory(dir.path());
-        let registry = loader.load().unwrap();
+        let loader = AgentLoader::new();
+        let mut registry = SubagentRegistry::new();
+        loader.add_directory(&mut registry, dir.path()).unwrap();
 
         assert_eq!(registry.len(), 1);
         assert!(registry.get("real").is_some());
@@ -432,9 +411,9 @@ mod tests {
             "---\nmode: subagent\n---\nBody",
         );
 
-        let mut loader = AgentLoader::new();
-        loader.add_directory(dir.path());
-        let registry = loader.load().unwrap();
+        let loader = AgentLoader::new();
+        let mut registry = SubagentRegistry::new();
+        loader.add_directory(&mut registry, dir.path()).unwrap();
 
         assert!(registry.is_empty());
     }
@@ -446,10 +425,10 @@ mod tests {
         create_agent_file(dir1.path(), "agent/first.md", "---\nmode: subagent\n---\n");
         create_agent_file(dir2.path(), "agent/second.md", "---\nmode: primary\n---\n");
 
-        let mut loader = AgentLoader::new();
-        loader.add_directory(dir1.path());
-        loader.add_directory(dir2.path());
-        let registry = loader.load().unwrap();
+        let loader = AgentLoader::new();
+        let mut registry = SubagentRegistry::new();
+        loader.add_directory(&mut registry, dir1.path()).unwrap();
+        loader.add_directory(&mut registry, dir2.path()).unwrap();
 
         assert_eq!(registry.len(), 2);
         assert!(registry.get("first").is_some());
@@ -465,9 +444,9 @@ mod tests {
             "---\nmodel: provider/model:tag\nmode: subagent\n---\nBody",
         );
 
-        let mut loader = AgentLoader::new();
-        loader.add_directory(dir.path());
-        let registry = loader.load().unwrap();
+        let loader = AgentLoader::new();
+        let mut registry = SubagentRegistry::new();
+        loader.add_directory(&mut registry, dir.path()).unwrap();
 
         assert_eq!(
             registry.get("test").unwrap().model,
@@ -484,9 +463,9 @@ mod tests {
             "---\nmode: subagent\npermission:\n  bash: allow\n  task: deny\n---\n",
         );
 
-        let mut loader = AgentLoader::new();
-        loader.add_directory(dir.path());
-        let registry = loader.load().unwrap();
+        let loader = AgentLoader::new();
+        let mut registry = SubagentRegistry::new();
+        loader.add_directory(&mut registry, dir.path()).unwrap();
         let perms = &registry.get("perms").unwrap().permission;
 
         assert_eq!(perms.len(), 2);
@@ -501,9 +480,9 @@ mod tests {
             "---\nmode: subagent\npermission:\n  task: { \"*\": \"deny\" }\n---\n",
         );
 
-        let mut loader = AgentLoader::new();
-        loader.add_directory(dir.path());
-        let registry = loader.load().unwrap();
+        let loader = AgentLoader::new();
+        let mut registry = SubagentRegistry::new();
+        loader.add_directory(&mut registry, dir.path()).unwrap();
         // Should parse without error (flow syntax preserved)
         assert!(registry.get("flow").is_some());
     }
@@ -550,18 +529,20 @@ mod tests {
             let dir = TempDir::new().unwrap();
             create_agent_file(dir.path(), rel_path, content);
 
-            let mut loader = AgentLoader::new();
+            let loader = AgentLoader::new();
+            let mut registry = SubagentRegistry::new();
             let full_path = dir.path().join(rel_path);
             match override_name {
                 Some(name) => {
-                    loader.add_file_named(full_path, name);
+                    loader
+                        .add_file_named(&mut registry, full_path, name)
+                        .unwrap();
                 }
                 None => {
-                    loader.add_file(full_path);
+                    loader.add_file(&mut registry, full_path).unwrap();
                 }
             }
 
-            let registry = loader.load().unwrap();
             assert!(registry.get(expected).is_some());
         }
     }
@@ -575,11 +556,15 @@ mod tests {
             "---\nmode: subagent\ndescription: First\n---\nBody",
         );
 
-        let mut loader = AgentLoader::new();
-        loader.add_file(dir.path().join("custom/agent.md"));
-        loader.add_config(make_agent("agent", "Second"));
+        let loader = AgentLoader::new();
+        let mut registry = SubagentRegistry::new();
+        loader
+            .add_file(&mut registry, dir.path().join("custom/agent.md"))
+            .unwrap();
+        loader
+            .add_config(&mut registry, make_agent("agent", "Second"))
+            .unwrap();
 
-        let registry = loader.load().unwrap();
         assert_eq!(registry.get("agent").unwrap().description, "Second");
     }
 
@@ -588,9 +573,10 @@ mod tests {
         let mut registry = SubagentRegistry::new();
         registry.insert(make_agent("existing", "keep"));
 
-        let mut loader = AgentLoader::new();
-        loader.add_config(make_agent("new", "added"));
-        loader.load_into_registry(&mut registry).unwrap();
+        let loader = AgentLoader::new();
+        loader
+            .add_config(&mut registry, make_agent("new", "added"))
+            .unwrap();
 
         assert!(registry.get("existing").is_some());
         assert!(registry.get("new").is_some());
@@ -605,10 +591,12 @@ mod tests {
             "---\nmode: subagent\ndescription: Explicit\n---\nBody",
         );
 
-        let mut loader = AgentLoader::new();
-        loader.add_file(dir.path().join("custom/explicit.md"));
+        let loader = AgentLoader::new();
+        let mut registry = SubagentRegistry::new();
+        loader
+            .add_file(&mut registry, dir.path().join("custom/explicit.md"))
+            .unwrap();
 
-        let registry = loader.load().unwrap();
         let agent = registry.get("explicit").unwrap();
         assert_eq!(agent.description, "Explicit");
     }
@@ -623,10 +611,10 @@ mod tests {
             "---\nmode: primary\n---\nTwo",
         );
 
-        let mut loader = AgentLoader::new();
-        loader.add_directory(dir.path());
+        let loader = AgentLoader::new();
+        let mut registry = SubagentRegistry::new();
+        loader.add_directory(&mut registry, dir.path()).unwrap();
 
-        let registry = loader.load().unwrap();
         assert!(registry.get("one").is_some());
         assert!(registry.get("nested/two").is_some());
     }
@@ -637,9 +625,10 @@ mod tests {
         let mut registry = SubagentRegistry::new();
         registry.insert(make_agent("override", "old"));
 
-        let mut loader = AgentLoader::new();
-        loader.add_config(make_agent("override", "new"));
-        loader.load_into_registry(&mut registry).unwrap();
+        let loader = AgentLoader::new();
+        loader
+            .add_config(&mut registry, make_agent("override", "new"))
+            .unwrap();
 
         assert_eq!(registry.get("override").unwrap().description, "new");
     }

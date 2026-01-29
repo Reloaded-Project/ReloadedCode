@@ -16,12 +16,13 @@ use llm_coding_tools_subagents::{AgentLoader, SubagentRegistry};
 use std::path::Path;
 
 let mut loader = AgentLoader::new();
-loader.add_directory(Path::new("~/.opencode"));
+let mut registry = SubagentRegistry::new();
+loader.add_directory(&mut registry, Path::new("~/.opencode"))?;
 
-let registry: SubagentRegistry = loader.load().unwrap();
 for (name, config) in registry.iter() {
     println!("{}: {}", name, config.description);
 }
+# Ok::<(), llm_coding_tools_subagents::AgentLoadError>(())
 ```
 
 ## Agent File Format
