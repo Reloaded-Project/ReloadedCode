@@ -1,7 +1,6 @@
 //! Subagent configuration loading and permission management.
 //!
 //! This crate provides:
-//! - Frontmatter parsing for markdown files with YAML headers
 //! - Agent configuration schema matching OpenCode conventions
 //! - Directory scanning for agent configs in `agent/**/*.md` and `agents/**/*.md`
 //! - Permission evaluation with wildcard pattern matching (last-match-wins)
@@ -24,8 +23,6 @@
 //! }
 //! ```
 //!
-//! [`load_agents`] remains a convenience for directory-only scans.
-//!
 //! # Permission System
 //!
 //! Permissions use a ruleset with allow/deny actions and wildcard patterns.
@@ -46,16 +43,17 @@
 
 mod config;
 mod error;
-mod frontmatter;
 mod loader;
+mod parser;
 mod permission;
 mod registry;
 mod task;
 
 pub use config::{AgentConfig, AgentMode, PermissionAction, PermissionRule};
-pub use error::AgentConfigError;
-pub use frontmatter::{parse_frontmatter, FrontmatterParseResult};
-pub use loader::{load_agents, load_agents_registry, AgentLoader};
+pub use error::AgentLoadError;
+pub use error::AgentLoadResult;
+pub use loader::AgentLoader;
+pub use parser::AgentParseError;
 pub use permission::{Rule, Ruleset};
 pub use registry::SubagentRegistry;
 pub use task::{TaskError, TaskInput, TaskOutput, TaskRunner, TaskToolCore};

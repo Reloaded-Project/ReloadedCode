@@ -1,47 +1,48 @@
-//! Frontmatter parsing for markdown files with YAML headers.
+//! Agent markdown parser for files with YAML frontmatter headers.
 
-use crate::error::{AgentConfigError, AgentConfigResult};
 use crlf_to_lf_inplace::crlf_to_lf_inplace;
 use serde::de::DeserializeOwned;
-use std::path::Path;
+use thiserror::Error;
+
+/// Parser error variants independent of file paths.
+#[derive(Debug, Error)]
+pub enum AgentParseError {
+    /// No frontmatter delimiters found in content.
+    #[error("missing frontmatter")]
+    MissingFrontmatter,
+
+    /// YAML parsing failed.
+    #[error("invalid YAML frontmatter: {message}")]
+    InvalidYaml {
+        /// YAML parser error message.
+        message: String,
+    },
+}
 
 /// Result of parsing a markdown file with frontmatter.
 #[derive(Debug, Clone)]
-pub struct FrontmatterParseResult<T> {
+pub(crate) struct AgentParseResult<T> {
     /// Parsed frontmatter data.
-    pub data: T,
+    pub(crate) data: T,
     /// Markdown content after frontmatter, trimmed of leading/trailing whitespace.
     /// Line endings are normalized to LF.
-    pub content: String,
+    pub(crate) content: String,
 }
 
-/// Parses a markdown file with YAML frontmatter.
-///
-/// The file must start with `---` (at position 0, optionally after BOM),
-/// followed by YAML, followed by `---` on its own line.
-/// Content after the closing `---` is the markdown body (trimmed at the edges).
-///
-/// # Errors
-///
-/// Returns [`AgentConfigError::MissingFrontmatter`] if no valid frontmatter found.
-/// Returns [`AgentConfigError::InvalidYaml`] if YAML parsing fails.
-pub fn parse_frontmatter<T: DeserializeOwned>(
+/// Path-free agent parsing function.
+pub(crate) fn parse_agent<T: DeserializeOwned>(
     mut content: String,
-    path: &Path,
-) -> AgentConfigResult<FrontmatterParseResult<T>> {
+) -> Result<AgentParseResult<T>, AgentParseError> {
     crlf_to_lf_inplace(&mut content);
     let Some(offsets) = find_frontmatter_offsets(&content) else {
-        return Err(AgentConfigError::MissingFrontmatter {
-            path: path.to_path_buf(),
-        });
+        return Err(AgentParseError::MissingFrontmatter);
     };
 
     // Process YAML while we can still borrow content
     let yaml = &content[offsets.yaml_start..offsets.yaml_end];
     let yaml_preprocessed = preprocess_frontmatter_yaml(yaml);
     let data: T = serde_yaml::from_str(yaml_preprocessed.as_str()).map_err(|e| {
-        AgentConfigError::InvalidYaml {
-            path: path.to_path_buf(),
+        AgentParseError::InvalidYaml {
             message: e.to_string(),
         }
     })?;
@@ -49,7 +50,7 @@ pub fn parse_frontmatter<T: DeserializeOwned>(
     // Extract body in-place (avoids reallocation)
     let body = extract_body_inplace(&mut content, offsets.body_start);
 
-    Ok(FrontmatterParseResult {
+    Ok(AgentParseResult {
         data,
         content: body,
     })
@@ -398,8 +399,7 @@ mod tests {
     #[test]
     fn parse_extracts_frontmatter_and_content() {
         let input = "---\nmode: subagent\ndescription: Test agent\n---\n\nPrompt body here.";
-        let result: FrontmatterParseResult<RawFrontmatter> =
-            parse_frontmatter(input.to_string(), Path::new("test.md")).unwrap();
+        let result: AgentParseResult<RawFrontmatter> = parse_agent(input.to_string()).unwrap();
 
         assert_eq!(result.data.description, Some("Test agent".to_string()));
         assert_eq!(result.content, "Prompt body here.");
@@ -408,8 +408,7 @@ mod tests {
     #[test]
     fn parse_trims_body_whitespace() {
         let input = "---\nmode: primary\n---\n\n  indented\n\ntrailing\n";
-        let result: FrontmatterParseResult<RawFrontmatter> =
-            parse_frontmatter(input.to_string(), Path::new("test.md")).unwrap();
+        let result: AgentParseResult<RawFrontmatter> = parse_agent(input.to_string()).unwrap();
 
         assert_eq!(result.content, "indented\n\ntrailing");
     }
@@ -417,8 +416,7 @@ mod tests {
     #[test]
     fn parse_handles_empty_body() {
         let input = "---\nmode: primary\n---";
-        let result: FrontmatterParseResult<RawFrontmatter> =
-            parse_frontmatter(input.to_string(), Path::new("test.md")).unwrap();
+        let result: AgentParseResult<RawFrontmatter> = parse_agent(input.to_string()).unwrap();
 
         assert!(result.content.is_empty());
     }
@@ -427,8 +425,7 @@ mod tests {
     fn parse_handles_empty_frontmatter() {
         // FIX #2: Handle ---\n--- case (empty YAML)
         let input = "---\n---\nbody";
-        let result: FrontmatterParseResult<RawFrontmatter> =
-            parse_frontmatter(input.to_string(), Path::new("test.md")).unwrap();
+        let result: AgentParseResult<RawFrontmatter> = parse_agent(input.to_string()).unwrap();
 
         assert_eq!(result.content, "body");
     }
@@ -437,8 +434,7 @@ mod tests {
     fn parse_handles_whitespace_only_frontmatter() {
         // FIX #2: Handle frontmatter with only whitespace
         let input = "---\n  \n---\nbody";
-        let result: FrontmatterParseResult<RawFrontmatter> =
-            parse_frontmatter(input.to_string(), Path::new("test.md")).unwrap();
+        let result: AgentParseResult<RawFrontmatter> = parse_agent(input.to_string()).unwrap();
 
         assert_eq!(result.content, "body");
     }
@@ -447,8 +443,7 @@ mod tests {
     fn parse_trims_crlf_in_body() {
         // FIX #3: Body should normalize CRLF to LF
         let input = "---\nmode: subagent\n---\nline1\r\nline2\r\n";
-        let result: FrontmatterParseResult<RawFrontmatter> =
-            parse_frontmatter(input.to_string(), Path::new("test.md")).unwrap();
+        let result: AgentParseResult<RawFrontmatter> = parse_agent(input.to_string()).unwrap();
 
         assert_eq!(result.content, "line1\nline2");
     }
@@ -457,8 +452,7 @@ mod tests {
     fn parse_trims_crlf_body_with_crlf_frontmatter() {
         // FIX #3: CRLF in frontmatter should normalize body
         let input = "---\r\nmode: subagent\r\n---\r\nbody\r\nline2\r\n";
-        let result: FrontmatterParseResult<RawFrontmatter> =
-            parse_frontmatter(input.to_string(), Path::new("test.md")).unwrap();
+        let result: AgentParseResult<RawFrontmatter> = parse_agent(input.to_string()).unwrap();
 
         assert_eq!(result.content, "body\nline2");
     }
@@ -466,20 +460,16 @@ mod tests {
     #[test]
     fn parse_rejects_frontmatter_not_at_start() {
         let input = "some text\n---\nmode: subagent\n---\nbody";
-        let result: AgentConfigResult<FrontmatterParseResult<RawFrontmatter>> =
-            parse_frontmatter(input.to_string(), Path::new("test.md"));
+        let result: Result<AgentParseResult<RawFrontmatter>, AgentParseError> =
+            parse_agent(input.to_string());
 
-        assert!(matches!(
-            result,
-            Err(AgentConfigError::MissingFrontmatter { .. })
-        ));
+        assert!(matches!(result, Err(AgentParseError::MissingFrontmatter)));
     }
 
     #[test]
     fn parse_handles_bom() {
         let input = "\u{FEFF}---\nmode: subagent\n---\nbody";
-        let result: FrontmatterParseResult<RawFrontmatter> =
-            parse_frontmatter(input.to_string(), Path::new("test.md")).unwrap();
+        let result: AgentParseResult<RawFrontmatter> = parse_agent(input.to_string()).unwrap();
 
         assert_eq!(result.content, "body");
     }
@@ -487,31 +477,44 @@ mod tests {
     #[test]
     fn parse_returns_error_for_missing_frontmatter() {
         let input = "No frontmatter here";
-        let result: AgentConfigResult<FrontmatterParseResult<RawFrontmatter>> =
-            parse_frontmatter(input.to_string(), Path::new("test.md"));
+        let result: Result<AgentParseResult<RawFrontmatter>, AgentParseError> =
+            parse_agent(input.to_string());
 
-        assert!(matches!(
-            result,
-            Err(AgentConfigError::MissingFrontmatter { .. })
-        ));
+        assert!(matches!(result, Err(AgentParseError::MissingFrontmatter)));
     }
 
     #[test]
     fn parse_returns_error_for_invalid_yaml() {
         let input = "---\n[invalid yaml\n---\nbody";
-        let result: AgentConfigResult<FrontmatterParseResult<RawFrontmatter>> =
-            parse_frontmatter(input.to_string(), Path::new("test.md"));
+        let result: Result<AgentParseResult<RawFrontmatter>, AgentParseError> =
+            parse_agent(input.to_string());
 
-        assert!(matches!(result, Err(AgentConfigError::InvalidYaml { .. })));
+        assert!(matches!(result, Err(AgentParseError::InvalidYaml { .. })));
     }
 
     #[test]
     fn block_scalar_no_trailing_newline() {
         let input = "---\nmodel: provider/model:tag\n---\nbody";
-        let result: FrontmatterParseResult<RawFrontmatter> =
-            parse_frontmatter(input.to_string(), Path::new("test.md")).unwrap();
+        let result: AgentParseResult<RawFrontmatter> = parse_agent(input.to_string()).unwrap();
 
         // Model should NOT have trailing newline
         assert_eq!(result.data.model, Some("provider/model:tag".to_string()));
+    }
+
+    #[test]
+    fn parse_error_display_messages() {
+        let cases = [
+            (AgentParseError::MissingFrontmatter, "missing frontmatter"),
+            (
+                AgentParseError::InvalidYaml {
+                    message: "bad".to_string(),
+                },
+                "invalid YAML frontmatter: bad",
+            ),
+        ];
+
+        for (err, expected) in cases {
+            assert_eq!(err.to_string(), expected);
+        }
     }
 }

@@ -8,17 +8,20 @@
 $ErrorActionPreference = "Stop"
 
 Write-Host "Building..."
-cargo build -p llm-coding-tools-core
+cargo build -p llm-coding-tools-core --quiet
+cargo build -p llm-coding-tools-subagents --quiet
 cargo build -p llm-coding-tools-rig --quiet
 cargo build -p llm-coding-tools-serdesai --quiet
 
 Write-Host "Testing..."
-cargo test -p llm-coding-tools-core
+cargo test -p llm-coding-tools-core --quiet
+cargo test -p llm-coding-tools-subagents --quiet
 cargo test -p llm-coding-tools-rig --quiet
 cargo test -p llm-coding-tools-serdesai --quiet
 
 Write-Host "Clippy..."
-cargo clippy -p llm-coding-tools-core -- -D warnings
+cargo clippy -p llm-coding-tools-core --quiet -- -D warnings
+cargo clippy -p llm-coding-tools-subagents --quiet -- -D warnings
 cargo clippy -p llm-coding-tools-rig --quiet -- -D warnings
 cargo clippy -p llm-coding-tools-serdesai --quiet -- -D warnings
 
@@ -30,10 +33,11 @@ $env:RUSTDOCFLAGS = "-D warnings"
 cargo doc --workspace --no-deps --quiet
 
 Write-Host "Formatting..."
-cargo fmt --all
+cargo fmt --all --quiet
 
 Write-Host "Publish dry-run..."
 cargo publish --dry-run -p llm-coding-tools-core --quiet
+cargo publish --dry-run -p llm-coding-tools-subagents --quiet
 cargo publish --dry-run -p llm-coding-tools-rig --quiet
 cargo publish --dry-run -p llm-coding-tools-serdesai --quiet
 

@@ -12,11 +12,14 @@ Subagent configuration loading from OpenCode-style markdown files with YAML fron
 ## Usage
 
 ```rust
-use llm_coding_tools_subagents::{load_agents, AgentConfig};
+use llm_coding_tools_subagents::{AgentLoader, SubagentRegistry};
 use std::path::Path;
 
-let agents = load_agents(&[Path::new("~/.opencode")]).unwrap();
-for (name, config) in &agents {
+let mut loader = AgentLoader::new();
+loader.add_directory(Path::new("~/.opencode"));
+
+let registry: SubagentRegistry = loader.load().unwrap();
+for (name, config) in registry.iter() {
     println!("{}: {}", name, config.description);
 }
 ```

@@ -48,6 +48,8 @@ impl Default for PermissionRule {
 #[derive(Debug, Clone, Default, Deserialize)]
 pub(crate) struct RawFrontmatter {
     #[serde(default)]
+    pub name: Option<String>,
+    #[serde(default)]
     pub mode: AgentMode,
     #[serde(default)]
     pub description: Option<String>,
@@ -103,7 +105,7 @@ impl AgentConfig {
     /// Creates an [`AgentConfig`] from raw frontmatter and derived values.
     pub(crate) fn from_raw(name: String, raw: RawFrontmatter, prompt: String) -> Self {
         Self {
-            name,
+            name: raw.name.unwrap_or(name),
             mode: raw.mode,
             description: raw.description.unwrap_or_default(),
             model: raw.model,

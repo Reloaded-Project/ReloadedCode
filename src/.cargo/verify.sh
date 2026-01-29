@@ -9,17 +9,20 @@
 set -e
 
 echo "Building..."
-cargo build -p llm-coding-tools-core
+cargo build -p llm-coding-tools-core --quiet
+cargo build -p llm-coding-tools-subagents --quiet
 cargo build -p llm-coding-tools-rig --quiet
 cargo build -p llm-coding-tools-serdesai --quiet
 
 echo "Testing..."
-cargo test -p llm-coding-tools-core
+cargo test -p llm-coding-tools-core --quiet
+cargo test -p llm-coding-tools-subagents --quiet
 cargo test -p llm-coding-tools-rig --quiet
 cargo test -p llm-coding-tools-serdesai --quiet
 
 echo "Clippy..."
-cargo clippy -p llm-coding-tools-core -- -D warnings
+cargo clippy -p llm-coding-tools-core --quiet -- -D warnings
+cargo clippy -p llm-coding-tools-subagents --quiet -- -D warnings
 cargo clippy -p llm-coding-tools-rig --quiet -- -D warnings
 cargo clippy -p llm-coding-tools-serdesai --quiet -- -D warnings
 
@@ -30,10 +33,11 @@ echo "Docs..."
 RUSTDOCFLAGS="-D warnings" cargo doc --workspace --no-deps --quiet
 
 echo "Formatting..."
-cargo fmt --all
+cargo fmt --all --quiet
 
 echo "Publish dry-run..."
 cargo publish --dry-run -p llm-coding-tools-core --quiet
+cargo publish --dry-run -p llm-coding-tools-subagents --quiet
 cargo publish --dry-run -p llm-coding-tools-rig --quiet
 cargo publish --dry-run -p llm-coding-tools-serdesai --quiet
 

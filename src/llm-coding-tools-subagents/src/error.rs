@@ -1,11 +1,12 @@
 //! Error types for agent configuration operations.
 
+use crate::parser::AgentParseError;
 use std::path::PathBuf;
 use thiserror::Error;
 
 /// Error type for agent configuration operations.
 #[derive(Debug, Error)]
-pub enum AgentConfigError {
+pub enum AgentLoadError {
     /// File I/O failed.
     #[error("I/O error reading {path}: {source}")]
     Io {
@@ -15,20 +16,14 @@ pub enum AgentConfigError {
         source: std::io::Error,
     },
 
-    /// No frontmatter delimiters found in file.
-    #[error("missing frontmatter in {path}")]
-    MissingFrontmatter {
-        /// Path missing frontmatter.
+    /// Frontmatter parsing failed.
+    #[error("parse error in {path}: {source}")]
+    Parse {
+        /// Path that failed to parse.
         path: PathBuf,
-    },
-
-    /// YAML parsing failed.
-    #[error("invalid YAML frontmatter in {path}: {message}")]
-    InvalidYaml {
-        /// Path with invalid YAML.
-        path: PathBuf,
-        /// YAML parser error message.
-        message: String,
+        /// Underlying parse error.
+        #[source]
+        source: AgentParseError,
     },
 
     /// Schema validation failed.
@@ -42,4 +37,4 @@ pub enum AgentConfigError {
 }
 
 /// Result type alias for agent configuration operations.
-pub type AgentConfigResult<T> = Result<T, AgentConfigError>;
+pub type AgentLoadResult<T> = Result<T, AgentLoadError>;
