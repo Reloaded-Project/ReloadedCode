@@ -7,6 +7,13 @@
 
 $ErrorActionPreference = "Stop"
 
+$originalDir = Get-Location
+$scriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
+$projectRoot = Join-Path $scriptDir ".."
+Set-Location $projectRoot
+
+trap { Set-Location $originalDir }
+
 Write-Host "Building..."
 cargo build -p llm-coding-tools-core --quiet
 cargo build -p llm-coding-tools-subagents --quiet

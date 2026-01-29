@@ -8,6 +8,13 @@
 
 set -e
 
+ORIGINAL_DIR="$(pwd)"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+cd "$PROJECT_ROOT"
+
+trap 'cd "$ORIGINAL_DIR"' EXIT
+
 echo "Building..."
 cargo build -p llm-coding-tools-core --quiet
 cargo build -p llm-coding-tools-subagents --quiet
