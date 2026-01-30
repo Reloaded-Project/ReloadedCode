@@ -8,6 +8,11 @@
 
 set -e
 
+run_cmd() {
+  echo "$*"
+  "$@"
+}
+
 ORIGINAL_DIR="$(pwd)"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
@@ -16,36 +21,36 @@ cd "$PROJECT_ROOT"
 trap 'cd "$ORIGINAL_DIR"' EXIT
 
 echo "Building..."
-cargo build -p llm-coding-tools-core --quiet
-cargo build -p llm-coding-tools-subagents --quiet
-cargo build -p llm-coding-tools-rig --quiet
-cargo build -p llm-coding-tools-serdesai --quiet
+run_cmd cargo build -p llm-coding-tools-core --quiet
+run_cmd cargo build -p llm-coding-tools-subagents --quiet
+run_cmd cargo build -p llm-coding-tools-rig --quiet
+run_cmd cargo build -p llm-coding-tools-serdesai --quiet
 
 echo "Testing..."
-cargo test -p llm-coding-tools-core --quiet
-cargo test -p llm-coding-tools-subagents --quiet
-cargo test -p llm-coding-tools-rig --quiet
-cargo test -p llm-coding-tools-serdesai --quiet
+run_cmd cargo test -p llm-coding-tools-core --quiet
+run_cmd cargo test -p llm-coding-tools-subagents --quiet
+run_cmd cargo test -p llm-coding-tools-rig --quiet
+run_cmd cargo test -p llm-coding-tools-serdesai --quiet
 
 echo "Clippy..."
-cargo clippy -p llm-coding-tools-core --quiet -- -D warnings
-cargo clippy -p llm-coding-tools-subagents --quiet -- -D warnings
-cargo clippy -p llm-coding-tools-rig --quiet -- -D warnings
-cargo clippy -p llm-coding-tools-serdesai --quiet -- -D warnings
+run_cmd cargo clippy -p llm-coding-tools-core --quiet -- -D warnings
+run_cmd cargo clippy -p llm-coding-tools-subagents --quiet -- -D warnings
+run_cmd cargo clippy -p llm-coding-tools-rig --quiet -- -D warnings
+run_cmd cargo clippy -p llm-coding-tools-serdesai --quiet -- -D warnings
 
 echo "Testing blocking feature..."
-cargo test -p llm-coding-tools-core --no-default-features --features blocking --quiet
+run_cmd cargo test -p llm-coding-tools-core --no-default-features --features blocking --quiet
 
 echo "Docs..."
-RUSTDOCFLAGS="-D warnings" cargo doc --workspace --no-deps --quiet
+run_cmd env RUSTDOCFLAGS="-D warnings" cargo doc --workspace --no-deps --quiet
 
 echo "Formatting..."
-cargo fmt --all --quiet
+run_cmd cargo fmt --all --quiet
 
 echo "Publish dry-run..."
-cargo publish --dry-run -p llm-coding-tools-core --quiet
-cargo publish --dry-run -p llm-coding-tools-subagents --quiet
-cargo publish --dry-run -p llm-coding-tools-rig --quiet
-cargo publish --dry-run -p llm-coding-tools-serdesai --quiet
+run_cmd cargo publish --dry-run -p llm-coding-tools-core --quiet
+run_cmd cargo publish --dry-run -p llm-coding-tools-subagents --quiet
+run_cmd cargo publish --dry-run -p llm-coding-tools-rig --quiet
+run_cmd cargo publish --dry-run -p llm-coding-tools-serdesai --quiet
 
 echo "All checks passed!"

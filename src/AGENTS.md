@@ -70,6 +70,6 @@ This is a high-performance library. Optimize aggressively.
 - Focus comments on "why" not "what"
 - Use [`TypeName`] rustdoc links, not backticks.
 
-# Post-Change Verification
+# Verification
 
-After you make a change to source code, always run `.cargo/verify.sh` (`.cargo/verify.ps1` on Windows) before returning to the user.
+After code changes or for checks (testing/linting/building/docs/formatting), run `.cargo/verify.sh` (`.cargo/verify.ps1` on Windows). It echoes each command and runs the full suite, including core tests and any extra checks. Do this before returning to the user.
