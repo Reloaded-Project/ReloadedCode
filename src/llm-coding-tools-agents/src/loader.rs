@@ -20,14 +20,14 @@ use std::path::{Path, PathBuf};
 /// # Example
 ///
 /// ```no_run
-/// use llm_coding_tools_subagents::{AgentLoader, SubagentRegistry};
+/// use llm_coding_tools_agents::{AgentLoader, SubagentRegistry};
 /// use std::path::Path;
 ///
 /// let mut loader = AgentLoader::new();
 /// let mut registry = SubagentRegistry::new();
 /// loader.add_directory(&mut registry, Path::new("~/.opencode"))?;
 /// loader.add_file(&mut registry, Path::new("/path/to/custom_agent.md"))?;
-/// # Ok::<(), llm_coding_tools_subagents::AgentLoadError>(())
+/// # Ok::<(), llm_coding_tools_agents::AgentLoadError>(())
 /// ```
 #[derive(Debug, Clone, Copy, Default)]
 pub struct AgentLoader;

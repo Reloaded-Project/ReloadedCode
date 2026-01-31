@@ -117,7 +117,7 @@ impl SubagentRegistry {
     /// # Example
     ///
     /// ```
-    /// use llm_coding_tools_subagents::{SubagentRegistry, Ruleset, Rule, PermissionAction};
+    /// use llm_coding_tools_agents::{SubagentRegistry, Ruleset, Rule, PermissionAction};
     ///
     /// let registry = SubagentRegistry::new();
     /// let mut rules = Ruleset::new();

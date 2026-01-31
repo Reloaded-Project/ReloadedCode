@@ -1,6 +1,6 @@
 use super::*;
 use async_trait::async_trait;
-use llm_coding_tools_subagents::{PermissionAction, Rule, TaskOutput as SubagentTaskOutput};
+use llm_coding_tools_agents::{PermissionAction, Rule, TaskOutput as AgentTaskOutput};
 
 /// Mock runner for testing
 struct MockRunner {
@@ -29,8 +29,8 @@ impl TaskRunner for MockRunner {
         input: TaskInput,
         _deps: &(),
         allowed_tools: &[String],
-    ) -> Result<SubagentTaskOutput, SubagentTaskError> {
-        Ok(SubagentTaskOutput::new(format!(
+    ) -> Result<AgentTaskOutput, AgentTaskError> {
+        Ok(AgentTaskOutput::new(format!(
             "Executed '{}': {} (tools: {})",
             input.description,
             input.prompt,
@@ -42,11 +42,11 @@ impl TaskRunner for MockRunner {
         self.agents.iter().map(|(n, _)| n.clone()).collect()
     }
 
-    fn agent_tools(&self, _agent_name: &str) -> Result<Vec<String>, SubagentTaskError> {
+    fn agent_tools(&self, _agent_name: &str) -> Result<Vec<String>, AgentTaskError> {
         Ok(self.tools.clone())
     }
 
-    fn agent_rules(&self, _agent_name: &str) -> Result<Ruleset, SubagentTaskError> {
+    fn agent_rules(&self, _agent_name: &str) -> Result<Ruleset, AgentTaskError> {
         let mut rules = Ruleset::new();
         for tool in &self.tools {
             rules.push(Rule::new(tool, "*", PermissionAction::Allow));

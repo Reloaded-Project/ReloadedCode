@@ -7,11 +7,11 @@
 
 use crate::convert::to_serdes_result;
 use async_trait::async_trait;
+use llm_coding_tools_agents::{
+    Ruleset, TaskError as AgentTaskError, TaskInput, TaskRunner, TaskToolCore,
+};
 use llm_coding_tools_core::context::ToolContext;
 use llm_coding_tools_core::tool_names;
-use llm_coding_tools_subagents::{
-    Ruleset, TaskError as SubagentTaskError, TaskInput, TaskRunner, TaskToolCore,
-};
 use serde::Deserialize;
 use serdes_ai::tools::{RunContext, SchemaBuilder, Tool, ToolDefinition, ToolError, ToolResult};
 use std::sync::Arc;
@@ -130,23 +130,23 @@ where
             .execute(input, &self.deps)
             .await
             .map_err(|e| match e {
-                SubagentTaskError::UnknownAgent(name) => ToolError::validation_error(
+                AgentTaskError::UnknownAgent(name) => ToolError::validation_error(
                     tool_names::TASK,
                     Some("subagent_type".to_string()),
                     format!("Unknown agent type: {}", name),
                 ),
-                SubagentTaskError::AccessDenied(name) => ToolError::validation_error(
+                AgentTaskError::AccessDenied(name) => ToolError::validation_error(
                     tool_names::TASK,
                     Some("subagent_type".to_string()),
-                    format!("Access denied: cannot invoke subagent '{}'", name),
+                    format!("Access denied: cannot invoke agent '{}'", name),
                 ),
-                SubagentTaskError::NotInvocable(name) => ToolError::validation_error(
+                AgentTaskError::NotInvocable(name) => ToolError::validation_error(
                     tool_names::TASK,
                     Some("subagent_type".to_string()),
-                    format!("Subagent '{}' is not available for task invocation", name),
+                    format!("Agent '{}' is not available for task invocation", name),
                 ),
-                SubagentTaskError::Execution(msg) => ToolError::execution_failed(msg),
-                SubagentTaskError::Configuration(msg) => {
+                AgentTaskError::Execution(msg) => ToolError::execution_failed(msg),
+                AgentTaskError::Configuration(msg) => {
                     ToolError::validation_error(tool_names::TASK, None, msg)
                 }
             })?;

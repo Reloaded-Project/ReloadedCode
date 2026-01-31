@@ -1,7 +1,7 @@
 //! Benchmarks for agent parsing.
 
 use criterion::{black_box, criterion_group, criterion_main, BenchmarkId, Criterion, Throughput};
-use llm_coding_tools_subagents::{AgentLoader, SubagentRegistry};
+use llm_coding_tools_agents::{AgentLoader, SubagentRegistry};
 
 /// Loads a real agent fixture file at runtime.
 fn load_fixture() -> String {

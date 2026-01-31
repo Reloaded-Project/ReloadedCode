@@ -31,19 +31,19 @@ trap { Set-Location $originalDir }
 
 Write-Host "Building..."
 Invoke-LoggedCommand "cargo" @("build", "-p", "llm-coding-tools-core", "--quiet")
-Invoke-LoggedCommand "cargo" @("build", "-p", "llm-coding-tools-subagents", "--quiet")
+Invoke-LoggedCommand "cargo" @("build", "-p", "llm-coding-tools-agents", "--quiet")
 Invoke-LoggedCommand "cargo" @("build", "-p", "llm-coding-tools-rig", "--quiet")
 Invoke-LoggedCommand "cargo" @("build", "-p", "llm-coding-tools-serdesai", "--quiet")
 
 Write-Host "Testing..."
 Invoke-LoggedCommand "cargo" @("test", "-p", "llm-coding-tools-core", "--quiet")
-Invoke-LoggedCommand "cargo" @("test", "-p", "llm-coding-tools-subagents", "--quiet")
+Invoke-LoggedCommand "cargo" @("test", "-p", "llm-coding-tools-agents", "--quiet")
 Invoke-LoggedCommand "cargo" @("test", "-p", "llm-coding-tools-rig", "--quiet")
 Invoke-LoggedCommand "cargo" @("test", "-p", "llm-coding-tools-serdesai", "--quiet")
 
 Write-Host "Clippy..."
 Invoke-LoggedCommand "cargo" @("clippy", "-p", "llm-coding-tools-core", "--quiet", "--", "-D", "warnings")
-Invoke-LoggedCommand "cargo" @("clippy", "-p", "llm-coding-tools-subagents", "--quiet", "--", "-D", "warnings")
+Invoke-LoggedCommand "cargo" @("clippy", "-p", "llm-coding-tools-agents", "--quiet", "--", "-D", "warnings")
 Invoke-LoggedCommand "cargo" @("clippy", "-p", "llm-coding-tools-rig", "--quiet", "--", "-D", "warnings")
 Invoke-LoggedCommand "cargo" @("clippy", "-p", "llm-coding-tools-serdesai", "--quiet", "--", "-D", "warnings")
 
@@ -59,8 +59,8 @@ Invoke-LoggedCommand "cargo" @("fmt", "--all", "--quiet")
 
 Write-Host "Publish dry-run..."
 Invoke-LoggedCommand "cargo" @("publish", "--dry-run", "-p", "llm-coding-tools-core", "--quiet")
-Invoke-LoggedCommand "cargo" @("publish", "--dry-run", "-p", "llm-coding-tools-subagents", "--quiet")
-Invoke-LoggedCommand "cargo" @("publish", "--dry-run", "-p", "llm-coding-tools-rig", "--quiet")
-Invoke-LoggedCommand "cargo" @("publish", "--dry-run", "-p", "llm-coding-tools-serdesai", "--quiet")
+Invoke-LoggedCommand "cargo" @("publish", "--dry-run", "--allow-dirty", "-p", "llm-coding-tools-agents", "--quiet")
+Invoke-LoggedCommand "cargo" @("publish", "--dry-run", "--allow-dirty", "-p", "llm-coding-tools-rig", "--quiet")
+Invoke-LoggedCommand "cargo" @("publish", "--dry-run", "--allow-dirty", "-p", "llm-coding-tools-serdesai", "--quiet")
 
 Write-Host "All checks passed!"

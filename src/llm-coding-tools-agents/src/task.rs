@@ -1,6 +1,6 @@
 //! Task tool types, runner abstraction, and core logic.
 //!
-//! Provides the core types and trait for executing tasks with subagents.
+//! Provides the core types and trait for executing tasks with agents.
 //! Framework-specific adapters (rig, serdesAI) wrap [`TaskToolCore`].
 
 use crate::permission::Ruleset;
@@ -13,7 +13,7 @@ use thiserror::Error;
 pub struct TaskInput {
     /// Short description (3-5 words) of the task.
     pub description: String,
-    /// The prompt/task for the subagent to perform.
+    /// The prompt/task for the agent to perform.
     pub prompt: String,
     /// The subagent type/name to invoke.
     pub subagent_type: String,
@@ -26,7 +26,7 @@ pub struct TaskInput {
 /// Output from task execution.
 #[derive(Debug, Clone)]
 pub struct TaskOutput {
-    /// The text summary/response from the subagent.
+    /// The text summary/response from the agent.
     pub summary: String,
     /// Session ID for continuation (if supported by implementation).
     pub session_id: Option<String>,
@@ -76,16 +76,16 @@ impl TaskOutput {
 /// Errors that can occur during task execution.
 #[derive(Debug, Error)]
 pub enum TaskError {
-    /// The requested subagent type was not found in the registry.
-    #[error("unknown subagent type: {0}")]
+    /// The requested agent type was not found in the registry.
+    #[error("unknown agent type: {0}")]
     UnknownAgent(String),
 
-    /// The caller does not have permission to invoke this subagent.
-    #[error("access denied: caller cannot invoke subagent '{0}'")]
+    /// The caller does not have permission to invoke this agent.
+    #[error("access denied: caller cannot invoke agent '{0}'")]
     AccessDenied(String),
 
-    /// The subagent is not available for task invocation (e.g., primary-only mode).
-    #[error("subagent '{0}' is not available for task invocation")]
+    /// The agent is not available for task invocation (e.g., primary-only mode).
+    #[error("agent '{0}' is not available for task invocation")]
     NotInvocable(String),
 
     /// Task execution failed.
@@ -100,12 +100,12 @@ pub enum TaskError {
 /// Trait for executing tasks with subagents.
 ///
 /// Implementations are responsible for:
-/// 1. Resolving the subagent configuration by name
-/// 2. Building the subagent with only the `allowed_tools`
+/// 1. Resolving the agent configuration by name
+/// 2. Building the agent with only the `allowed_tools`
 /// 3. Executing the prompt and returning a summary
 ///
 /// **Note:** Access validation (permission checks) is handled by [`TaskToolCore`],
-/// not the runner. Runners can assume the caller has permission to invoke the subagent.
+/// not the runner. Runners can assume the caller has permission to invoke the agent.
 ///
 /// # serdesAI Implementation Note
 ///
@@ -125,23 +125,23 @@ pub trait TaskRunner: Send + Sync {
     /// The dependencies type for this runner.
     type Deps: Send + Sync;
 
-    /// Executes a task with the specified subagent.
+    /// Executes a task with the specified agent.
     ///
     /// Called after access validation has passed. The runner should:
-    /// 1. Resolve the subagent configuration
-    /// 2. Build the subagent with only the allowed tools
+    /// 1. Resolve the agent configuration
+    /// 2. Build the agent with only the allowed tools
     /// 3. Execute the prompt
     ///
     /// # Arguments
     ///
     /// * `input` - The task input (description, prompt, subagent_type, etc.)
     /// * `deps` - The dependencies for the runner
-    /// * `allowed_tools` - Tool names the subagent is permitted to use (already filtered)
+    /// * `allowed_tools` - Tool names the agent is permitted to use (already filtered)
     ///
     /// # Errors
     ///
     /// Returns [`TaskError`] if:
-    /// - The subagent type is not found
+    /// - The agent type is not found
     /// - Execution fails
     async fn run(
         &self,
@@ -150,19 +150,19 @@ pub trait TaskRunner: Send + Sync {
         allowed_tools: &[String],
     ) -> Result<TaskOutput, TaskError>;
 
-    /// Returns all registered subagent names (unfiltered).
+    /// Returns all registered agent names (unfiltered).
     ///
     /// Used by [`TaskToolCore`] to check agent existence and filter by caller permissions.
     fn all_agents(&self) -> Vec<String>;
 
-    /// Returns the tool names available to a specific subagent (before filtering).
+    /// Returns the tool names available to a specific agent (before filtering).
     ///
     /// Used to build the tool description and compute allowed tools.
     fn agent_tools(&self, agent_name: &str) -> Result<Vec<String>, TaskError>;
 
-    /// Returns the permission rules for a specific subagent.
+    /// Returns the permission rules for a specific agent.
     ///
-    /// Used by [`TaskToolCore`] to compute which tools the subagent can use.
+    /// Used by [`TaskToolCore`] to compute which tools the agent can use.
     fn agent_rules(&self, agent_name: &str) -> Result<Ruleset, TaskError>;
 
     /// Checks if an agent is invocable (not primary-only).
@@ -170,7 +170,7 @@ pub trait TaskRunner: Send + Sync {
 }
 
 /// Task tool description template.
-/// `{agents}` is replaced with the list of available subagents.
+/// `{agents}` is replaced with the list of available agents.
 const DESCRIPTION_TEMPLATE: &str = r#"Launch a new agent to handle complex, multistep tasks autonomously.
 
 Available agent types and the tools they have access to:
@@ -217,7 +217,7 @@ impl<R: TaskRunner> TaskToolCore<R> {
         self.runner.all_agents().iter().any(|n| n == name)
     }
 
-    /// Returns the list of accessible subagent names for the caller.
+    /// Returns the list of accessible agent names for the caller.
     ///
     /// Filters all agents by:
     /// 1. Invocability (not primary-only)
@@ -232,9 +232,9 @@ impl<R: TaskRunner> TaskToolCore<R> {
             .collect()
     }
 
-    /// Computes the allowed tools for a subagent.
+    /// Computes the allowed tools for an agent.
     ///
-    /// Takes the subagent's available tools and filters by its permission rules.
+    /// Takes the agent's available tools and filters by its permission rules.
     /// Normalizes tool names to lowercase for comparison but preserves original casing.
     fn compute_allowed_tools(&self, agent_name: &str) -> Result<Vec<String>, TaskError> {
         let available_tools = self.runner.agent_tools(agent_name)?;
@@ -249,12 +249,12 @@ impl<R: TaskRunner> TaskToolCore<R> {
         Ok(allowed)
     }
 
-    /// Builds the tool description with available subagents and their tools.
+    /// Builds the tool description with available agents and their tools.
     pub fn build_description(&self) -> String {
         let accessible = self.accessible_agents();
 
         if accessible.is_empty() {
-            return "Task tool is not available - no accessible subagents.".to_string();
+            return "Task tool is not available - no accessible agents.".to_string();
         }
 
         let agents_list: String = accessible
@@ -274,8 +274,8 @@ impl<R: TaskRunner> TaskToolCore<R> {
     ///
     /// This method ALWAYS validates in order:
     /// 1. The agent exists (returns UnknownAgent if not)
-    /// 2. The subagent is invocable (returns NotInvocable if not)
-    /// 3. The caller has `task` permission for the requested subagent (returns AccessDenied if not)
+    /// 2. The agent is invocable (returns NotInvocable if not)
+    /// 3. The caller has `task` permission for the requested agent (returns AccessDenied if not)
     ///
     /// Then computes allowed tools and delegates to the runner.
     ///
@@ -290,7 +290,7 @@ impl<R: TaskRunner> TaskToolCore<R> {
             return Err(TaskError::UnknownAgent(input.subagent_type));
         }
 
-        // 2. Check invocability (is it a subagent, not primary-only?)
+        // 2. Check invocability (is it an agent, not primary-only?)
         if !self.runner.is_invocable(&input.subagent_type) {
             return Err(TaskError::NotInvocable(input.subagent_type));
         }
@@ -300,7 +300,7 @@ impl<R: TaskRunner> TaskToolCore<R> {
             return Err(TaskError::AccessDenied(input.subagent_type));
         }
 
-        // 4. Compute allowed tools for the subagent
+        // 4. Compute allowed tools for the agent
         let allowed_tools = self.compute_allowed_tools(&input.subagent_type)?;
 
         // 5. Delegate to runner with allowed tools

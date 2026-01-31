@@ -22,19 +22,19 @@ trap 'cd "$ORIGINAL_DIR"' EXIT
 
 echo "Building..."
 run_cmd cargo build -p llm-coding-tools-core --quiet
-run_cmd cargo build -p llm-coding-tools-subagents --quiet
+run_cmd cargo build -p llm-coding-tools-agents --quiet
 run_cmd cargo build -p llm-coding-tools-rig --quiet
 run_cmd cargo build -p llm-coding-tools-serdesai --quiet
 
 echo "Testing..."
 run_cmd cargo test -p llm-coding-tools-core --quiet
-run_cmd cargo test -p llm-coding-tools-subagents --quiet
+run_cmd cargo test -p llm-coding-tools-agents --quiet
 run_cmd cargo test -p llm-coding-tools-rig --quiet
 run_cmd cargo test -p llm-coding-tools-serdesai --quiet
 
 echo "Clippy..."
 run_cmd cargo clippy -p llm-coding-tools-core --quiet -- -D warnings
-run_cmd cargo clippy -p llm-coding-tools-subagents --quiet -- -D warnings
+run_cmd cargo clippy -p llm-coding-tools-agents --quiet -- -D warnings
 run_cmd cargo clippy -p llm-coding-tools-rig --quiet -- -D warnings
 run_cmd cargo clippy -p llm-coding-tools-serdesai --quiet -- -D warnings
 
@@ -49,8 +49,8 @@ run_cmd cargo fmt --all --quiet
 
 echo "Publish dry-run..."
 run_cmd cargo publish --dry-run -p llm-coding-tools-core --quiet
-run_cmd cargo publish --dry-run -p llm-coding-tools-subagents --quiet
-run_cmd cargo publish --dry-run -p llm-coding-tools-rig --quiet
-run_cmd cargo publish --dry-run -p llm-coding-tools-serdesai --quiet
+run_cmd cargo publish --dry-run --allow-dirty -p llm-coding-tools-agents --quiet
+run_cmd cargo publish --dry-run --allow-dirty -p llm-coding-tools-rig --quiet
+run_cmd cargo publish --dry-run --allow-dirty -p llm-coding-tools-serdesai --quiet
 
 echo "All checks passed!"

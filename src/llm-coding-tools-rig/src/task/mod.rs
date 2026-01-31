@@ -2,11 +2,11 @@
 //!
 //! Thin wrapper around [`TaskToolCore`] for rig framework compatibility.
 
+use llm_coding_tools_agents::{
+    Ruleset, TaskError as AgentTaskError, TaskInput, TaskRunner, TaskToolCore,
+};
 use llm_coding_tools_core::tool_names;
 use llm_coding_tools_core::{ToolError, ToolOutput};
-use llm_coding_tools_subagents::{
-    Ruleset, TaskError as SubagentTaskError, TaskInput, TaskRunner, TaskToolCore,
-};
 use rig::completion::ToolDefinition;
 use rig::tool::Tool;
 use schemars::JsonSchema;
@@ -104,19 +104,18 @@ impl<R: TaskRunner + 'static> Tool for TaskTool<R> {
             .execute(input, &self.deps)
             .await
             .map_err(|e| match e {
-                SubagentTaskError::UnknownAgent(name) => {
+                AgentTaskError::UnknownAgent(name) => {
                     ToolError::Validation(format!("Unknown agent type: {}", name))
                 }
-                SubagentTaskError::AccessDenied(name) => ToolError::Validation(format!(
-                    "Access denied: cannot invoke subagent '{}'",
+                AgentTaskError::AccessDenied(name) => {
+                    ToolError::Validation(format!("Access denied: cannot invoke agent '{}'", name))
+                }
+                AgentTaskError::NotInvocable(name) => ToolError::Validation(format!(
+                    "Agent '{}' is not available for task invocation",
                     name
                 )),
-                SubagentTaskError::NotInvocable(name) => ToolError::Validation(format!(
-                    "Subagent '{}' is not available for task invocation",
-                    name
-                )),
-                SubagentTaskError::Execution(msg) => ToolError::Execution(msg),
-                SubagentTaskError::Configuration(msg) => ToolError::Validation(msg),
+                AgentTaskError::Execution(msg) => ToolError::Execution(msg),
+                AgentTaskError::Configuration(msg) => ToolError::Validation(msg),
             })?;
 
         Ok(ToolOutput::new(result.format()))

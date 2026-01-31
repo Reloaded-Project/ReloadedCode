@@ -1,6 +1,6 @@
-# llm-coding-tools-subagents
+# llm-coding-tools-agents
 
-Subagent configuration loading from OpenCode-style markdown files with YAML frontmatter.
+Agent configuration loading from OpenCode-style markdown files with YAML frontmatter.
 
 ## Features
 
@@ -12,7 +12,7 @@ Subagent configuration loading from OpenCode-style markdown files with YAML fron
 ## Usage
 
 ```rust
-use llm_coding_tools_subagents::{AgentLoader, SubagentRegistry};
+use llm_coding_tools_agents::{AgentLoader, SubagentRegistry};
 use std::path::Path;
 
 let mut loader = AgentLoader::new();
@@ -22,7 +22,7 @@ loader.add_directory(&mut registry, Path::new("~/.opencode"))?;
 for (name, config) in registry.iter() {
     println!("{}: {}", name, config.description);
 }
-# Ok::<(), llm_coding_tools_subagents::AgentLoadError>(())
+# Ok::<(), llm_coding_tools_agents::AgentLoadError>(())
 ```
 
 ## Agent File Format
@@ -42,7 +42,7 @@ Prompt body goes here...
 
 ## Task Tool
 
-The Task tool allows agents to invoke subagents with permission-based access control.
+The Task tool allows agents to invoke agents with permission-based access control.
 
 ### Core Components
 
@@ -56,7 +56,7 @@ The Task tool allows agents to invoke subagents with permission-based access con
 Framework adapters (rig, serdesAI) wrap `TaskToolCore`:
 
 ```rust
-use llm_coding_tools_subagents::{TaskToolCore, TaskRunner, Ruleset};
+use llm_coding_tools_agents::{TaskToolCore, TaskRunner, Ruleset};
 use std::sync::Arc;
 
 // Create runner (framework-specific implementation)

@@ -1,23 +1,23 @@
-//! Subagent configuration loading and permission management.
+//! Agent configuration loading and permission management.
 //!
 //! This crate provides:
 //! - Agent configuration schema matching OpenCode conventions
 //! - Directory scanning for agent configs in `agent/**/*.md` and `agents/**/*.md`
 //! - Permission evaluation with wildcard pattern matching (last-match-wins)
-//! - Subagent registry with mode filtering and permission-aware access control
+//! - Agent registry with mode filtering and permission-aware access control
 //! - Flexible agent loading via [`AgentLoader`] for composing sources
 //!
 //! # Example
 //!
 //! ```no_run
-//! use llm_coding_tools_subagents::{AgentLoader, SubagentRegistry};
+//! use llm_coding_tools_agents::{AgentLoader, SubagentRegistry};
 //! use std::path::Path;
 //!
 //! let mut loader = AgentLoader::new();
 //! let mut registry = SubagentRegistry::new();
 //! loader.add_directory(&mut registry, Path::new("/etc/opencode"))?;
 //! loader.add_file(&mut registry, Path::new("/path/to/custom_agent.md"))?;
-//! # Ok::<(), llm_coding_tools_subagents::AgentLoadError>(())
+//! # Ok::<(), llm_coding_tools_agents::AgentLoadError>(())
 //! ```
 //!
 //! # Permission System
@@ -26,7 +26,7 @@
 //! Evaluation follows a last-match-wins policy with default deny.
 //!
 //! ```
-//! use llm_coding_tools_subagents::{Ruleset, Rule, PermissionAction};
+//! use llm_coding_tools_agents::{Ruleset, Rule, PermissionAction};
 //!
 //! let mut ruleset = Ruleset::new();
 //! ruleset.push(Rule::new("task", "*", PermissionAction::Deny));
