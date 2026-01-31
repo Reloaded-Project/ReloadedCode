@@ -195,7 +195,10 @@ impl AgentLoader {
     ) -> AgentLoadResult<()> {
         match std::str::from_utf8(bytes.as_ref()) {
             Ok(content) => self.add_from_str(registry, content, default_name),
-            Err(_) => self.add_from_str(registry, "", default_name),
+            Err(err) => Err(AgentLoadError::SchemaValidation {
+                path: PathBuf::from("<memory>"),
+                message: format!("invalid UTF-8: {err}"),
+            }),
         }
     }
 

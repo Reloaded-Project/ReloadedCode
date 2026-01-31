@@ -57,7 +57,7 @@ $env:RUSTDOCFLAGS = "-D warnings"
 Invoke-LoggedCommand "cargo" @("doc", "--workspace", "--no-deps", "--quiet")
 
 Write-Host "Formatting..."
-Invoke-LoggedCommand "cargo" @("fmt", "--all", "--quiet")
+Invoke-LoggedCommand "cargo" @("fmt", "--all", "--check", "--quiet")
 
 Write-Host "Publish dry-run..."
 Invoke-LoggedCommand "cargo" @("publish", "--dry-run", "-p", "llm-coding-tools-core", "--quiet")
