@@ -9,6 +9,7 @@ mod common;
 pub mod convert;
 pub mod task;
 pub mod todo;
+pub mod tool_catalog;
 pub mod webfetch;
 
 /// Re-export core types for convenience.
@@ -49,4 +50,5 @@ pub use llm_coding_tools_core::{
 pub use bash::BashTool;
 pub use task::TaskTool;
 pub use todo::{TodoReadTool, TodoWriteTool, create_todo_tools};
+pub use tool_catalog::{default_tools, ToolCatalogEntry};
 pub use webfetch::WebFetchTool;

@@ -6,6 +6,7 @@ pub mod allowed;
 pub mod bash;
 pub mod task;
 pub mod todo;
+pub mod tool_catalog;
 pub mod webfetch;
 
 // Re-export core types for convenience
@@ -45,6 +46,7 @@ pub mod allowed_tools {
 pub use bash::{BashArgs, BashTool};
 pub use task::{TaskArgs, TaskTool};
 pub use todo::{TodoReadArgs, TodoReadTool, TodoTools, TodoWriteArgs, TodoWriteTool};
+pub use tool_catalog::{default_tools, ToolCatalogEntry};
 pub use webfetch::{WebFetchArgs, WebFetchTool};
 
 #[cfg(test)]
