@@ -28,7 +28,8 @@ The `async` and `blocking` features are mutually exclusive - enabling both cause
 
 # Code & Performance Guidelines
 
-This is a high-performance library. Optimize aggressively.
+This is a high-performance library. Optimize aggressively. Use arrays instead of maps if size is known ahead of time.
+Optimize for memory. Preallocate or trim if possible. Minimize memory use. Use smaller integers/types where appropriate. Use any other tricks that improve CPU or memory efficiency.
 
 ## Memory & Allocation
 
