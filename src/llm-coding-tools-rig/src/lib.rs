@@ -4,6 +4,7 @@
 pub mod absolute;
 pub mod allowed;
 pub mod bash;
+pub mod registry;
 pub mod task;
 pub mod todo;
 pub mod tool_catalog;
@@ -44,6 +45,7 @@ pub mod allowed_tools {
 
 // Re-export standalone tools
 pub use bash::{BashArgs, BashTool};
+pub use registry::{AgentDefaults, AgentRegistry, AgentRegistryBuilder, AgentRegistryEntry};
 pub use task::{TaskArgs, TaskTool};
 pub use todo::{TodoReadArgs, TodoReadTool, TodoTools, TodoWriteArgs, TodoWriteTool};
 pub use tool_catalog::{default_tools, ToolCatalogEntry};

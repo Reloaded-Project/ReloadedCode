@@ -155,38 +155,77 @@ impl ToolCatalogEntry {
         }
     }
 
-    /// Registers this tool on an existing rig agent builder.
+    /// Registers this tool on a fresh rig agent builder while tracking system prompt context.
     ///
     /// Parameters:
-    /// - `builder`: the rig builder after at least one tool has been registered.
+    /// - `builder`: the initial rig agent builder (pre-tool).
+    /// - `pb`: system prompt builder used to track tool context.
     ///
     /// Returns: the builder after registering this tool.
-    pub fn register_on_simple<M>(
+    pub fn register_on_with_prompt<M>(
         self,
-        builder: rig::agent::AgentBuilderSimple<M>,
+        builder: rig::agent::AgentBuilder<M>,
+        pb: &mut llm_coding_tools_core::SystemPromptBuilder,
     ) -> rig::agent::AgentBuilderSimple<M>
     where
         M: rig::completion::CompletionModel,
     {
         match self {
-            Self::ReadLines(tool) => builder.tool(tool),
-            Self::ReadRaw(tool) => builder.tool(tool),
-            Self::ReadAllowedLines(tool) => builder.tool(tool),
-            Self::ReadAllowedRaw(tool) => builder.tool(tool),
-            Self::Write(tool) => builder.tool(tool),
-            Self::WriteAllowed(tool) => builder.tool(tool),
-            Self::Edit(tool) => builder.tool(tool),
-            Self::EditAllowed(tool) => builder.tool(tool),
-            Self::Glob(tool) => builder.tool(tool),
-            Self::GlobAllowed(tool) => builder.tool(tool),
-            Self::GrepLines(tool) => builder.tool(tool),
-            Self::GrepRaw(tool) => builder.tool(tool),
-            Self::GrepAllowedLines(tool) => builder.tool(tool),
-            Self::GrepAllowedRaw(tool) => builder.tool(tool),
-            Self::Bash(tool) => builder.tool(tool),
-            Self::WebFetch(tool) => builder.tool(tool),
-            Self::TodoRead(tool) => builder.tool(tool),
-            Self::TodoWrite(tool) => builder.tool(tool),
+            Self::ReadLines(tool) => builder.tool(pb.track(tool)),
+            Self::ReadRaw(tool) => builder.tool(pb.track(tool)),
+            Self::ReadAllowedLines(tool) => builder.tool(pb.track(tool)),
+            Self::ReadAllowedRaw(tool) => builder.tool(pb.track(tool)),
+            Self::Write(tool) => builder.tool(pb.track(tool)),
+            Self::WriteAllowed(tool) => builder.tool(pb.track(tool)),
+            Self::Edit(tool) => builder.tool(pb.track(tool)),
+            Self::EditAllowed(tool) => builder.tool(pb.track(tool)),
+            Self::Glob(tool) => builder.tool(pb.track(tool)),
+            Self::GlobAllowed(tool) => builder.tool(pb.track(tool)),
+            Self::GrepLines(tool) => builder.tool(pb.track(tool)),
+            Self::GrepRaw(tool) => builder.tool(pb.track(tool)),
+            Self::GrepAllowedLines(tool) => builder.tool(pb.track(tool)),
+            Self::GrepAllowedRaw(tool) => builder.tool(pb.track(tool)),
+            Self::Bash(tool) => builder.tool(pb.track(tool)),
+            Self::WebFetch(tool) => builder.tool(pb.track(tool)),
+            Self::TodoRead(tool) => builder.tool(pb.track(tool)),
+            Self::TodoWrite(tool) => builder.tool(pb.track(tool)),
+        }
+    }
+
+    /// Registers this tool on an existing rig builder while tracking context.
+    ///
+    /// Parameters:
+    /// - `builder`: the rig builder after at least one tool has been registered.
+    /// - `pb`: system prompt builder used to track tool context.
+    ///
+    /// Returns: the builder after registering this tool.
+    pub fn register_on_simple_with_prompt<M>(
+        self,
+        builder: rig::agent::AgentBuilderSimple<M>,
+        pb: &mut llm_coding_tools_core::SystemPromptBuilder,
+    ) -> rig::agent::AgentBuilderSimple<M>
+    where
+        M: rig::completion::CompletionModel,
+    {
+        match self {
+            Self::ReadLines(tool) => builder.tool(pb.track(tool)),
+            Self::ReadRaw(tool) => builder.tool(pb.track(tool)),
+            Self::ReadAllowedLines(tool) => builder.tool(pb.track(tool)),
+            Self::ReadAllowedRaw(tool) => builder.tool(pb.track(tool)),
+            Self::Write(tool) => builder.tool(pb.track(tool)),
+            Self::WriteAllowed(tool) => builder.tool(pb.track(tool)),
+            Self::Edit(tool) => builder.tool(pb.track(tool)),
+            Self::EditAllowed(tool) => builder.tool(pb.track(tool)),
+            Self::Glob(tool) => builder.tool(pb.track(tool)),
+            Self::GlobAllowed(tool) => builder.tool(pb.track(tool)),
+            Self::GrepLines(tool) => builder.tool(pb.track(tool)),
+            Self::GrepRaw(tool) => builder.tool(pb.track(tool)),
+            Self::GrepAllowedLines(tool) => builder.tool(pb.track(tool)),
+            Self::GrepAllowedRaw(tool) => builder.tool(pb.track(tool)),
+            Self::Bash(tool) => builder.tool(pb.track(tool)),
+            Self::WebFetch(tool) => builder.tool(pb.track(tool)),
+            Self::TodoRead(tool) => builder.tool(pb.track(tool)),
+            Self::TodoWrite(tool) => builder.tool(pb.track(tool)),
         }
     }
 }

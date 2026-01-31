@@ -38,7 +38,8 @@ use rig::completion::Prompt;
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let todos = TodoTools::new();
-    let mut pb = SystemPromptBuilder::new();
+    let mut pb = SystemPromptBuilder::new()
+        .working_directory("/home/user/project");
 
     // Build agent with system prompt tracking
     let client = openai::Client::from_env();

@@ -1,1 +1,1 @@
-Read @src/AGENTS.md
+This document has moved to src/AGENTS.md. Please refer to that location for the full documentation.

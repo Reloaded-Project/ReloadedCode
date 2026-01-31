@@ -154,12 +154,6 @@ impl AgentLoader {
     ) -> AgentLoadResult<()> {
         let content = markdown.into();
         let name = default_name.into();
-        if name.is_empty() {
-            return Err(AgentLoadError::SchemaValidation {
-                path: PathBuf::from("<memory>"),
-                message: "default_name is empty".to_string(),
-            });
-        }
 
         let config = parse_agent_config(content, name).map_err(|err| AgentLoadError::Parse {
             path: PathBuf::from("<memory>"),
@@ -169,7 +163,7 @@ impl AgentLoader {
         if config.name.is_empty() {
             return Err(AgentLoadError::SchemaValidation {
                 path: PathBuf::from("<memory>"),
-                message: "agent name is empty after parsing".to_string(),
+                message: "agent name is empty".to_string(),
             });
         }
 
@@ -180,7 +174,7 @@ impl AgentLoader {
     /// Adds an agent configuration from raw markdown bytes to the registry.
     ///
     /// A convenience wrapper around [`Self::add_from_str`] that converts bytes to UTF-8 string.
-    /// Invalid UTF-8 bytes will result in a hidden agent with an error description.
+    /// Invalid UTF-8 bytes will result in a schema validation error.
     ///
     /// # Arguments
     ///

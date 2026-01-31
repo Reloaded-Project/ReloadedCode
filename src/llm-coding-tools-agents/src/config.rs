@@ -22,9 +22,9 @@ pub enum AgentMode {
 #[serde(rename_all = "lowercase")]
 pub enum PermissionAction {
     /// Tool is allowed.
-    #[default]
     Allow,
     /// Tool is denied.
+    #[default]
     Deny,
 }
 
