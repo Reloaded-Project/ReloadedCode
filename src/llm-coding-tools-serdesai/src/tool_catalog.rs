@@ -23,7 +23,7 @@ use crate::allowed;
 use crate::{BashTool, TodoReadTool, TodoState, TodoWriteTool, WebFetchTool};
 use llm_coding_tools_core::path::AllowedPathResolver;
 use llm_coding_tools_core::tool_names;
-use llm_coding_tools_core::ToolContext;
+use llm_coding_tools_core::{SystemPromptBuilder, ToolContext};
 use serdes_ai::AgentBuilder;
 
 /// Cloneable catalog entry for serdesAI tool instances.
@@ -156,6 +156,44 @@ impl ToolCatalogEntry {
             Self::TodoWrite(tool) => builder.tool(tool),
         }
     }
+
+    /// Registers this tool on a serdesAI agent builder while tracking prompt context.
+    ///
+    /// Parameters:
+    /// - `builder`: the serdesAI agent builder to register on.
+    /// - `pb`: system prompt builder used to track tool context.
+    ///
+    /// Returns: the builder after registering this tool.
+    pub fn register_with_prompt<Deps, Output>(
+        self,
+        builder: AgentBuilder<Deps, Output>,
+        pb: &mut SystemPromptBuilder,
+    ) -> AgentBuilder<Deps, Output>
+    where
+        Deps: Send + Sync + 'static,
+        Output: Send + Sync + 'static,
+    {
+        match self {
+            Self::ReadLines(tool) => builder.tool(pb.track(tool)),
+            Self::ReadRaw(tool) => builder.tool(pb.track(tool)),
+            Self::ReadAllowedLines(tool) => builder.tool(pb.track(tool)),
+            Self::ReadAllowedRaw(tool) => builder.tool(pb.track(tool)),
+            Self::Write(tool) => builder.tool(pb.track(tool)),
+            Self::WriteAllowed(tool) => builder.tool(pb.track(tool)),
+            Self::Edit(tool) => builder.tool(pb.track(tool)),
+            Self::EditAllowed(tool) => builder.tool(pb.track(tool)),
+            Self::Glob(tool) => builder.tool(pb.track(tool)),
+            Self::GlobAllowed(tool) => builder.tool(pb.track(tool)),
+            Self::GrepLines(tool) => builder.tool(pb.track(tool)),
+            Self::GrepRaw(tool) => builder.tool(pb.track(tool)),
+            Self::GrepAllowedLines(tool) => builder.tool(pb.track(tool)),
+            Self::GrepAllowedRaw(tool) => builder.tool(pb.track(tool)),
+            Self::Bash(tool) => builder.tool(pb.track(tool)),
+            Self::WebFetch(tool) => builder.tool(pb.track(tool)),
+            Self::TodoRead(tool) => builder.tool(pb.track(tool)),
+            Self::TodoWrite(tool) => builder.tool(pb.track(tool)),
+        }
+    }
 }
 
 /// Builds the default tool catalog for serdesAI.
@@ -174,8 +212,13 @@ pub fn default_tools(
     let mut tools = Vec::with_capacity(9);
 
     let allowed_resolvers = resolver.map(|resolver| {
-        let [read_resolver, write_resolver, edit_resolver, glob_resolver, grep_resolver] =
-            [(); 5].map(|_| resolver.clone());
+        let [
+            read_resolver,
+            write_resolver,
+            edit_resolver,
+            glob_resolver,
+            grep_resolver,
+        ] = [(); 5].map(|_| resolver.clone());
         (
             read_resolver,
             write_resolver,

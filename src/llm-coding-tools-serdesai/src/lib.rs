@@ -7,6 +7,7 @@ pub mod allowed;
 pub mod bash;
 mod common;
 pub mod convert;
+pub mod registry;
 pub mod task;
 pub mod todo;
 pub mod tool_catalog;
@@ -48,7 +49,11 @@ pub use llm_coding_tools_core::{
 
 // Re-export standalone tools
 pub use bash::BashTool;
+pub use registry::{
+    AgentDefaults, AgentRegistry, AgentRegistryBuildError, AgentRegistryBuilder,
+    AgentRegistryEntry, RegistryAgent, RegistryAgentError,
+};
 pub use task::TaskTool;
 pub use todo::{TodoReadTool, TodoWriteTool, create_todo_tools};
-pub use tool_catalog::{default_tools, ToolCatalogEntry};
+pub use tool_catalog::{ToolCatalogEntry, default_tools};
 pub use webfetch::WebFetchTool;

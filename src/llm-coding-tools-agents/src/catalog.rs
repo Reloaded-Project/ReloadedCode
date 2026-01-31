@@ -52,6 +52,18 @@ impl AgentCatalog {
     pub(crate) fn insert(&mut self, config: AgentConfig) -> Option<AgentConfig> {
         self.agents.insert(config.name.clone(), config)
     }
+
+    /// Creates a catalog from an iterator of agent configurations.
+    ///
+    /// Parameters:
+    /// - `entries`: iterator of [`AgentConfig`) instances.
+    ///
+    /// Returns: a populated [`AgentCatalog`].
+    pub fn from_entries(entries: impl IntoIterator<Item = AgentConfig>) -> Self {
+        Self {
+            agents: entries.into_iter().map(|c| (c.name.clone(), c)).collect(),
+        }
+    }
 }
 
 #[cfg(test)]
