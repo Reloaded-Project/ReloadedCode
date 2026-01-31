@@ -1,16 +1,17 @@
 //! Agent configuration loader with directory scanning.
 
+use crate::catalog::AgentCatalog;
 use crate::config::{AgentConfig, RawFrontmatter};
 use crate::error::{AgentLoadError, AgentLoadResult};
-use crate::parser::parse_agent;
+use crate::parser::{parse_agent, AgentParseError};
 use crate::registry::SubagentRegistry;
 use ignore::WalkBuilder;
 use std::fs;
 use std::path::{Path, PathBuf};
 
-/// Stateless loader for parsing and inserting agent configs into a [`SubagentRegistry`].
+/// Stateless loader for parsing and inserting agent configs into a [`SubagentRegistry`] or [`AgentCatalog`].
 ///
-/// [`AgentLoader`] provides a flexible way to assemble a [`SubagentRegistry`] from multiple sources:
+/// [`AgentLoader`] provides a flexible way to assemble a [`SubagentRegistry`] or [`AgentCatalog`] from multiple sources:
 /// - Directories (scanned for `agent/**/*.md` and `agents/**/*.md`)
 /// - Individual files (names derived from file names, with optional override)
 /// - In-memory [`AgentConfig`] entries
@@ -50,7 +51,12 @@ impl AgentLoader {
         directory: impl Into<PathBuf>,
     ) -> AgentLoadResult<()> {
         let dir = directory.into();
-        load_directory_into_registry(registry, &dir)
+        load_directory_with(&dir, |path, rel_path| {
+            let name = derive_agent_name_from_rel(rel_path);
+            let config = load_agent_file(path, name)?;
+            registry.insert(config);
+            Ok(())
+        })
     }
 
     /// Adds a single agent file (name derived from file name) to the registry.
@@ -143,9 +149,8 @@ impl AgentLoader {
     ) -> AgentLoadResult<()> {
         let content = markdown.into();
         let name = default_name.into();
-        match parse_agent::<RawFrontmatter>(content) {
-            Ok(result) => {
-                let config = AgentConfig::from_raw(name, result.data, result.content);
+        match parse_agent_config(content, name.clone()) {
+            Ok(config) => {
                 registry.insert(config);
             }
             Err(err) => {
@@ -188,17 +193,169 @@ impl AgentLoader {
             Err(_) => self.add_from_str(registry, "", default_name),
         }
     }
+
+    // ========== Catalog Methods ==========
+
+    /// Adds all agents from a directory to the catalog.
+    ///
+    /// Parameters:
+    /// - `catalog`: the catalog to insert agents into
+    /// - `directory`: root directory to scan for `agent/**/*.md` and `agents/**/*.md`
+    ///
+    /// Returns: `Ok(())` on success or [`AgentLoadError`] on failure.
+    ///
+    /// Unreadable directory entries are skipped to preserve loader parity.
+    pub fn add_directory_to_catalog(
+        &self,
+        catalog: &mut AgentCatalog,
+        directory: impl Into<PathBuf>,
+    ) -> AgentLoadResult<()> {
+        let dir = directory.into();
+        load_directory_with(&dir, |path, rel_path| {
+            let name = derive_agent_name_from_rel(rel_path);
+            let config = load_agent_file(path, name)?;
+            catalog.insert(config);
+            Ok(())
+        })
+    }
+
+    /// Adds a single agent file (name derived from file name) to the catalog.
+    ///
+    /// Parameters:
+    /// - `catalog`: the catalog to insert the agent into
+    /// - `path`: path to a markdown file with YAML frontmatter
+    ///
+    /// Returns: `Ok(())` on success or [`AgentLoadError`] on failure.
+    pub fn add_file_to_catalog(
+        &self,
+        catalog: &mut AgentCatalog,
+        path: impl Into<PathBuf>,
+    ) -> AgentLoadResult<()> {
+        let path = path.into();
+        let derived_name = path
+            .file_stem()
+            .map(|stem| stem.to_string_lossy().into_owned())
+            .unwrap_or_default();
+        if derived_name.is_empty() {
+            return Err(AgentLoadError::SchemaValidation {
+                path: path.to_path_buf(),
+                message: "agent file name is empty".to_string(),
+            });
+        }
+        let config = load_agent_file(&path, derived_name)?;
+        catalog.insert(config);
+        Ok(())
+    }
+
+    /// Adds a single agent file with an explicit name override to the catalog.
+    ///
+    /// Parameters:
+    /// - `catalog`: the catalog to insert the agent into
+    /// - `path`: path to a markdown file with YAML frontmatter
+    /// - `name`: explicit agent name to use
+    ///
+    /// Returns: `Ok(())` on success or [`AgentLoadError`] on failure.
+    pub fn add_file_named_to_catalog(
+        &self,
+        catalog: &mut AgentCatalog,
+        path: impl Into<PathBuf>,
+        name: impl Into<String>,
+    ) -> AgentLoadResult<()> {
+        let path = path.into();
+        let override_name = name.into();
+        if override_name.is_empty() {
+            return Err(AgentLoadError::SchemaValidation {
+                path: path.to_path_buf(),
+                message: "agent name is empty".to_string(),
+            });
+        }
+        let mut config = load_agent_file(&path, String::new())?;
+        config.name = override_name;
+        catalog.insert(config);
+        Ok(())
+    }
+
+    /// Adds an in-memory [`AgentConfig`] to the catalog.
+    ///
+    /// Parameters:
+    /// - `catalog`: the catalog to insert the agent into
+    /// - `config`: fully constructed agent configuration
+    ///
+    /// Returns: Ok(()) on success.
+    pub fn add_config_to_catalog(
+        &self,
+        catalog: &mut AgentCatalog,
+        config: AgentConfig,
+    ) -> AgentLoadResult<()> {
+        catalog.insert(config);
+        Ok(())
+    }
+
+    /// Adds an agent configuration from a raw markdown string to the catalog.
+    ///
+    /// Parameters:
+    /// - `catalog`: the catalog to insert the agent into
+    /// - `markdown`: raw markdown string with YAML frontmatter
+    /// - `default_name`: agent name to use if not specified in frontmatter
+    ///
+    /// Returns: `Ok(())` on success or [`AgentLoadError`] on failure.
+    ///
+    /// Catalogs are config-only and must not synthesize hidden error agents.
+    /// This stricter failure behavior is intentional to satisfy the
+    /// "no placeholder types/errors" constraint while producing a clean
+    /// config collection for framework registries. The registry loader
+    /// keeps its existing hidden-error-agent behavior unchanged.
+    pub fn add_from_str_to_catalog(
+        &self,
+        catalog: &mut AgentCatalog,
+        markdown: impl Into<String>,
+        default_name: impl Into<String>,
+    ) -> AgentLoadResult<()> {
+        let config = config_from_str_strict(markdown, default_name)?;
+        catalog.insert(config);
+        Ok(())
+    }
+
+    /// Adds an agent configuration from raw markdown bytes to the catalog.
+    ///
+    /// Parameters:
+    /// - `catalog`: the catalog to insert the agent into
+    /// - `bytes`: raw markdown bytes with YAML frontmatter
+    /// - `default_name`: agent name to use if not specified in frontmatter
+    ///
+    /// Returns: `Ok(())` on success or [`AgentLoadError`] on failure.
+    ///
+    /// Catalogs are config-only and must not synthesize hidden error agents.
+    /// Invalid UTF-8 is surfaced as a validation error to keep the catalog
+    /// free of placeholder configs. The registry loader remains unchanged.
+    pub fn add_from_bytes_to_catalog(
+        &self,
+        catalog: &mut AgentCatalog,
+        bytes: impl AsRef<[u8]>,
+        default_name: impl Into<String>,
+    ) -> AgentLoadResult<()> {
+        let content = std::str::from_utf8(bytes.as_ref()).map_err(|err| {
+            AgentLoadError::SchemaValidation {
+                path: PathBuf::from("<memory>"),
+                message: format!("invalid UTF-8: {err}"),
+            }
+        })?;
+        let config = config_from_str_strict(content, default_name)?;
+        catalog.insert(config);
+        Ok(())
+    }
 }
 
-fn load_directory_into_registry(
-    registry: &mut SubagentRegistry,
+/// Shared directory scan helper used by both registry and catalog loading.
+fn load_directory_with(
     dir: &Path,
+    mut on_match: impl FnMut(&Path, &str) -> AgentLoadResult<()>,
 ) -> AgentLoadResult<()> {
     if !dir.is_dir() {
         return Ok(());
     }
 
-    // NOTE: keep this walker configuration identical to the existing load_agents.
+    // Keep walker config identical to existing registry behavior.
     let walker = WalkBuilder::new(dir)
         .hidden(false)
         .git_ignore(true)
@@ -210,9 +367,8 @@ fn load_directory_into_registry(
     for entry_result in walker {
         let entry = match entry_result {
             Ok(e) => e,
-            Err(_) => continue,
+            Err(_) => continue, // preserve existing behavior: skip unreadable entries
         };
-
         let Some(ft) = entry.file_type() else {
             continue;
         };
@@ -235,12 +391,23 @@ fn load_directory_into_registry(
             continue;
         }
 
-        let name = derive_agent_name_from_rel(&rel_path);
-        let config = load_agent_file(path, name)?;
-        registry.insert(config);
+        on_match(path, &rel_path)?;
     }
 
     Ok(())
+}
+
+/// Shared parse helper that reuses existing loader parsing in both registry + catalog.
+fn parse_agent_config(
+    content: String,
+    default_name: String,
+) -> Result<AgentConfig, AgentParseError> {
+    let result = parse_agent::<RawFrontmatter>(content)?;
+    Ok(AgentConfig::from_raw(
+        default_name,
+        result.data,
+        result.content,
+    ))
 }
 
 /// Loads a single agent configuration from a file.
@@ -250,12 +417,32 @@ fn load_agent_file(path: &Path, name: String) -> AgentLoadResult<AgentConfig> {
         source: e,
     })?;
 
-    let result = parse_agent::<RawFrontmatter>(content).map_err(|e| AgentLoadError::Parse {
+    parse_agent_config(content, name).map_err(|err| AgentLoadError::Parse {
         path: path.to_path_buf(),
-        source: e,
-    })?;
+        source: err,
+    })
+}
 
-    Ok(AgentConfig::from_raw(name, result.data, result.content))
+/// Strict parser for catalog-only string loading (validates non-empty name).
+fn config_from_str_strict(
+    markdown: impl Into<String>,
+    default_name: impl Into<String>,
+) -> AgentLoadResult<AgentConfig> {
+    let name = default_name.into();
+    let config =
+        parse_agent_config(markdown.into(), name.clone()).map_err(|err| AgentLoadError::Parse {
+            path: PathBuf::from("<memory>"),
+            source: err,
+        })?;
+
+    if config.name.is_empty() {
+        return Err(AgentLoadError::SchemaValidation {
+            path: PathBuf::from("<memory>"),
+            message: "agent name is empty".to_string(),
+        });
+    }
+
+    Ok(config)
 }
 
 /// Checks if a relative path matches `agent/**/*.md` or `agents/**/*.md`.
@@ -288,6 +475,7 @@ fn derive_agent_name_from_rel(rel_path: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::catalog::AgentCatalog;
     use crate::config::AgentMode;
     use indexmap::IndexMap;
     use std::collections::HashMap;
@@ -631,5 +819,71 @@ mod tests {
             .unwrap();
 
         assert_eq!(registry.get("override").unwrap().description, "new");
+    }
+
+    // ========== Catalog Tests ==========
+
+    #[test]
+    fn catalog_loads_agent_dir_pattern() {
+        let dir = TempDir::new().unwrap();
+        create_agent_file(
+            dir.path(),
+            "agent/single.md",
+            "---\nmode: subagent\n---\nBody",
+        );
+        create_agent_file(
+            dir.path(),
+            "agents/nested/deep.md",
+            "---\nmode: primary\n---\nBody",
+        );
+
+        let loader = AgentLoader::new();
+        let mut catalog = AgentCatalog::new();
+        loader
+            .add_directory_to_catalog(&mut catalog, dir.path())
+            .unwrap();
+
+        assert!(catalog.by_name("single").is_some());
+        assert!(catalog.by_name("nested/deep").is_some());
+    }
+
+    #[test]
+    fn catalog_add_file_uses_file_stem() {
+        let dir = TempDir::new().unwrap();
+        create_agent_file(
+            dir.path(),
+            "custom/explicit.md",
+            "---\nmode: subagent\n---\nBody",
+        );
+
+        let loader = AgentLoader::new();
+        let mut catalog = AgentCatalog::new();
+        loader
+            .add_file_to_catalog(&mut catalog, dir.path().join("custom/explicit.md"))
+            .unwrap();
+
+        assert!(catalog.by_name("explicit").is_some());
+    }
+
+    #[test]
+    fn catalog_overwrites_existing_entries_last_wins() {
+        // Reuse the existing make_agent(name, description) helper in this test module.
+        let dir = TempDir::new().unwrap();
+        create_agent_file(
+            dir.path(),
+            "custom/agent.md",
+            "---\nmode: subagent\ndescription: First\n---\nBody",
+        );
+
+        let loader = AgentLoader::new();
+        let mut catalog = AgentCatalog::new();
+        loader
+            .add_file_to_catalog(&mut catalog, dir.path().join("custom/agent.md"))
+            .unwrap();
+        loader
+            .add_config_to_catalog(&mut catalog, make_agent("agent", "Second"))
+            .unwrap();
+
+        assert_eq!(catalog.by_name("agent").unwrap().description, "Second");
     }
 }

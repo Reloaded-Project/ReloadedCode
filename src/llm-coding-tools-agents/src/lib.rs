@@ -1,7 +1,7 @@
 //! Agent configuration loading and permission management.
 //!
 //! This crate provides:
-//! - Agent configuration schema matching OpenCode conventions
+//! - Config-only [`AgentCatalog`] for loading and iterating agent configs
 //! - Directory scanning for agent configs in `agent/**/*.md` and `agents/**/*.md`
 //! - Permission evaluation with wildcard pattern matching (last-match-wins)
 //! - Agent registry with mode filtering and permission-aware access control
@@ -38,6 +38,7 @@
 
 #![warn(missing_docs)]
 
+mod catalog;
 mod config;
 mod error;
 mod loader;
@@ -46,6 +47,7 @@ mod permission;
 mod registry;
 mod task;
 
+pub use catalog::AgentCatalog;
 pub use config::{AgentConfig, AgentMode, PermissionAction, PermissionRule};
 pub use error::AgentLoadError;
 pub use error::AgentLoadResult;
