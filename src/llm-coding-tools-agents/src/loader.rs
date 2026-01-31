@@ -353,6 +353,16 @@ fn load_directory_with(
     mut on_match: impl FnMut(&Path, &str) -> AgentLoadResult<()>,
 ) -> AgentLoadResult<()> {
     if !dir.is_dir() {
+        if dir.exists() {
+            return Err(AgentLoadError::Io {
+                path: dir.to_path_buf(),
+                source: std::io::Error::new(
+                    std::io::ErrorKind::NotADirectory,
+                    "path is not a directory",
+                ),
+            });
+        }
+        // Non-existent directories are allowed (nothing to load)
         return Ok(());
     }
 

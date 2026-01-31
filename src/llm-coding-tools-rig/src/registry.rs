@@ -273,9 +273,12 @@ where
             for tool in allowed_tools {
                 agent_builder = Some(match agent_builder.take() {
                     None => {
-                        let builder = base_builder
-                            .take()
-                            .expect("base builder should be available before first tool");
+                        let builder = base_builder.take().ok_or_else(|| {
+                            AgentRegistryBuildError::BuildFailed {
+                                agent: config.name.clone(),
+                                message: "base builder unavailable before first tool".to_string(),
+                            }
+                        })?;
                         tool.register_on_with_prompt(builder, &mut pb)
                     }
                     Some(b) => tool.register_on_simple_with_prompt(b, &mut pb),
@@ -285,10 +288,16 @@ where
             let system_prompt = pb.build();
             let agent = match agent_builder {
                 Some(b) => b.preamble(&system_prompt).build(),
-                None => base_builder
-                    .expect("base builder should be available when no tools registered")
-                    .preamble(&system_prompt)
-                    .build(),
+                None => {
+                    let builder = base_builder.ok_or_else(|| {
+                        AgentRegistryBuildError::BuildFailed {
+                            agent: config.name.clone(),
+                            message: "base builder unavailable when no tools registered"
+                                .to_string(),
+                        }
+                    })?;
+                    builder.preamble(&system_prompt).build()
+                }
             };
 
             entries.insert(

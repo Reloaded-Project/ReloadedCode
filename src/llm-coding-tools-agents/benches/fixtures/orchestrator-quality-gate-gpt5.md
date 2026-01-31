@@ -20,6 +20,7 @@ think hard
 
 # Inputs
 - `prompt_path`: requirements and objectives
+- `objectives_path` (optional): additional objectives file
 - Review context from orchestrator:
   - Task intent (one-line summary)
   - Coder's concerns (areas of uncertainty — focus review here)

@@ -56,9 +56,10 @@ impl AgentCatalog {
     /// Creates a catalog from an iterator of agent configurations.
     ///
     /// Parameters:
-    /// - `entries`: iterator of [`AgentConfig`) instances.
+    /// - `entries`: iterator of [`AgentConfig`] instances.
     ///
-    /// Returns: a populated [`AgentCatalog`].
+    /// Returns: a populated [`AgentCatalog`]. If duplicate names exist,
+    /// the last entry for each name is retained.
     pub fn from_entries(entries: impl IntoIterator<Item = AgentConfig>) -> Self {
         Self {
             agents: entries.into_iter().map(|c| (c.name.clone(), c)).collect(),

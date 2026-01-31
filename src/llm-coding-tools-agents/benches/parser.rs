@@ -20,22 +20,18 @@ fn benchmark_parse_frontmatter(c: &mut Criterion) {
 
     for (name, input) in [("lf", &real_lf), ("crlf", &real_crlf)] {
         group.throughput(Throughput::Bytes(input.len() as u64));
-        group.bench_with_input(
-            BenchmarkId::new("real_agent", "lf"),
-            &real_lf,
-            |b, input| {
-                b.iter(|| {
-                    black_box({
-                        let loader = AgentLoader::new();
-                        let mut registry = SubagentRegistry::new();
-                        loader
-                            .add_from_str(&mut registry, black_box(input), "benchmark")
-                            .unwrap();
-                        registry.len()
-                    })
+        group.bench_with_input(BenchmarkId::new("real_agent", name), input, |b, input| {
+            b.iter(|| {
+                black_box({
+                    let loader = AgentLoader::new();
+                    let mut registry = SubagentRegistry::new();
+                    loader
+                        .add_from_str(&mut registry, black_box(input), "benchmark")
+                        .unwrap();
+                    registry.len()
                 })
-            },
-        );
+            })
+        });
     }
 
     group.finish();

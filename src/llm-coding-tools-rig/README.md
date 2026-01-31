@@ -94,6 +94,26 @@ let sandboxed_read: AllowedReadTool<true> = AllowedReadTool::new(resolver.clone(
 let sandboxed_write = AllowedWriteTool::new(resolver);
 ```
 
+For the Task tool (subagent invocation), you need an agent registry and permission rules:
+
+```rust,no_run
+use llm_coding_tools_rig::AgentRegistry;
+use llm_coding_tools_rig::TaskTool;
+use llm_coding_tools_agents::{Ruleset, Rule, PermissionAction};
+use std::sync::Arc;
+use rig::agent::Agent;
+
+// Build registry with AgentRegistryBuilder (see examples for full setup)
+// let registry: AgentRegistry<Agent<M>> = builder.build(&catalog).unwrap();
+
+// Create permissions allowing all task invocations
+let mut rules = Ruleset::new();
+rules.push(Rule::new("task", "*", PermissionAction::Allow));
+
+// Create Task tool with registry and permissions
+// let task_tool = TaskTool::new(Arc::new(registry), rules);
+```
+
 Other tools: `BashTool`, `TaskTool`, `WebFetchTool`, `TodoTools`.
 Use `SystemPromptBuilder` to register tools and pass `pb.build()` to `.preamble()`. Set `working_directory()` so that the environment section is populated.
 Context strings are re-exported in `llm_coding_tools_rig::context` (e.g., `BASH`, `READ_ABSOLUTE`).
