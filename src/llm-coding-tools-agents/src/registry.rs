@@ -26,9 +26,17 @@ impl SubagentRegistry {
     }
 
     /// Creates a registry from a map of agent configurations.
+    ///
+    /// # Note
+    /// The map is rebuilt to ensure keys match config names.
     #[inline]
     pub fn from_map(agents: HashMap<String, AgentConfig>) -> Self {
-        Self { agents }
+        Self {
+            agents: agents
+                .into_values()
+                .map(|config| (config.name.clone(), config))
+                .collect(),
+        }
     }
 
     /// Returns the number of registered agents.

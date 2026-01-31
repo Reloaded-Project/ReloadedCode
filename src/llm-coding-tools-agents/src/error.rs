@@ -13,6 +13,7 @@ pub enum AgentLoadError {
         /// Path that failed to read.
         path: PathBuf,
         /// Underlying I/O error.
+        #[source]
         source: std::io::Error,
     },
 

@@ -17,7 +17,8 @@ use std::path::Path;
 
 let mut loader = AgentLoader::new();
 let mut registry = SubagentRegistry::new();
-loader.add_directory(&mut registry, Path::new("~/.opencode"))?;
+let opencode_dir = std::path::PathBuf::from("/home/user/.opencode");
+loader.add_directory(&mut registry, &opencode_dir)?;
 
 for (name, config) in registry.iter() {
     println!("{}: {}", name, config.description);

@@ -94,7 +94,7 @@ let sandboxed_write = AllowedWriteTool::new(resolver);
 ```
 
 Other tools: `BashTool`, `TaskTool`, `WebFetchTool`, `TodoTools`.
-Use `SystemPromptBuilder` to register tools and pass `pb.build()` to `.preamble()`. Set `working_directory()` so that environment section is populated.
+Use `SystemPromptBuilder` to register tools and pass `pb.build()` to `.preamble()`. Set `working_directory()` so that the environment section is populated.
 Context strings are re-exported in `llm_coding_tools_rig::context` (e.g., `BASH`, `READ_ABSOLUTE`).
 
 ## Examples

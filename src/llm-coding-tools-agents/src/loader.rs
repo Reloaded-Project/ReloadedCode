@@ -51,9 +51,8 @@ impl AgentLoader {
         directory: impl Into<PathBuf>,
     ) -> AgentLoadResult<()> {
         let dir = directory.into();
-        load_directory_with(&dir, |path, rel_path| {
-            let name = derive_agent_name_from_rel(rel_path);
-            let config = load_agent_file(path, name)?;
+        load_directory_with(&dir, |path, name| {
+            let config = load_agent_file(path, name.to_string())?;
             registry.insert(config);
             Ok(())
         })
@@ -141,6 +140,12 @@ impl AgentLoader {
     /// * `registry` - The registry to insert the agent into
     /// * `markdown` - Raw markdown string with YAML frontmatter
     /// * `default_name` - Agent name to use if not specified in frontmatter
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if:
+    /// - Parsing fails (propagates the underlying parse error)
+    /// - The resulting agent name is empty
     pub fn add_from_str(
         &self,
         registry: &mut SubagentRegistry,
@@ -149,26 +154,26 @@ impl AgentLoader {
     ) -> AgentLoadResult<()> {
         let content = markdown.into();
         let name = default_name.into();
-        match parse_agent_config(content, name.clone()) {
-            Ok(config) => {
-                registry.insert(config);
-            }
-            Err(err) => {
-                let error_config = AgentConfig {
-                    name,
-                    mode: Default::default(),
-                    description: format!("[Error loading from string: {}]", err),
-                    model: None,
-                    hidden: true,
-                    temperature: None,
-                    top_p: None,
-                    permission: Default::default(),
-                    options: Default::default(),
-                    prompt: String::new(),
-                };
-                registry.insert(error_config);
-            }
+        if name.is_empty() {
+            return Err(AgentLoadError::SchemaValidation {
+                path: PathBuf::from("<memory>"),
+                message: "default_name is empty".to_string(),
+            });
         }
+
+        let config = parse_agent_config(content, name).map_err(|err| AgentLoadError::Parse {
+            path: PathBuf::from("<memory>"),
+            source: err,
+        })?;
+
+        if config.name.is_empty() {
+            return Err(AgentLoadError::SchemaValidation {
+                path: PathBuf::from("<memory>"),
+                message: "agent name is empty after parsing".to_string(),
+            });
+        }
+
+        registry.insert(config);
         Ok(())
     }
 
@@ -211,9 +216,8 @@ impl AgentLoader {
         directory: impl Into<PathBuf>,
     ) -> AgentLoadResult<()> {
         let dir = directory.into();
-        load_directory_with(&dir, |path, rel_path| {
-            let name = derive_agent_name_from_rel(rel_path);
-            let config = load_agent_file(path, name)?;
+        load_directory_with(&dir, |path, name| {
+            let config = load_agent_file(path, name.to_string())?;
             catalog.insert(config);
             Ok(())
         })
@@ -391,7 +395,13 @@ fn load_directory_with(
             continue;
         }
 
-        on_match(path, &rel_path)?;
+        // Skip entries that would produce empty agent names (e.g., agent/.md)
+        let name = match derive_agent_name_from_rel(&rel_path) {
+            Some(n) => n,
+            None => continue,
+        };
+
+        on_match(path, name.as_str())?;
     }
 
     Ok(())
@@ -460,16 +470,23 @@ fn matches_agent_pattern(rel_path: &str) -> bool {
 /// Examples:
 /// - `agent/test.md` -> `"test"`
 /// - `agents/nested/deep.md` -> `"nested/deep"`
-fn derive_agent_name_from_rel(rel_path: &str) -> String {
+/// - `agent/.md` -> `None` (empty name)
+fn derive_agent_name_from_rel(rel_path: &str) -> Option<String> {
     let without_prefix = rel_path
         .strip_prefix("agent/")
         .or_else(|| rel_path.strip_prefix("agents/"))
         .unwrap_or(rel_path);
 
-    without_prefix
+    let name = without_prefix
         .strip_suffix(".md")
         .unwrap_or(without_prefix)
-        .to_string()
+        .to_string();
+
+    if name.is_empty() {
+        None
+    } else {
+        Some(name)
+    }
 }
 
 #[cfg(test)]
@@ -505,16 +522,25 @@ mod tests {
 
     #[test]
     fn derive_agent_name_from_rel_works() {
-        assert_eq!(derive_agent_name_from_rel("agent/test.md"), "test");
-        assert_eq!(derive_agent_name_from_rel("agents/test.md"), "test");
+        assert_eq!(
+            derive_agent_name_from_rel("agent/test.md"),
+            Some("test".to_string())
+        );
+        assert_eq!(
+            derive_agent_name_from_rel("agents/test.md"),
+            Some("test".to_string())
+        );
         assert_eq!(
             derive_agent_name_from_rel("agent/nested/deep.md"),
-            "nested/deep"
+            Some("nested/deep".to_string())
         );
         assert_eq!(
             derive_agent_name_from_rel("agents/foo/bar/baz.md"),
-            "foo/bar/baz"
+            Some("foo/bar/baz".to_string())
         );
+        // Empty name edge case
+        assert_eq!(derive_agent_name_from_rel("agent/.md"), None);
+        assert_eq!(derive_agent_name_from_rel("agents/.md"), None);
     }
 
     #[test]

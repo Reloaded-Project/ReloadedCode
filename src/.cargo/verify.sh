@@ -45,7 +45,7 @@ echo "Docs..."
 run_cmd env RUSTDOCFLAGS="-D warnings" cargo doc --workspace --no-deps --quiet
 
 echo "Formatting..."
-run_cmd cargo fmt --all --quiet
+run_cmd cargo fmt --all --check --quiet
 
 echo "Publish dry-run..."
 run_cmd cargo publish --dry-run -p llm-coding-tools-core --quiet

@@ -20,6 +20,9 @@ function Invoke-LoggedCommand {
     }
 
     & $Command @Arguments
+    if ($LASTEXITCODE -ne 0) {
+        throw "Command '$Command' failed with exit code $LASTEXITCODE"
+    }
 }
 
 $originalDir = Get-Location
@@ -27,9 +30,8 @@ $scriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 $projectRoot = Join-Path $scriptDir ".."
 Set-Location $projectRoot
 
-trap { Set-Location $originalDir }
-
-Write-Host "Building..."
+try {
+    Write-Host "Building..."
 Invoke-LoggedCommand "cargo" @("build", "-p", "llm-coding-tools-core", "--quiet")
 Invoke-LoggedCommand "cargo" @("build", "-p", "llm-coding-tools-agents", "--quiet")
 Invoke-LoggedCommand "cargo" @("build", "-p", "llm-coding-tools-rig", "--quiet")
@@ -64,3 +66,7 @@ Invoke-LoggedCommand "cargo" @("publish", "--dry-run", "--allow-dirty", "-p", "l
 Invoke-LoggedCommand "cargo" @("publish", "--dry-run", "--allow-dirty", "-p", "llm-coding-tools-serdesai", "--quiet")
 
 Write-Host "All checks passed!"
+}
+finally {
+    Set-Location $originalDir
+}

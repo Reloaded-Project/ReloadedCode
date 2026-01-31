@@ -17,41 +17,26 @@ fn benchmark_parse_frontmatter(c: &mut Criterion) {
     let real_crlf = real_lf.replace('\n', "\r\n");
 
     let mut group = c.benchmark_group("parse_frontmatter");
-    group.throughput(Throughput::Bytes(real_lf.len() as u64));
 
-    group.bench_with_input(
-        BenchmarkId::new("real_agent", "lf"),
-        &real_lf,
-        |b, input| {
-            b.iter(|| {
-                black_box({
-                    let loader = AgentLoader::new();
-                    let mut registry = SubagentRegistry::new();
-                    loader
-                        .add_from_str(&mut registry, black_box(input), "benchmark")
-                        .unwrap();
-                    registry.len()
+    for (name, input) in [("lf", &real_lf), ("crlf", &real_crlf)] {
+        group.throughput(Throughput::Bytes(input.len() as u64));
+        group.bench_with_input(
+            BenchmarkId::new("real_agent", "lf"),
+            &real_lf,
+            |b, input| {
+                b.iter(|| {
+                    black_box({
+                        let loader = AgentLoader::new();
+                        let mut registry = SubagentRegistry::new();
+                        loader
+                            .add_from_str(&mut registry, black_box(input), "benchmark")
+                            .unwrap();
+                        registry.len()
+                    })
                 })
-            })
-        },
-    );
-
-    group.bench_with_input(
-        BenchmarkId::new("real_agent", "crlf"),
-        &real_crlf,
-        |b, input| {
-            b.iter(|| {
-                black_box({
-                    let loader = AgentLoader::new();
-                    let mut registry = SubagentRegistry::new();
-                    loader
-                        .add_from_str(&mut registry, black_box(input), "benchmark")
-                        .unwrap();
-                    registry.len()
-                })
-            })
-        },
-    );
+            },
+        );
+    }
 
     group.finish();
 }

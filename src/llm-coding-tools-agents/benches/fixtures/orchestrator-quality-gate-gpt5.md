@@ -38,7 +38,7 @@ think hard
 - Read full file contents for changed files to understand context
 
 ## 3) Review code style
-- FAIL IF: a small, single-caller helper is defined separately instead of inlining
+- WARNING IF: a trivial helper (1-2 lines) is extracted unnecessarily, reducing readability
 - FAIL IF: there is dead code (unused functions, unreachable branches, commented-out code)
 - FAIL IF: public visibility is used when private/protected suffices
 - FAIL IF: there is leftover debug/logging code not intended for production
