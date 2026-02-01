@@ -19,12 +19,17 @@ use llm_coding_tools_serdesai::{
     TodoState, default_tools,
 };
 use serdes_ai::prelude::*;
+use serdes_ai::agent::ModelConfig;
 use std::fmt::Write;
 use std::sync::Arc;
 
-// For OpenRouter, set OPENROUTER_API_KEY in the environment.
-// The model string uses the "openrouter:" prefix which is resolved by serdesAI.
-const OPENROUTER_MODEL: &str = "openrouter:z-ai/glm-4.5-air:free";
+// Set your OpenAI API key here or via OPENAI_API_KEY environment variable.
+const OPENAI_MODEL: &str = "openai:hf:zai-org/GLM-4.7";
+const OPENAI_BASE_URL: &str = "https://api.synthetic.new/openai/v1";
+
+fn get_openai_api_key() -> String {
+    std::env::var("OPENAI_API_KEY").unwrap_or_default()
+}
 
 // Embedded subagent config (loaded via include_str!)
 const SUBAGENT_CONFIG: &str = include_str!("agents/serdesai-agents.md");
@@ -64,7 +69,7 @@ async fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
     // AgentDefaults specifies the default model and sampling parameters
     // for agents that don't override them in their config.
     let defaults = AgentDefaults {
-        model: OPENROUTER_MODEL.to_string(),
+        model: OPENAI_MODEL.to_string(),
         temperature: None,
         top_p: None,
         options: Default::default(),
@@ -73,8 +78,8 @@ async fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
     // Build the registry from the catalog and tool catalog.
     // The registry prebuilds all agents with their allowed tools from the catalog.
     //
-    // Note: AgentBuilder::from_model depends on provider config being available.
-    // For OpenRouter, ensure OPENROUTER_API_KEY environment variable is set.
+    // Note: For OpenAI models with "openai:" prefix, AgentBuilder::from_model
+    // will resolve the model using environment variables like OPENAI_API_KEY.
     let registry = AgentRegistryBuilder::<()>::new(defaults, tools).build(&catalog)?;
 
     // === Task tool permissions (allow Task for the single subagent only) ===
@@ -97,9 +102,12 @@ async fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
 
     // Create the primary agent with ONLY the Task tool (forces delegation to subagent).
     //
-    // Note: For OpenRouter models with "openrouter:" prefix, AgentBuilder::from_model
-    // will resolve the model using environment variables like OPENROUTER_API_KEY.
-    let agent = AgentBuilder::<(), String>::from_model(OPENROUTER_MODEL)?
+    // Note: For OpenAI models with "openai:" prefix, use ModelConfig to set custom base URL.
+    let agent = AgentBuilder::<(), String>::from_config(
+        ModelConfig::new(OPENAI_MODEL)
+            .with_api_key(get_openai_api_key())
+            .with_base_url(OPENAI_BASE_URL)
+    )?
         .tool(pb.track(task_tool))
         .system_prompt(pb.build())
         .build();

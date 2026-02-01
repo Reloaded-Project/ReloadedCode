@@ -17,17 +17,16 @@ use llm_coding_tools_rig::{
 };
 use rig::client::CompletionClient;
 use rig::completion::Prompt;
-use rig::providers::openrouter;
+use rig::providers::openai::CompletionsClient;
 use std::sync::Arc;
 
-// Set your OpenRouter API key here or via OPENROUTER_API_KEY environment variable.
-// Using a free model, so minimal/no charges expected.
-const OPENROUTER_API_KEY: &str = "";
-const OPENROUTER_MODEL: &str = "z-ai/glm-4.5-air:free";
+// Set your OpenAI API key here or via OPENAI_API_KEY environment variable.
+const OPENAI_API_KEY: &str = "";
+const OPENAI_MODEL: &str = "hf:zai-org/GLM-4.7";
+const OPENAI_BASE_URL: &str = "https://api.synthetic.new/openai/v1";
 
-// Read API key from environment with fallback to default constant
-fn get_openrouter_api_key() -> String {
-    std::env::var("OPENROUTER_API_KEY").unwrap_or_else(|_| OPENROUTER_API_KEY.to_string())
+fn get_openai_api_key() -> String {
+    std::env::var("OPENAI_API_KEY").unwrap_or_else(|_| OPENAI_API_KEY.to_string())
 }
 
 // Embedded subagent config (loaded via include_str!)
@@ -68,7 +67,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // AgentDefaults specifies the default model and sampling parameters
     // for agents that don't override them in their config.
     let defaults = AgentDefaults {
-        model: OPENROUTER_MODEL.to_string(),
+        model: OPENAI_MODEL.to_string(),
         temperature: None,
         top_p: None,
         options: Default::default(),
@@ -76,7 +75,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // Create the rig client and build the registry from the catalog.
     // The registry prebuilds all agents with their allowed tools from the catalog.
-    let client: openrouter::Client = openrouter::Client::new(&get_openrouter_api_key())?;
+    let client: CompletionsClient = CompletionsClient::builder()
+        .api_key(&get_openai_api_key())
+        .base_url(OPENAI_BASE_URL)
+        .build()?;
     let registry =
         AgentRegistryBuilder::new(|model| client.agent(model), defaults, tools).build(&catalog)?;
 
@@ -99,7 +101,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // Create the primary agent with ONLY the Task tool (forces delegation to subagent).
     let agent = client
-        .agent(OPENROUTER_MODEL)
+        .agent(OPENAI_MODEL)
         .tool(task_tool)
         .preamble(&pb.build())
         .build();

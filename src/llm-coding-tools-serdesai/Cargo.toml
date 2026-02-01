@@ -19,7 +19,7 @@ llm-coding-tools-agents = { version = "0.1.0", path = "../llm-coding-tools-agent
 
 # serdes-ai provides Tool trait, ToolDefinition, RunContext
 serdes-ai = "0.1"
-serdes-ai-models = { version = "0.1", features = ["openrouter"] }
+serdes-ai-models = { version = "0.1", features = ["openai"] }
 serdes-ai-streaming = "0.1"
 futures = "0.3"
 

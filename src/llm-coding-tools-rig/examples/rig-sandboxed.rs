@@ -13,15 +13,17 @@ use llm_coding_tools_rig::allowed::{EditTool, GlobTool, GrepTool, ReadTool, Writ
 use llm_coding_tools_rig::{AllowedPathResolver, SystemPromptBuilder};
 use rig::client::CompletionClient;
 use rig::completion::Prompt;
-use rig::providers::openrouter;
+use rig::providers::openai::CompletionsClient;
 use std::path::PathBuf;
 
-// API key below has a zero spend limit; it cannot incur charges.
-// If this no longer works, find a free model to use on OpenRouter for testing.
-// Note: OpenRouter is buggy on rig currently; it may not always work well.
-// This is for demonstration only.
-const OPENROUTER_API_KEY: &str = "";
-const OPENROUTER_MODEL: &str = "z-ai/glm-4.5-air:free";
+// Set your OpenAI API key here or via OPENAI_API_KEY environment variable.
+const OPENAI_API_KEY: &str = "";
+const OPENAI_MODEL: &str = "hf:zai-org/GLM-4.7";
+const OPENAI_BASE_URL: &str = "https://api.synthetic.new/openai/v1";
+
+fn get_openai_api_key() -> String {
+    std::env::var("OPENAI_API_KEY").unwrap_or_else(|_| OPENAI_API_KEY.to_string())
+}
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -58,9 +60,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .working_directory(std::env::current_dir()?.display().to_string())
         .allowed_paths(&resolver);
 
-    let client: openrouter::Client = openrouter::Client::new(OPENROUTER_API_KEY)?;
+    let client: CompletionsClient = CompletionsClient::builder()
+        .api_key(&get_openai_api_key())
+        .base_url(OPENAI_BASE_URL)
+        .build()?;
     let agent = client
-        .agent(OPENROUTER_MODEL)
+        .agent(OPENAI_MODEL)
         .tool(pb.track(read))
         .tool(pb.track(write))
         .tool(pb.track(edit))

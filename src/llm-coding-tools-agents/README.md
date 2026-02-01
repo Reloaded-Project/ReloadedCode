@@ -35,7 +35,7 @@ for config in catalog.iter() {
 ---
 mode: subagent
 description: Explores codebase structure
-model: openrouter:provider/model-id[:tag]
+model: openai:provider/model-id[:tag]
 permission:
   read: allow
   task: deny
@@ -73,17 +73,25 @@ See `examples/rig-agents.rs` for the complete example.
 ```rust,no_run
 use llm_coding_tools_agents::{AgentCatalog, AgentLoader, Ruleset, Rule, PermissionAction};
 use llm_coding_tools_rig::{AgentDefaults, AgentRegistryBuilder, TaskTool, default_tools, TodoState};
-use rig::providers::openrouter;
+use rig::providers::openai::CompletionsClient;
 use std::sync::Arc;
+
+fn get_openai_api_key() -> String {
+    std::env::var("OPENAI_API_KEY").unwrap_or_default()
+}
 
 // 1) Load agent configs
 let mut catalog = AgentCatalog::new();
 AgentLoader::new().add_directory(&mut catalog, "/home/user/.opencode")?;
 
 // 2) Build framework registry
-let client = openrouter::Client::new("OPENROUTER_API_KEY")?;
+const OPENAI_BASE_URL: &str = "https://api.synthetic.new/openai/v1";
+let client = CompletionsClient::builder()
+    .api_key(&get_openai_api_key())
+    .base_url(OPENAI_BASE_URL)
+    .build()?;
 let defaults = AgentDefaults {
-    model: "z-ai/glm-4.5-air:free".into(),
+    model: "hf:zai-org/GLM-4.7".into(),
     temperature: None,
     top_p: None,
     options: Default::default(),
@@ -114,7 +122,7 @@ AgentLoader::new().add_directory(&mut catalog, "/home/user/.opencode")?;
 
 // 2) Build framework registry
 let defaults = AgentDefaults {
-    model: "openrouter:z-ai/glm-4.5-air:free".into(),
+    model: "openai:hf:zai-org/GLM-4.7".into(),
     temperature: None,
     top_p: None,
     options: Default::default(),
@@ -161,12 +169,12 @@ during registry construction.
 The legacy `TaskRunner`, `TaskToolCore`, and `SubagentRegistry` types have been removed.
 Migrate to the new flow as follows:
 
-| Legacy API | New API |
-|------------|---------|
-| `SubagentRegistry` | `AgentCatalog` + framework `AgentRegistry` |
-| `TaskRunner` | Not needed - use registry-driven `TaskTool` |
-| `TaskToolCore` | Not needed - use framework `TaskTool` types |
-| `TaskError` | Framework-specific error types |
+| Legacy API         | New API                                     |
+| ------------------ | ------------------------------------------- |
+| `SubagentRegistry` | `AgentCatalog` + framework `AgentRegistry`  |
+| `TaskRunner`       | Not needed - use registry-driven `TaskTool` |
+| `TaskToolCore`     | Not needed - use framework `TaskTool` types |
+| `TaskError`        | Framework-specific error types              |
 
 For complete migration examples, see:
 - `examples/rig-agents.rs` (PROMPT-06)

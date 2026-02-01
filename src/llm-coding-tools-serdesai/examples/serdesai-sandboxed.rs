@@ -14,14 +14,18 @@ use llm_coding_tools_serdesai::AllowedPathResolver;
 use llm_coding_tools_serdesai::SystemPromptBuilder;
 use llm_coding_tools_serdesai::agent_ext::AgentBuilderExt;
 use llm_coding_tools_serdesai::allowed::{EditTool, GlobTool, GrepTool, ReadTool, WriteTool};
-use serdes_ai::models::openrouter::OpenRouterModel;
+use serdes_ai::models::openai::OpenAIChatModel;
 use serdes_ai::prelude::*;
 use std::fmt::Write;
 
-// API key below has a zero spend limit; it cannot incur charges.
-// If this no longer works, find a free model to use on OpenRouter for testing.
-const OPENROUTER_API_KEY: &str = "";
-const OPENROUTER_MODEL: &str = "z-ai/glm-4.5-air:free";
+// Set your OpenAI API key here or via OPENAI_API_KEY environment variable.
+const OPENAI_API_KEY: &str = "";
+const OPENAI_MODEL: &str = "hf:zai-org/GLM-4.7";
+const OPENAI_BASE_URL: &str = "https://api.synthetic.new/openai/v1";
+
+fn get_openai_api_key() -> String {
+    std::env::var("OPENAI_API_KEY").unwrap_or_else(|_| OPENAI_API_KEY.to_string())
+}
 
 #[tokio::main]
 async fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
@@ -55,7 +59,8 @@ async fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
         .working_directory(std::env::current_dir()?.display().to_string())
         .allowed_paths(&resolver);
 
-    let model = OpenRouterModel::new(OPENROUTER_MODEL, OPENROUTER_API_KEY);
+    let model = OpenAIChatModel::new(OPENAI_MODEL, get_openai_api_key())
+        .with_base_url(OPENAI_BASE_URL);
     let agent = AgentBuilder::<(), String>::new(model)
         .instructions("Use tools to answer; call at least one tool before responding.")
         .tool(pb.track(read))
