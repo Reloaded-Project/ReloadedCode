@@ -12,6 +12,12 @@ This crate provides the foundational building blocks for coding tool implementat
 - Utility functions for text processing and formatting
 - `context` module - LLM guidance strings for tool usage
 
+Task tools (for agent-to-agent delegation) are implemented as registry-driven tools in the framework-specific crates:
+- Rig: See `llm-coding-tools-rig::TaskTool` (README for setup example)
+- SerdesAI: See `llm-coding-tools-serdesai::TaskTool` (README for setup example)
+
+Both frameworks use a unified flow: load agent configs into `AgentCatalog`, build a framework-specific registry, then construct a `TaskTool` with the registry and permission rules.
+
 ## Features
 
 - `tokio` (default): Async mode with tokio runtime. Enables async function signatures.

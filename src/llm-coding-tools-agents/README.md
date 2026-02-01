@@ -8,20 +8,23 @@ Agent configuration loading from OpenCode-style markdown files with YAML frontma
 - Preprocess frontmatter to handle inline colons (e.g., `model: provider/model:tag`)
 - Scan directories for agent configs matching `agent/**/*.md` and `agents/**/*.md`
 - Derive agent names from file paths
+- Permission evaluation with wildcard pattern matching (last-match-wins)
 
 ## Usage
 
+Load agent configurations into [`AgentCatalog`] using [`AgentLoader`]:
+
 ```rust
-use llm_coding_tools_agents::{AgentLoader, SubagentRegistry};
+use llm_coding_tools_agents::{AgentLoader, AgentCatalog};
 use std::path::Path;
 
 let mut loader = AgentLoader::new();
-let mut registry = SubagentRegistry::new();
+let mut catalog = AgentCatalog::new();
 let opencode_dir = std::path::PathBuf::from("/home/user/.opencode");
-loader.add_directory(&mut registry, &opencode_dir)?;
+loader.add_directory(&mut catalog, &opencode_dir)?;
 
-for (name, config) in registry.iter() {
-    println!("{}: {}", name, config.description);
+for config in catalog.iter() {
+    println!("{}: {}", config.name, config.description);
 }
 # Ok::<(), llm_coding_tools_agents::AgentLoadError>(())
 ```
@@ -41,69 +44,138 @@ permission:
 Prompt body goes here...
 ```
 
-## Task Tool
+## Task Tool (Registry-Driven Flow)
 
-The Task tool allows agents to invoke agents with permission-based access control.
+The Task tool allows agents to invoke other agents with permission-based access control.
+This crate provides the [`TaskInput`] and [`TaskOutput`] types used by framework-specific
+Task tools. The Task tool behavior is implemented in framework adapters (rig and serdesAI).
 
-### Core Components
+### Registry-Driven Task Flow
 
-- `TaskInput` / `TaskOutput` - Input/output types for task execution
-- `TaskError` - Error types for task failures
-- `TaskRunner` - Trait for framework-specific execution
-- `TaskToolCore` - Enforces access validation before delegating to runner
+The new flow for using Task tools is:
 
-### Usage with Framework Adapters
+1. **Load agent configs** into [`AgentCatalog`] using [`AgentLoader`]
+2. **Build a framework registry** using `AgentRegistryBuilder` (rig or serdesAI)
+3. **Construct `TaskTool`** from the registry and caller permission rules
 
-Framework adapters (rig, serdesAI) wrap `TaskToolCore`:
+#### Example for rig:
 
-```rust
-use llm_coding_tools_agents::{TaskToolCore, TaskRunner, Ruleset};
+See `examples/registry-driven-task-rig.rs` for the complete example.
+
+```rust,no_run
+use llm_coding_tools_agents::{AgentCatalog, AgentLoader, Ruleset, Rule, PermissionAction};
+use llm_coding_tools_rig::{AgentDefaults, AgentRegistryBuilder, TaskTool, default_tools, TodoState};
+use rig::providers::openrouter;
 use std::sync::Arc;
 
-// Create runner (framework-specific implementation)
-let runner: Arc<MyRunner> = /* ... */;
+// 1) Load agent configs
+let mut catalog = AgentCatalog::new();
+AgentLoader::new().add_directory(&mut catalog, "/home/user/.opencode")?;
 
-// Create core with caller's permission rules
-let core = TaskToolCore::new(runner, caller_rules);
+// 2) Build framework registry
+let client = openrouter::Client::new("OPENROUTER_API_KEY")?;
+let defaults = AgentDefaults {
+    model: "z-ai/glm-4.5-air:free".into(),
+    temperature: None,
+    top_p: None,
+    options: Default::default(),
+};
+let tools = default_tools(true, None, TodoState::new());
+let builder = AgentRegistryBuilder::new(|model| client.agent(model), defaults, tools);
+let registry = builder.build(&catalog)?;
 
-// Build description for tool definition
-let description = core.build_description();
-
-// Execute with enforced access validation
-let result = core.execute(input, &deps).await?;
+// 3) Create Task tool
+let mut rules = Ruleset::new();
+rules.push(Rule::new("task", "*", PermissionAction::Allow));
+let task_tool = TaskTool::new(Arc::new(registry), rules);
+# Ok::<(), Box<dyn std::error::Error>>(())
 ```
+
+#### Example for serdesAI:
+
+See `examples/registry-driven-task-serdesai.rs` for the complete example.
+
+```rust,no_run
+use llm_coding_tools_agents::{AgentCatalog, AgentLoader, Ruleset, Rule, PermissionAction};
+use llm_coding_tools_serdesai::{AgentDefaults, AgentRegistryBuilder, TaskTool, default_tools, TodoState};
+use std::sync::Arc;
+
+// 1) Load agent configs
+let mut catalog = AgentCatalog::new();
+AgentLoader::new().add_directory(&mut catalog, "/home/user/.opencode")?;
+
+// 2) Build framework registry
+let defaults = AgentDefaults {
+    model: "openrouter:z-ai/glm-4.5-air:free".into(),
+    temperature: None,
+    top_p: None,
+    options: Default::default(),
+};
+let tools = default_tools(true, None, TodoState::new());
+let registry = AgentRegistryBuilder::<()>::new(defaults, tools).build(&catalog)?;
+
+// 3) Create Task tool
+let mut rules = Ruleset::new();
+rules.push(Rule::new("task", "*", PermissionAction::Allow));
+let deps = ();
+let task_tool = TaskTool::new(Arc::new(registry), rules, Arc::new(deps));
+# Ok::<(), Box<dyn std::error::Error>>(())
+```
+
+### Task Input / Output Types
+
+**`TaskInput`**: Input structure for task execution
+- `description`: Short (3-5 words) description of the task
+- `prompt`: The task for the agent to perform
+- `subagent_type`: The type/name of the agent to invoke
+- `session_id`: Optional session ID for continuation
+- `command`: Optional command that triggered this task
+
+**`TaskOutput`**: Output structure from task execution
+- `summary`: The text response from the agent
+- `session_id`: Session ID for continuation (if supported)
+- `metadata`: Optional execution metadata
 
 ### Permission Enforcement
 
-Access validation is ALWAYS enforced in `TaskToolCore::execute`:
+The framework `TaskTool` implementations enforce access validation:
 
-1. Checks if the agent exists (returns `UnknownAgent` if not)
-2. Verifies the subagent is invocable (not primary-only)
-3. Checks caller's `task` permission for the requested subagent
-4. Computes allowed tools via the subagent's permission rules
-5. Passes `allowed_tools` to the runner
+1. Checks if the agent exists (returns validation error if not)
+2. Verifies the agent is invocable (not primary-only mode)
+3. Checks caller's `task` permission for the requested agent
+4. Uses the agent's permission rules to filter available tools
 
-### Tool Filtering
+Framework registries precompute allowed tools based on each agent's permission rules
+during registry construction.
 
-The runner receives `allowed_tools` computed by `TaskToolCore`:
+## Migration from Legacy APIs
 
-1. Gets subagent's available tools from `agent_tools()`
-2. Gets subagent's permission rules from `agent_rules()`
-3. Filters tools by `is_allowed(tool_name, "*")`
-4. Preserves original tool name casing (normalizes only for comparison)
+The legacy `TaskRunner`, `TaskToolCore`, and `SubagentRegistry` types have been removed.
+Migrate to the new flow as follows:
 
-### serdesAI Implementation Note
+| Legacy API | New API |
+|------------|---------|
+| `SubagentRegistry` | `AgentCatalog` + framework `AgentRegistry` |
+| `TaskRunner` | Not needed - use registry-driven `TaskTool` |
+| `TaskToolCore` | Not needed - use framework `TaskTool` types |
+| `TaskError` | Framework-specific error types |
 
-When implementing `TaskRunner` for serdesAI, use `AgentBuilderExt::tool` and filter by `allowed_tools`:
+For complete migration examples, see:
+- `examples/registry-driven-task-rig.rs` (PROMPT-06)
+- `examples/registry-driven-task-serdesai.rs` (PROMPT-06)
+
+## Permission System
+
+Permissions use a ruleset with allow/deny actions and wildcard patterns.
+Evaluation follows a last-match-wins policy with default deny.
 
 ```rust
-use llm_coding_tools_serdesai::agent_ext::AgentBuilderExt;
+use llm_coding_tools_agents::{Ruleset, Rule, PermissionAction};
 
-// In TaskRunner::run implementation:
-let mut builder = AgentBuilder::<Deps, String>::from_model(&config.model)?;
-for tool in available_tools {
-    if allowed_tools.iter().any(|t| t.eq_ignore_ascii_case(&tool.name())) {
-        builder = builder.tool(tool);
-    }
-}
+let mut ruleset = Ruleset::new();
+ruleset.push(Rule::new("task", "*", PermissionAction::Deny));
+ruleset.push(Rule::new("task", "orchestrator-*", PermissionAction::Allow));
+
+assert!(ruleset.is_allowed("task", "orchestrator-builder"));
+assert!(!ruleset.is_allowed("task", "random-agent"));
 ```

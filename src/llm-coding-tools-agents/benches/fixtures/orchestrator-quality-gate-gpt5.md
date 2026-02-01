@@ -39,11 +39,11 @@ think hard
 - Read full file contents for changed files to understand context
 
 ## 3) Review code style
-- WARNING IF: a trivial helper (1-2 lines) is extracted unnecessarily, reducing readability
-- FAIL IF: there is dead code (unused functions, unreachable branches, commented-out code)
-- FAIL IF: public visibility is used when private/protected suffices
-- FAIL IF: there is leftover debug/logging code not intended for production
-- WARNING IF: there is unnecessary abstraction (interface with only 1 implementation)
+- WARNING IF [MEDIUM]: a trivial helper (1-2 lines) is extracted unnecessarily, reducing readability
+- FAIL IF [HIGH]: there is dead code (unused functions, unreachable branches, commented-out code)
+- FAIL IF [HIGH]: public visibility is used when private/protected suffices
+- FAIL IF [HIGH]: there is leftover debug/logging code not intended for production
+- WARNING IF [MEDIUM]: there is unnecessary abstraction (interface with only 1 implementation)
 
 ## 4) Review code semantics
 
@@ -78,9 +78,9 @@ These are areas where the implementer was uncertain — validate the approach or
 - Capture outputs and exit codes
 
 ## 9) Decide status
-- **FAIL**: Any CRITICAL/HIGH severity finding, or objectives not met, or verification checks fail
-- **PARTIAL**: Only MEDIUM/LOW findings with all objectives met and checks passing
-- **PASS**: No findings, all objectives met, all checks pass
+- **FAIL**: Any CRITICAL/HIGH severity finding, objectives not met, verification checks fail, or forbidden tests found
+- **PARTIAL**: Only MEDIUM/LOW findings with all objectives met, checks passing, and no forbidden tests
+- **PASS**: No findings, all objectives met, all checks pass, and no forbidden tests
 
 # Output
 
@@ -139,7 +139,7 @@ Details if failed
 Details if failed
 
 ### Tests
-[PASS|FAIL|SKIPPED] — X passed, Y failed
+[PASS|FAIL|SKIPPED|FORBIDDEN_TESTS_FOUND] — X passed, Y failed
 Details if failed
 
 ## Recommendation

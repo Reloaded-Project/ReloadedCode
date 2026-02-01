@@ -13,6 +13,7 @@ Lightweight, high-performance serdesAI framework Tool implementations for coding
 - **Shell execution** - Cross-platform command execution with timeout
 - **Web fetching** - URL content retrieval with format conversion
 - **Todo management** - Shared-state todo list tracking
+- **Task tool** - Registry-driven agent invocation with permission checks
 - **Context strings** - LLM guidance text for tool usage (re-exported from core)
 - **Schema builders** - Composable helpers for custom tool definitions
 
@@ -83,10 +84,38 @@ let sandboxed_read: AllowedReadTool<true> = AllowedReadTool::new(resolver.clone(
 let sandboxed_write = AllowedWriteTool::new(resolver);
 ```
 
-Other tools: `BashTool`, `WebFetchTool`, `TaskTool`, `TodoReadTool`, `TodoWriteTool`.
+### Task Tool (Registry-Driven)
+
+The Task tool allows agents to invoke other agents via a registry-based lookup.
+
+**Note**: For a complete runnable example, see `examples/registry-driven-task-serdesai.rs`.
+
+Setup requires three steps:
+
+1. **Load agent configs** into `AgentCatalog`
+2. **Build a serdesAI registry** with `AgentRegistryBuilder` and tools
+3. **Create `TaskTool`** with registry, permissions, and deps
+
+The example file shows the complete setup.
+
+**Note**: The `default_tools` function returns cloneable `ToolCatalogEntry` items that can be reused for building multiple agents. The `AgentRegistryBuilder` uses these to construct tool descriptions and filter based on agent permissions. The `deps` parameter is passed to registry agents at invocation time.
+
+Other tools: `BashTool`, `WebFetchTool`, `TodoReadTool`, `TodoWriteTool`.
 Use `SystemPromptBuilder` to track tools and pass `pb.build()` to `.system_prompt()`. Set `working_directory()` so the environment section is populated.
 Use `AgentBuilderExt::tool()` to add tools that implement `Tool<Deps>` to the agent.
 Context strings are re-exported in `llm_coding_tools_serdesai::context` (e.g., `BASH`, `READ_ABSOLUTE`).
+
+### Migration from Legacy Task APIs
+
+The previous task setup using `TaskToolCore` and `SubagentRegistry` has been replaced with the registry-driven flow. Key changes:
+
+| Legacy | New |
+|--------|-----|
+| `SubagentRegistry` from agents crate | `AgentCatalog` + serdesAI `AgentRegistry` |
+| `TaskToolCore` | `TaskTool` (registry-based implementation) |
+| Manually building agents | `AgentRegistryBuilder` builds all at once |
+
+For a detailed migration example, see `examples/registry-driven-task-serdesai.rs`.
 
 ## Examples
 

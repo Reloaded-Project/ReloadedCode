@@ -4,21 +4,41 @@
 //! - Config-only [`AgentCatalog`] for loading and iterating agent configs
 //! - Directory scanning for agent configs in `agent/**/*.md` and `agents/**/*.md`
 //! - Permission evaluation with wildcard pattern matching (last-match-wins)
-//! - Agent registry with mode filtering and permission-aware access control
-//! - Flexible agent loading via [`AgentLoader`] for composing sources
+//! - [`AgentLoader`] for composing agent configs from multiple sources
+//! - [`TaskInput`] / [`TaskOutput`] types for framework Task tools
 //!
-//! # Example
+//! The new registry-driven Task flow:
+//! 1. Load agent configs into [`AgentCatalog`] using [`AgentLoader`]
+//! 2. Build a framework-specific registry (e.g., rig or serdesAI `AgentRegistryBuilder`)
+//! 3. Construct `TaskTool` from the registry and permission rules
+//!
+//! # Example: Load agents
 //!
 //! ```no_run
-//! use llm_coding_tools_agents::{AgentLoader, SubagentRegistry};
+//! use llm_coding_tools_agents::{AgentLoader, AgentCatalog};
 //! use std::path::Path;
 //!
 //! let mut loader = AgentLoader::new();
-//! let mut registry = SubagentRegistry::new();
-//! loader.add_directory(&mut registry, Path::new("/etc/opencode"))?;
-//! loader.add_file(&mut registry, Path::new("/path/to/custom_agent.md"))?;
+//! let mut catalog = AgentCatalog::new();
+//! loader.add_directory(&mut catalog, Path::new("/etc/opencode"))?;
+//! loader.add_file(&mut catalog, Path::new("/path/to/custom_agent.md"))?;
 //! # Ok::<(), llm_coding_tools_agents::AgentLoadError>(())
 //! ```
+//!
+//! # Example: Complete Task tool setup
+//!
+//! See the framework-specific READMEs for complete examples:
+//!
+//! - **Rig**: See `llm-coding-tools-rig` README for Task tool setup
+//! - **SerdesAI**: See `llm-coding-tools-serdesai` README for Task tool setup
+//!
+//! The flow:
+//! 1. Load agent configs into [`AgentCatalog`] using [`AgentLoader`]
+//! 2. Build a framework-specific registry (e.g., rig or SerdesAI `AgentRegistryBuilder`)
+//! 3. Construct `TaskTool` from the registry and permission rules
+//!
+//! See `examples/registry-driven-task-rig.rs` and `examples/registry-driven-task-serdesai.rs`
+//! for complete runnable examples.
 //!
 //! # Permission System
 //!
@@ -44,7 +64,6 @@ mod error;
 mod loader;
 mod parser;
 mod permission;
-mod registry;
 mod task;
 
 pub use catalog::AgentCatalog;
@@ -54,5 +73,4 @@ pub use error::AgentLoadResult;
 pub use loader::AgentLoader;
 pub use parser::AgentParseError;
 pub use permission::{Rule, Ruleset};
-pub use registry::SubagentRegistry;
-pub use task::{TaskError, TaskInput, TaskOutput, TaskRunner, TaskToolCore};
+pub use task::{TaskInput, TaskOutput};

@@ -13,6 +13,7 @@ Lightweight, high-performance Rig framework Tool implementations for coding tool
 - **Shell execution** - Cross-platform command execution with timeout
 - **Web fetching** - URL content retrieval with format conversion
 - **Todo management** - Shared-state todo list tracking
+- **Task tool** - Registry-driven agent invocation with permission checks
 - **Context strings** - LLM guidance text for tool usage (re-exported from core)
 
 ## Installation
@@ -94,29 +95,37 @@ let sandboxed_read: AllowedReadTool<true> = AllowedReadTool::new(resolver.clone(
 let sandboxed_write = AllowedWriteTool::new(resolver);
 ```
 
-For the Task tool (subagent invocation), you need an agent registry and permission rules:
+### Task Tool (Registry-Driven)
 
-```rust,no_run
-use llm_coding_tools_rig::AgentRegistry;
-use llm_coding_tools_rig::TaskTool;
-use llm_coding_tools_agents::{Ruleset, Rule, PermissionAction};
-use std::sync::Arc;
-use rig::agent::Agent;
+The Task tool allows agents to invoke other agents via a registry-based lookup.
 
-// Build registry with AgentRegistryBuilder (see examples for full setup)
-// let registry: AgentRegistry<Agent<M>> = builder.build(&catalog).unwrap();
+**Note**: For a complete runnable example, see `examples/registry-driven-task-rig.rs`.
 
-// Create permissions allowing all task invocations
-let mut rules = Ruleset::new();
-rules.push(Rule::new("task", "*", PermissionAction::Allow));
+Setup requires three steps:
 
-// Create Task tool with registry and permissions
-// let task_tool = TaskTool::new(Arc::new(registry), rules);
-```
+1. **Load agent configs** into `AgentCatalog`
+2. **Build a rig registry** with `AgentRegistryBuilder` and tools
+3. **Create `TaskTool`** with registry and caller permissions
 
-Other tools: `BashTool`, `TaskTool`, `WebFetchTool`, `TodoTools`.
+The example file shows the complete setup including rig client creation and the closure passed to `AgentRegistryBuilder`.
+
+**Note**: The `default_tools` function returns cloneable `ToolCatalogEntry` items that can be reused for building multiple agents. The `AgentRegistryBuilder` uses these to construct tool descriptions and filter based on agent permissions.
+
+Other tools: `BashTool`, `WebFetchTool`, `TodoTools`.
 Use `SystemPromptBuilder` to register tools and pass `pb.build()` to `.preamble()`. Set `working_directory()` so that the environment section is populated.
 Context strings are re-exported in `llm_coding_tools_rig::context` (e.g., `BASH`, `READ_ABSOLUTE`).
+
+### Migration from Legacy Task APIs
+
+The previous task setup using `TaskToolCore` and `SubagentRegistry` has been replaced with the registry-driven flow. Key changes:
+
+| Legacy | New |
+|--------|-----|
+| `SubagentRegistry` from agents crate | `AgentCatalog` + rig `AgentRegistry` |
+| `TaskToolCore` | `TaskTool` (registry-based implementation) |
+| Manually building agents | `AgentRegistryBuilder` builds all at once |
+
+For a detailed migration example, see `examples/registry-driven-task-rig.rs`.
 
 ## Examples
 

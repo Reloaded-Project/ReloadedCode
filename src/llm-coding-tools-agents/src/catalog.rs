@@ -6,11 +6,11 @@ use std::collections::HashMap;
 /// Config-only storage for agent configurations loaded by [`crate::AgentLoader`].
 ///
 /// Stores [`AgentConfig`] entries by name and provides lightweight read access
-/// via iterators and name-based lookup. Unlike [`crate::SubagentRegistry`], the catalog
-/// does not perform permission filtering or mode-based access control.
+/// via iterators and name-based lookup. The catalog does not perform permission
+/// filtering or mode-based access control.
 ///
-/// The catalog is intended for framework registries to iterate and build
-/// native agents from loaded configurations.
+/// The catalog is intended for framework-specific `AgentRegistryBuilder` implementations
+/// (e.g., in rig or serdesAI) to iterate and construct runtime agents.
 #[derive(Debug, Clone, Default)]
 pub struct AgentCatalog {
     agents: HashMap<String, AgentConfig>,
