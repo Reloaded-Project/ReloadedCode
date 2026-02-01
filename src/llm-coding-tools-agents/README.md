@@ -35,7 +35,7 @@ for config in catalog.iter() {
 ---
 mode: subagent
 description: Explores codebase structure
-model: provider/model-id
+model: openrouter:provider/model-id[:tag]
 permission:
   read: allow
   task: deny
@@ -43,6 +43,14 @@ permission:
 
 Prompt body goes here...
 ```
+
+### Mode Options
+
+The `mode` field controls how the agent can be invoked:
+
+- `subagent`: Runs as a supportive agent invoked by a primary agent. Can execute tasks but cannot spawn other subagents.
+- `primary`: The main agent that can spawn or coordinate subagents. Full tool access including Task tool for invoking other agents.
+- `primary-only`: Restricts the agent to run only as a primary. Cannot be invoked as a subagent by other agents.
 
 ## Task Tool (Registry-Driven Flow)
 

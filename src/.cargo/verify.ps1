@@ -53,8 +53,13 @@ Write-Host "Testing blocking feature..."
 Invoke-LoggedCommand "cargo" @("test", "-p", "llm-coding-tools-core", "--no-default-features", "--features", "blocking", "--quiet")
 
 Write-Host "Docs..."
+$originalRustdocFlags = $env:RUSTDOCFLAGS
 $env:RUSTDOCFLAGS = "-D warnings"
-Invoke-LoggedCommand "cargo" @("doc", "--workspace", "--no-deps", "--quiet")
+try {
+    Invoke-LoggedCommand "cargo" @("doc", "--workspace", "--no-deps", "--quiet")
+} finally {
+    $env:RUSTDOCFLAGS = $originalRustdocFlags
+}
 
 Write-Host "Formatting..."
 Invoke-LoggedCommand "cargo" @("fmt", "--all", "--check", "--quiet")

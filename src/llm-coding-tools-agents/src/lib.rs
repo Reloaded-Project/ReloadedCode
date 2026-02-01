@@ -9,7 +9,7 @@
 //!
 //! The new registry-driven Task flow:
 //! 1. Load agent configs into [`AgentCatalog`] using [`AgentLoader`]
-//! 2. Build a framework-specific registry (e.g., rig or serdesAI `AgentRegistryBuilder`)
+//! 2. Build a framework-specific registry (e.g., rig or SerdesAI `AgentRegistryBuilder`)
 //! 3. Construct `TaskTool` from the registry and permission rules
 //!
 //! # Example: Load agents
