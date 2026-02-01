@@ -1,45 +1,42 @@
-//! Registry-driven Task tool example (serdesAI).
+//! Agent-driven Task tool example (serdesAI).
 //!
 //! Demonstrates:
-//! - Loading agent configs from directory or fallback to inline config
+//! - Loading a subagent config from an embedded file using include_str!
 //! - Using default_tools to build the tool catalog
 //! - Building an AgentRegistry from AgentCatalog and tools
 //! - Creating a TaskTool for subagent invocation
-//! - Setting up a primary agent with Task tool
-//! - Running a simple task that invokes a subagent
+//! - Setting up a primary agent with only the Task tool (forces delegation)
+//! - Running a task that requires the primary agent to invoke a subagent
+//! - Streaming output with XML-style logging
 //!
-//! Run: cargo run --example registry-driven-task-serdesai -p llm-coding-tools-serdesai
+//! Run: cargo run --example serdesai-agents -p llm-coding-tools-serdesai
 
+use futures::StreamExt;
 use llm_coding_tools_agents::{AgentCatalog, AgentLoader, PermissionAction, Rule, Ruleset};
+use llm_coding_tools_serdesai::agent_ext::AgentBuilderExt;
 use llm_coding_tools_serdesai::{
     AgentDefaults, AgentRegistryBuilder, AllowedPathResolver, SystemPromptBuilder, TaskTool,
     TodoState, default_tools,
 };
-use llm_coding_tools_serdesai::agent_ext::AgentBuilderExt;
 use serdes_ai::prelude::*;
+use std::fmt::Write;
 use std::sync::Arc;
 
 // For OpenRouter, set OPENROUTER_API_KEY in the environment.
 // The model string uses the "openrouter:" prefix which is resolved by serdesAI.
 const OPENROUTER_MODEL: &str = "openrouter:z-ai/glm-4.5-air:free";
 
-// Fallback agent config used when config directory is empty or missing.
-const DEFAULT_AGENT: &str = "---\nmode: subagent\ndescription: Example subagent\npermission:\n  read: allow\n  glob: allow\n---\nYou are a helpful subagent. Respond concisely.\n";
+// Embedded subagent config (loaded via include_str!)
+const SUBAGENT_CONFIG: &str = include_str!("agents/serdesai-agents.md");
 
 #[tokio::main]
 async fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
-    // === Load agent configs ===
+    // === Load agent config ===
     //
-    // Load configs from OPENCODE_AGENT_DIR environment variable or use ".opencode".
-    // If no configs are found, use the inline DEFAULT_AGENT fallback.
-    let config_dir = std::env::var("OPENCODE_AGENT_DIR").unwrap_or_else(|_| ".opencode".into());
+    // Load a single embedded agent config using include_str!.
     let loader = AgentLoader::new();
     let mut catalog = AgentCatalog::new();
-    loader.add_directory(&mut catalog, &config_dir)?;
-    if catalog.iter().next().is_none() {
-        // Add a fallback agent so the example works without external config files
-        loader.add_from_str(&mut catalog, DEFAULT_AGENT, "example-subagent")?;
-    }
+    loader.add_from_str(&mut catalog, SUBAGENT_CONFIG, "file-reader")?;
 
     // === Choose absolute vs allowed tool flow ===
     //
@@ -80,16 +77,16 @@ async fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
     // For OpenRouter, ensure OPENROUTER_API_KEY environment variable is set.
     let registry = AgentRegistryBuilder::<()>::new(defaults, tools).build(&catalog)?;
 
-    // === Task tool permissions (allow Task for all subagents) ===
+    // === Task tool permissions (allow Task for the single subagent only) ===
     //
     // The caller_rules control which subagents the primary agent can invoke.
-    // Here we allow invocation of all agent types ("*").
+    // Here we only allow the one "file-reader" subagent.
     let mut caller_rules = Ruleset::new();
-    caller_rules.push(Rule::new("task", "*", PermissionAction::Allow));
+    caller_rules.push(Rule::new("task", "file-reader", PermissionAction::Allow));
     let deps = Arc::new(());
     let task_tool = TaskTool::new(Arc::new(registry), caller_rules, deps);
 
-    // === Build primary agent with Task tool ===
+    // === Build primary agent with Task tool only ===
     //
     // Build a system prompt that includes working directory and optionally allowed paths.
     let mut pb = SystemPromptBuilder::new()
@@ -98,7 +95,7 @@ async fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
         pb = pb.allowed_paths(resolver);
     }
 
-    // Create the primary agent using AgentBuilderExt to register the Task tool.
+    // Create the primary agent with ONLY the Task tool (forces delegation to subagent).
     //
     // Note: For OpenRouter models with "openrouter:" prefix, AgentBuilder::from_model
     // will resolve the model using environment variables like OPENROUTER_API_KEY.
@@ -107,16 +104,44 @@ async fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
         .system_prompt(pb.build())
         .build();
 
+    // === Print tool info ===
+    println!("=== Agent Ready ({} tools) ===", agent.tools().len());
+
     // === Invoke a subagent via Task ===
     //
     // Prompt the primary agent to use the Task tool to invoke a subagent.
-    // The subagent_type "example-subagent" matches the fallback config above.
-    let prompt = "Use the Task tool with subagent_type 'example-subagent' to say hello.";
-    println!("Prompt: {}\n", prompt);
-    println!("Response:");
+    // The primary agent must delegate because it only has the Task tool.
+    let prompt = "Use the Task tool with subagent_type 'file-reader' to read Cargo.toml and summarize dependencies.";
+    println!("\n=== Running Agent ===");
 
-    let response = agent.run(prompt, ()).await?;
-    println!("{}", response.output());
+    let mut stream = agent.run_stream(prompt, ()).await?;
+
+    fn log_xml(request_id: u32, tag: &str, content: &str) {
+        let mut line = String::with_capacity(content.len() + tag.len() * 2 + 18);
+        let _ = write!(line, "<{request_id}:{tag}>{content}</{tag}>");
+        println!("{line}");
+    }
+
+    let mut request_id = 0u32;
+    log_xml(request_id, "user", prompt);
+    request_id = request_id.saturating_add(1);
+    let mut assistant_message = String::with_capacity(256);
+
+    while let Some(event) = stream.next().await {
+        match event? {
+            AgentStreamEvent::TextDelta { text, .. } => assistant_message.push_str(&text),
+            AgentStreamEvent::RequestStart { .. } => assistant_message.clear(),
+            AgentStreamEvent::ToolCallStart { tool_name, .. } => {
+                log_xml(request_id, "tool", &tool_name);
+                request_id = request_id.saturating_add(1);
+            }
+            AgentStreamEvent::ResponseComplete { .. } => {
+                log_xml(request_id, "assistant", &assistant_message);
+                request_id = request_id.saturating_add(1);
+            }
+            _ => {}
+        }
+    }
 
     Ok(())
 }

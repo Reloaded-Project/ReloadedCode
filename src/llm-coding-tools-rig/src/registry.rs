@@ -289,13 +289,12 @@ where
             let agent = match agent_builder {
                 Some(b) => b.preamble(&system_prompt).build(),
                 None => {
-                    let builder = base_builder.ok_or_else(|| {
-                        AgentRegistryBuildError::BuildFailed {
+                    let builder =
+                        base_builder.ok_or_else(|| AgentRegistryBuildError::BuildFailed {
                             agent: config.name.clone(),
                             message: "base builder unavailable when no tools registered"
                                 .to_string(),
-                        }
-                    })?;
+                        })?;
                     builder.preamble(&system_prompt).build()
                 }
             };

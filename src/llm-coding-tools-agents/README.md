@@ -68,7 +68,7 @@ The new flow for using Task tools is:
 
 #### Example for rig:
 
-See `examples/registry-driven-task-rig.rs` for the complete example.
+See `examples/rig-agents.rs` for the complete example.
 
 ```rust,no_run
 use llm_coding_tools_agents::{AgentCatalog, AgentLoader, Ruleset, Rule, PermissionAction};
@@ -101,7 +101,7 @@ let task_tool = TaskTool::new(Arc::new(registry), rules);
 
 #### Example for serdesAI:
 
-See `examples/registry-driven-task-serdesai.rs` for the complete example.
+See `examples/serdesai-agents.rs` for the complete example.
 
 ```rust,no_run
 use llm_coding_tools_agents::{AgentCatalog, AgentLoader, Ruleset, Rule, PermissionAction};
@@ -169,8 +169,8 @@ Migrate to the new flow as follows:
 | `TaskError` | Framework-specific error types |
 
 For complete migration examples, see:
-- `examples/registry-driven-task-rig.rs` (PROMPT-06)
-- `examples/registry-driven-task-serdesai.rs` (PROMPT-06)
+- `examples/rig-agents.rs` (PROMPT-06)
+- `examples/serdesai-agents.rs` (PROMPT-06)
 
 ## Permission System
 

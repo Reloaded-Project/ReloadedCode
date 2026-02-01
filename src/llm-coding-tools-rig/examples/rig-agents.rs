@@ -1,19 +1,19 @@
-//! Registry-driven Task tool example (rig).
+//! Agent-driven Task tool example (rig).
 //!
 //! Demonstrates:
-//! - Loading agent configs from directory or fallback to inline config
+//! - Loading a subagent config from an embedded file using include_str!
 //! - Using default_tools to build the tool catalog
 //! - Building an AgentRegistry from AgentCatalog and tools
 //! - Creating a TaskTool for subagent invocation
-//! - Setting up a primary agent with Task tool
-//! - Running a simple task that invokes a subagent
+//! - Setting up a primary agent with only the Task tool (forces delegation)
+//! - Running a task that requires the primary agent to invoke a subagent
 //!
-//! Run: cargo run --example registry-driven-task-rig -p llm-coding-tools-rig
+//! Run: cargo run --example rig-agents -p llm-coding-tools-rig
 
 use llm_coding_tools_agents::{AgentCatalog, AgentLoader, PermissionAction, Rule, Ruleset};
 use llm_coding_tools_rig::{
-    AgentDefaults, AgentRegistryBuilder, AllowedPathResolver, SystemPromptBuilder, TaskTool,
-    TodoState, default_tools,
+    default_tools, AgentDefaults, AgentRegistryBuilder, AllowedPathResolver, SystemPromptBuilder,
+    TaskTool, TodoState,
 };
 use rig::client::CompletionClient;
 use rig::completion::Prompt;
@@ -27,27 +27,20 @@ const OPENROUTER_MODEL: &str = "z-ai/glm-4.5-air:free";
 
 // Read API key from environment with fallback to default constant
 fn get_openrouter_api_key() -> String {
-    std::env::var("OPENROUTER_API_KEY")
-        .unwrap_or_else(|_| OPENROUTER_API_KEY.to_string())
+    std::env::var("OPENROUTER_API_KEY").unwrap_or_else(|_| OPENROUTER_API_KEY.to_string())
 }
 
-// Fallback agent config used when config directory is empty or missing.
-const DEFAULT_AGENT: &str = "---\nmode: subagent\ndescription: Example subagent\npermission:\n  read: allow\n  glob: allow\n---\nYou are a helpful subagent. Respond concisely.\n";
+// Embedded subagent config (loaded via include_str!)
+const SUBAGENT_CONFIG: &str = include_str!("agents/rig-agents.md");
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    // === Load agent configs ===
+    // === Load agent config ===
     //
-    // Load configs from OPENCODE_AGENT_DIR environment variable or use ".opencode".
-    // If no configs are found, use the inline DEFAULT_AGENT fallback.
-    let config_dir = std::env::var("OPENCODE_AGENT_DIR").unwrap_or_else(|_| ".opencode".into());
+    // Load a single embedded agent config using include_str!.
     let loader = AgentLoader::new();
     let mut catalog = AgentCatalog::new();
-    loader.add_directory(&mut catalog, &config_dir)?;
-    if catalog.iter().next().is_none() {
-        // Add a fallback agent so the example works without external config files
-        loader.add_from_str(&mut catalog, DEFAULT_AGENT, "example-subagent")?;
-    }
+    loader.add_from_str(&mut catalog, SUBAGENT_CONFIG, "file-reader")?;
 
     // === Choose absolute vs allowed tool flow ===
     //
@@ -84,18 +77,18 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Create the rig client and build the registry from the catalog.
     // The registry prebuilds all agents with their allowed tools from the catalog.
     let client: openrouter::Client = openrouter::Client::new(&get_openrouter_api_key())?;
-    let registry = AgentRegistryBuilder::new(|model| client.agent(model), defaults, tools)
-        .build(&catalog)?;
+    let registry =
+        AgentRegistryBuilder::new(|model| client.agent(model), defaults, tools).build(&catalog)?;
 
-    // === Task tool permissions (allow Task for all subagents) ===
+    // === Task tool permissions (allow Task for the single subagent only) ===
     //
     // The caller_rules control which subagents the primary agent can invoke.
-    // Here we allow invocation of all agent types ("*").
+    // Here we only allow the one "file-reader" subagent.
     let mut caller_rules = Ruleset::new();
-    caller_rules.push(Rule::new("task", "*", PermissionAction::Allow));
+    caller_rules.push(Rule::new("task", "file-reader", PermissionAction::Allow));
     let task_tool = TaskTool::new(Arc::new(registry), caller_rules);
 
-    // === Build primary agent with Task tool ===
+    // === Build primary agent with Task tool only ===
     //
     // Build a system prompt that includes working directory and optionally allowed paths.
     let mut pb = SystemPromptBuilder::new()
@@ -104,18 +97,22 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         pb = pb.allowed_paths(resolver);
     }
 
-    // Create the primary agent and register the Task tool.
+    // Create the primary agent with ONLY the Task tool (forces delegation to subagent).
     let agent = client
         .agent(OPENROUTER_MODEL)
         .tool(task_tool)
         .preamble(&pb.build())
         .build();
 
+    // === Agent ready ===
+    println!("=== Agent Ready ===");
+
     // === Invoke a subagent via Task ===
     //
     // Prompt the primary agent to use the Task tool to invoke a subagent.
-    // The subagent_type "example-subagent" matches the fallback config above.
-    let prompt = "Use the Task tool with subagent_type 'example-subagent' to say hello.";
+    // The primary agent must delegate because it only has the Task tool.
+    let prompt = "Use the Task tool with subagent_type 'file-reader' to read Cargo.toml and summarize dependencies.";
+    println!("\n=== Running Agent ===");
     println!("Prompt: {}\n", prompt);
     println!("Response:");
     let response = agent.prompt(prompt).await?;

@@ -99,7 +99,7 @@ let sandboxed_write = AllowedWriteTool::new(resolver);
 
 The Task tool allows agents to invoke other agents via a registry-based lookup.
 
-**Note**: For a complete runnable example, see `examples/registry-driven-task-rig.rs`.
+**Note**: For a complete runnable example, see `examples/rig-agents.rs`.
 
 Setup requires three steps:
 
@@ -125,7 +125,7 @@ The previous task setup using `TaskToolCore` and `SubagentRegistry` has been rep
 | `TaskToolCore` | `TaskTool` (registry-based implementation) |
 | Manually building agents | `AgentRegistryBuilder` builds all at once |
 
-For a detailed migration example, see `examples/registry-driven-task-rig.rs`.
+For a detailed migration example, see `examples/rig-agents.rs`.
 
 ## Examples
 

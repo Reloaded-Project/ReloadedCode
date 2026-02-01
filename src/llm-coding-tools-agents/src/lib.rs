@@ -37,7 +37,7 @@
 //! 2. Build a framework-specific registry (e.g., rig or SerdesAI `AgentRegistryBuilder`)
 //! 3. Construct `TaskTool` from the registry and permission rules
 //!
-//! See `examples/registry-driven-task-rig.rs` and `examples/registry-driven-task-serdesai.rs`
+//! See `examples/rig-agents.rs` and `examples/serdesai-agents.rs`
 //! for complete runnable examples.
 //!
 //! # Permission System
