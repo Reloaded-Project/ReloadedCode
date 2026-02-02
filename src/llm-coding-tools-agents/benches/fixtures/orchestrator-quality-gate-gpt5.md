@@ -49,6 +49,12 @@ think hard
 
 Analyze each changed file deeply. Reason through whether issues exist before concluding — don't just scan for patterns. Be comprehensive; flag anything suspicious.
 
+Severity levels:
+- CRITICAL: immediate security vulnerabilities, data loss risks, system crashes
+- HIGH: correctness bugs, performance issues, architectural problems
+- MEDIUM: code quality issues, minor bugs in edge cases
+- LOW: style inconsistencies, minor optimizations
+
 - **Security**: vulnerabilities, auth issues, data exposure, injection vectors, cryptographic weaknesses
 - **Correctness**: logic bugs, edge cases, race conditions, resource handling, state management
 - **Performance**: algorithmic complexity, unnecessary work, blocking operations, memory issues
@@ -68,9 +74,8 @@ These are areas where the implementer was uncertain — validate the approach or
 - Tests: basic → ensure basic tests exist for new functionality and run tests
 - Tests: no → do not run tests; flag any found tests as overengineering
 - Check whole test files, not just diffs
-- FAIL IF: newly added tests duplicate existing test coverage
-- FAIL IF: same behavior is asserted in multiple tests (if one verifies it, others should skip)
-- FAIL IF: tests could be parameterized to avoid duplication
+- WARNING IF [MEDIUM]: newly added tests duplicate existing test coverage without adding value (different context, edge case, or scenario)
+- WARNING IF [MEDIUM]: tests have significant duplication that would benefit from parameterization without sacrificing readability
 - FAIL IF: tests are non-deterministic (real I/O, time, network without mocking/seeding)
 
 ## 8) Run verification checks

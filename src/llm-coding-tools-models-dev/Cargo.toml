@@ -16,14 +16,14 @@ reqwest = { version = "0.13", default-features = false, features = [
     "rustls",
     "rustls-native-certs",
 ] }
-tokio = { version = "1.49", features = ["fs", "io-util", "rt", "macros", "sync"] }
+tokio = { version = "1.48", features = ["fs", "io-util", "rt", "macros", "sync"] }
 zstd = "0.13"
 
 [build-dependencies]
 zstd = "0.13"
 
 [dev-dependencies]
-tokio = { version = "1.49", features = ["rt", "macros", "sync"] }
+tokio = { version = "1.48", features = ["rt", "macros", "sync"] }
 tempfile = "3.24"
 wiremock = "0.6"
 

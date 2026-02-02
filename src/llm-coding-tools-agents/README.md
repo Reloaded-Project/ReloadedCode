@@ -5,7 +5,7 @@ Agent configuration loading from OpenCode-style markdown files with YAML frontma
 ## Features
 
 - Parse markdown files with YAML frontmatter
-- Preprocess frontmatter to handle inline colons (e.g., `model: provider/model:tag`)
+- Preprocess frontmatter to handle inline colons (e.g., `model: openai:provider/model-id[:tag]`)
 - Scan directories for agent configs matching `agent/**/*.md` and `agents/**/*.md`
 - Derive agent names from file paths
 - Permission evaluation with wildcard pattern matching (last-match-wins)

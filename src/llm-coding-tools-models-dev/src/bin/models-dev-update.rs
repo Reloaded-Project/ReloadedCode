@@ -1,7 +1,7 @@
 use reqwest::Client;
 use serde::Deserialize;
 use serde_json::to_vec_pretty;
-use std::{collections::BTreeMap, env, path::PathBuf};
+use std::{collections::BTreeMap, env, path::PathBuf, time::Duration};
 use tokio::fs;
 
 #[derive(Debug, Deserialize)]
@@ -57,7 +57,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let manifest_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     let output = manifest_dir.join("data/models.dev.min.json");
 
-    let client = Client::new();
+    let client = Client::builder()
+        .timeout(Duration::from_secs(30))
+        .build()?;
     let response = client
         .get("https://models.dev/api.json")
         .send()
