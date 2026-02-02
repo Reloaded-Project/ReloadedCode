@@ -56,56 +56,15 @@ The `mode` field controls how the agent can be invoked:
 
 The Task tool allows agents to invoke other agents with permission-based access control.
 This crate provides the [`TaskInput`] and [`TaskOutput`] types used by framework-specific
-Task tools. The Task tool behavior is implemented in framework adapters (rig and serdesAI).
+Task tools. The Task tool behavior is implemented in framework adapters (serdesAI).
 
 ### Registry-Driven Task Flow
 
 The new flow for using Task tools is:
 
 1. **Load agent configs** into [`AgentCatalog`] using [`AgentLoader`]
-2. **Build a framework registry** using `AgentRegistryBuilder` (rig or serdesAI)
+2. **Build a framework registry** using `AgentRegistryBuilder` (serdesAI)
 3. **Construct `TaskTool`** from the registry and caller permission rules
-
-#### Example for rig:
-
-See `examples/rig-agents.rs` for the complete example.
-
-```rust,no_run
-use llm_coding_tools_agents::{AgentCatalog, AgentLoader, Ruleset, Rule, PermissionAction};
-use llm_coding_tools_rig::{AgentDefaults, AgentRegistryBuilder, TaskTool, default_tools, TodoState};
-use rig::providers::openai::CompletionsClient;
-use std::sync::Arc;
-
-fn get_openai_api_key() -> String {
-    std::env::var("OPENAI_API_KEY").unwrap_or_default()
-}
-
-// 1) Load agent configs
-let mut catalog = AgentCatalog::new();
-AgentLoader::new().add_directory(&mut catalog, "/home/user/.opencode")?;
-
-// 2) Build framework registry
-const OPENAI_BASE_URL: &str = "https://api.synthetic.new/openai/v1";
-let client = CompletionsClient::builder()
-    .api_key(&get_openai_api_key())
-    .base_url(OPENAI_BASE_URL)
-    .build()?;
-let defaults = AgentDefaults {
-    model: "hf:zai-org/GLM-4.7".into(),
-    temperature: None,
-    top_p: None,
-    options: Default::default(),
-};
-let tools = default_tools(true, None, TodoState::new());
-let builder = AgentRegistryBuilder::new(|model| client.agent(model), defaults, tools);
-let registry = builder.build(&catalog)?;
-
-// 3) Create Task tool
-let mut rules = Ruleset::new();
-rules.push(Rule::new("task", "*", PermissionAction::Allow));
-let task_tool = TaskTool::new(Arc::new(registry), rules);
-# Ok::<(), Box<dyn std::error::Error>>(())
-```
 
 #### Example for serdesAI:
 
@@ -123,6 +82,8 @@ AgentLoader::new().add_directory(&mut catalog, "/home/user/.opencode")?;
 // 2) Build framework registry
 let defaults = AgentDefaults {
     model: "openai:hf:zai-org/GLM-4.7".into(),
+    api_key: Some(std::env::var("OPENAI_API_KEY").unwrap_or_default()),
+    base_url: Some("https://api.synthetic.new/openai/v1".into()),
     temperature: None,
     top_p: None,
     options: Default::default(),
@@ -177,7 +138,6 @@ Migrate to the new flow as follows:
 | `TaskError`        | Framework-specific error types              |
 
 For complete migration examples, see:
-- `examples/rig-agents.rs` (PROMPT-06)
 - `examples/serdesai-agents.rs` (PROMPT-06)
 
 ## Permission System

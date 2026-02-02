@@ -9,7 +9,7 @@
 //!
 //! The new registry-driven Task flow:
 //! 1. Load agent configs into [`AgentCatalog`] using [`AgentLoader`]
-//! 2. Build a framework-specific registry (e.g., rig or SerdesAI `AgentRegistryBuilder`)
+//! 2. Build a framework-specific registry (e.g., SerdesAI `AgentRegistryBuilder`)
 //! 3. Construct `TaskTool` from the registry and permission rules
 //!
 //! # Example: Load agents
@@ -29,16 +29,14 @@
 //!
 //! See the framework-specific READMEs for complete examples:
 //!
-//! - **Rig**: See `llm-coding-tools-rig` README for Task tool setup
 //! - **SerdesAI**: See `llm-coding-tools-serdesai` README for Task tool setup
 //!
 //! The flow:
 //! 1. Load agent configs into [`AgentCatalog`] using [`AgentLoader`]
-//! 2. Build a framework-specific registry (e.g., rig or SerdesAI `AgentRegistryBuilder`)
+//! 2. Build a framework-specific registry (e.g., SerdesAI `AgentRegistryBuilder`)
 //! 3. Construct `TaskTool` from the registry and permission rules
 //!
-//! See `examples/rig-agents.rs` and `examples/serdesai-agents.rs`
-//! for complete runnable examples.
+//! See `examples/serdesai-agents.rs` for a complete runnable example.
 //!
 //! # Permission System
 //!

@@ -94,13 +94,13 @@ impl SystemPromptBuilder {
     /// // register _my_tool with your tool collection
     /// ```
     ///
-    /// For example, if working with rig's agent builder:
+    /// For example, if working with serdesAI:
     /// ```text
     /// let mut pb = SystemPromptBuilder::new();
     /// let agent = client
-    ///     .agent("gpt-4o")
+    ///     .builder()
     ///     .tool(pb.track(ReadTool::new()))
-    ///     .system prompt(&pb.build())
+    ///     .system_prompt(&pb.build())
     ///     .build();
     /// ```
     pub fn track<T: ToolContext>(&mut self, tool: T) -> T {

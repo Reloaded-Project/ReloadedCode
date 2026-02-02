@@ -13,10 +13,9 @@ This crate provides the foundational building blocks for coding tool implementat
 - `context` module - LLM guidance strings for tool usage
 
 Task tools (for agent-to-agent delegation) are implemented as registry-driven tools in the framework-specific crates:
-- Rig: See `llm-coding-tools-rig::TaskTool` (README for setup example)
 - SerdesAI: See `llm-coding-tools-serdesai::TaskTool` (README for setup example)
 
-Both frameworks use a unified flow: load agent configs into `AgentCatalog`, build a framework-specific registry, then construct a `TaskTool` with the registry and permission rules.
+The serdesAI framework uses a unified flow: load agent configs into `AgentCatalog`, build a framework-specific registry, then construct a `TaskTool` with the registry and permission rules.
 
 ## Features
 
@@ -66,6 +65,5 @@ Available context strings:
 ## Design Principles
 
 - No framework-specific dependencies, plug and play into any LLM framework/library
-  - See [llm-coding-tools-rig](https://crates.io/crates/llm-coding-tools-rig) for an integration example with [rig](https://crates.io/crates/rig)
 - Minimal dependency footprint
 - Performance-oriented (optimized) with zero-cost abstractions

@@ -49,7 +49,6 @@ impl<const LINE_NUMBERS: bool> GrepTool<LINE_NUMBERS> {
 #[async_trait]
 impl<Deps: Send + Sync, const LINE_NUMBERS: bool> Tool<Deps> for GrepTool<LINE_NUMBERS> {
     fn definition(&self) -> ToolDefinition {
-        // Description matches rig exactly
         let description = if LINE_NUMBERS {
             "Search file contents using regex patterns. Returns matches with file paths, line numbers, and content, sorted by file modification time."
         } else {

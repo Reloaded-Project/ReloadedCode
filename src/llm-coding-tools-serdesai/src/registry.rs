@@ -4,6 +4,7 @@ use async_trait::async_trait;
 use llm_coding_tools_agents::{AgentCatalog, AgentConfig, AgentMode, Ruleset};
 use llm_coding_tools_core::SystemPromptBuilder;
 use serde_json::{Map, Value};
+use serdes_ai::agent::ModelConfig;
 use serdes_ai::{Agent, AgentBuilder, ModelSettings};
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -13,6 +14,10 @@ use std::sync::Arc;
 pub struct AgentDefaults {
     /// Default model ID (e.g., "provider/model-id").
     pub model: String,
+    /// Default API key override (if any).
+    pub api_key: Option<String>,
+    /// Default base URL override (if any).
+    pub base_url: Option<String>,
     /// Default temperature override (if any).
     pub temperature: Option<f64>,
     /// Default top-p override (if any).
@@ -235,8 +240,15 @@ where
                 pb = pb.system_prompt(config.prompt.clone());
             }
 
+            let mut model_config = ModelConfig::new(&model);
+            if let Some(api_key) = &self.defaults.api_key {
+                model_config = model_config.with_api_key(api_key.clone());
+            }
+            if let Some(base_url) = &self.defaults.base_url {
+                model_config = model_config.with_base_url(base_url.clone());
+            }
             let mut builder =
-                AgentBuilder::<Arc<Deps>, String>::from_model(&model).map_err(|err| {
+                AgentBuilder::<Arc<Deps>, String>::from_config(model_config).map_err(|err| {
                     AgentRegistryBuildError::BuildFailed {
                         agent: config.name.clone(),
                         message: err.to_string(),
@@ -300,12 +312,16 @@ mod tests {
 
         let defaults = AgentDefaults {
             model: "test-model".to_string(),
+            api_key: Some("test-key".to_string()),
+            base_url: Some("https://example.com".to_string()),
             temperature: Some(0.7),
             top_p: Some(0.9),
             options,
         };
 
         assert_eq!(defaults.model, "test-model");
+        assert_eq!(defaults.api_key.as_deref(), Some("test-key"));
+        assert_eq!(defaults.base_url.as_deref(), Some("https://example.com"));
         assert_eq!(defaults.temperature, Some(0.7));
         assert_eq!(defaults.top_p, Some(0.9));
         assert_eq!(defaults.options.len(), 1);
@@ -412,6 +428,8 @@ mod tests {
 
         let defaults = AgentDefaults {
             model: "".to_string(), // Empty model
+            api_key: None,
+            base_url: None,
             temperature: None,
             top_p: None,
             options: HashMap::new(),

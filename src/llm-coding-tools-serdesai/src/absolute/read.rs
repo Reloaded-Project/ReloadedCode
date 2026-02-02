@@ -53,7 +53,6 @@ impl<const LINE_NUMBERS: bool> ReadTool<LINE_NUMBERS> {
 #[async_trait]
 impl<Deps: Send + Sync, const LINE_NUMBERS: bool> Tool<Deps> for ReadTool<LINE_NUMBERS> {
     fn definition(&self) -> ToolDefinition {
-        // Description matches rig exactly
         let description = if LINE_NUMBERS {
             "Read file contents with line numbers. Returns lines prefixed with L{number}: format."
         } else {

@@ -79,7 +79,7 @@ pub const GREP_ALLOWED: &str = include_str!("grep_allowed.txt");
 
 /// Trait for tools that provide usage context for LLM system prompts.
 ///
-/// Implement this trait on tool types (for frameworks like rig) to enable automatic system prompt
+/// Implement this trait on tool types (for frameworks like serdesAI) to enable automatic system prompt
 /// generation via [`SystemPromptBuilder`](crate::SystemPromptBuilder).
 ///
 /// # Example

@@ -55,7 +55,7 @@ fn main() {
 }
 
 // Mock tools implementing ToolContext for demonstration.
-// In real usage, these would be actual tool structs from llm-coding-tools-rig.
+// In real usage, these would be actual tool structs from llm-coding-tools-serdesai.
 
 struct MockReadTool;
 impl ToolContext for MockReadTool {

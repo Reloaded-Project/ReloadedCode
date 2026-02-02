@@ -1,7 +1,7 @@
 //! Task tool input/output types for registry-driven Task implementations.
 //!
 //! Provides [`TaskInput`] and [`TaskOutput`] types used by framework
-//! Task tools (rig and serdesAI). These types are DTOs for task execution
+//! Task tools (serdesAI). These types are DTOs for task execution
 //! and do not include a core runner abstraction.
 //!
 //! Framework-specific Task tools use registry-driven AgentCatalog for agent lookup.

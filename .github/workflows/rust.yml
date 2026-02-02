@@ -47,7 +47,7 @@ jobs:
           target: ${{ matrix.target }}
           use-cross: ${{ matrix.use-cross }}
           additional-test-args: "-p llm-coding-tools-core"
-          additional-tarpaulin-args: "--exclude llm-coding-tools-rig --exclude llm-coding-tools-serdesai"
+          additional-tarpaulin-args: "--exclude llm-coding-tools-serdesai"
           no-default-features: true
           features: "blocking"
           setup-rust-cache: false
@@ -65,13 +65,13 @@ jobs:
           cargo +stable binstall --no-confirm cargo-semver-checks --force
           rustup +stable target add ${{ matrix.target }}
 
-          for CRATE in "llm-coding-tools-core" "llm-coding-tools-rig" "llm-coding-tools-serdesai"; do
+          for CRATE in "llm-coding-tools-core" "llm-coding-tools-serdesai"; do
             SEARCH_RESULT=$(cargo search "^${CRATE}$" --limit 1)
             if echo "$SEARCH_RESULT" | grep -q "^${CRATE} "; then
               echo "Running semver checks for ${CRATE}..."
               # Note: llm-coding-tools-core has mutually exclusive async/blocking features,
               # so we must use --only-explicit-features to avoid enabling all features.
-              # The rig/serdesai crates are async-only and don't have the tokio feature.
+              # The serdesai crate is async-only and doesn't have the tokio feature.
               if [ "${CRATE}" = "llm-coding-tools-core" ]; then
                 cargo +stable semver-checks -p "${CRATE}" --target ${{ matrix.target }} --only-explicit-features --features tokio
               else
@@ -90,7 +90,8 @@ jobs:
         # Note: Can't use --all-features at workspace level because tokio/blocking are mutually exclusive
         run: |
           cargo doc -p llm-coding-tools-core --features tokio --document-private-items --no-deps --target ${{ matrix.target }}
-          cargo doc -p llm-coding-tools-rig --document-private-items --no-deps --target ${{ matrix.target }}
+
+          cargo doc -p llm-coding-tools-agents --document-private-items --no-deps --target ${{ matrix.target }}
           cargo doc -p llm-coding-tools-serdesai --document-private-items --no-deps --target ${{ matrix.target }}
 
       - name: Run linter
@@ -99,7 +100,7 @@ jobs:
         # Note: Can't use --all-features at workspace level because tokio/blocking are mutually exclusive
         run: |
           cargo clippy -p llm-coding-tools-core --features tokio --target ${{ matrix.target }} -- -D warnings
-          cargo clippy -p llm-coding-tools-rig --target ${{ matrix.target }} -- -D warnings
+          cargo clippy -p llm-coding-tools-agents --target ${{ matrix.target }} -- -D warnings
           cargo clippy -p llm-coding-tools-serdesai --target ${{ matrix.target }} -- -D warnings
 
       - name: Run formatter check
@@ -123,7 +124,7 @@ jobs:
           rust-crates-io-token: ${{ secrets.CRATES_IO_TOKEN }}
           rust-cargo-project-paths: |
             src/llm-coding-tools-core
-            src/llm-coding-tools-rig
+            src/llm-coding-tools-agents
             src/llm-coding-tools-serdesai
           compression-tool: 7z
           artifact-groups-file: .github/artifact-groups.yml

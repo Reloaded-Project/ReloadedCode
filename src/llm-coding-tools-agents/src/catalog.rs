@@ -10,7 +10,7 @@ use std::collections::HashMap;
 /// filtering or mode-based access control.
 ///
 /// The catalog is intended for framework-specific `AgentRegistryBuilder` implementations
-/// (e.g., in rig or serdesAI) to iterate and construct runtime agents.
+/// (e.g., in serdesAI) to iterate and construct runtime agents.
 #[derive(Debug, Clone, Default)]
 pub struct AgentCatalog {
     agents: HashMap<String, AgentConfig>,

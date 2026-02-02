@@ -70,6 +70,8 @@ async fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
     // for agents that don't override them in their config.
     let defaults = AgentDefaults {
         model: OPENAI_MODEL.to_string(),
+        api_key: Some(get_openai_api_key()),
+        base_url: Some(OPENAI_BASE_URL.to_string()),
         temperature: None,
         top_p: None,
         options: Default::default(),

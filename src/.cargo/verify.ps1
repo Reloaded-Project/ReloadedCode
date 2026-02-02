@@ -2,7 +2,7 @@
 # All steps must pass without warnings
 # Keep in sync with verify.sh
 #
-# Note: llm-coding-tools-rig and llm-coding-tools-serdesai are async-only (implement async Tool traits).
+# Note: llm-coding-tools-serdesai is async-only (implements async Tool traits).
 # The blocking feature only applies to llm-coding-tools-core.
 
 $ErrorActionPreference = "Stop"
@@ -34,19 +34,16 @@ try {
     Write-Host "Building..."
 Invoke-LoggedCommand "cargo" @("build", "-p", "llm-coding-tools-core", "--quiet")
 Invoke-LoggedCommand "cargo" @("build", "-p", "llm-coding-tools-agents", "--quiet")
-Invoke-LoggedCommand "cargo" @("build", "-p", "llm-coding-tools-rig", "--quiet")
 Invoke-LoggedCommand "cargo" @("build", "-p", "llm-coding-tools-serdesai", "--quiet")
 
 Write-Host "Testing..."
 Invoke-LoggedCommand "cargo" @("test", "-p", "llm-coding-tools-core", "--quiet")
 Invoke-LoggedCommand "cargo" @("test", "-p", "llm-coding-tools-agents", "--quiet")
-Invoke-LoggedCommand "cargo" @("test", "-p", "llm-coding-tools-rig", "--quiet")
 Invoke-LoggedCommand "cargo" @("test", "-p", "llm-coding-tools-serdesai", "--quiet")
 
 Write-Host "Clippy..."
 Invoke-LoggedCommand "cargo" @("clippy", "-p", "llm-coding-tools-core", "--quiet", "--", "-D", "warnings")
 Invoke-LoggedCommand "cargo" @("clippy", "-p", "llm-coding-tools-agents", "--quiet", "--", "-D", "warnings")
-Invoke-LoggedCommand "cargo" @("clippy", "-p", "llm-coding-tools-rig", "--quiet", "--", "-D", "warnings")
 Invoke-LoggedCommand "cargo" @("clippy", "-p", "llm-coding-tools-serdesai", "--quiet", "--", "-D", "warnings")
 
 Write-Host "Testing blocking feature..."
@@ -67,7 +64,6 @@ Invoke-LoggedCommand "cargo" @("fmt", "--all", "--check", "--quiet")
 Write-Host "Publish dry-run..."
 Invoke-LoggedCommand "cargo" @("publish", "--dry-run", "-p", "llm-coding-tools-core", "--quiet")
 Invoke-LoggedCommand "cargo" @("publish", "--dry-run", "--allow-dirty", "-p", "llm-coding-tools-agents", "--quiet")
-Invoke-LoggedCommand "cargo" @("publish", "--dry-run", "--allow-dirty", "-p", "llm-coding-tools-rig", "--quiet")
 Invoke-LoggedCommand "cargo" @("publish", "--dry-run", "--allow-dirty", "-p", "llm-coding-tools-serdesai", "--quiet")
 
 Write-Host "All checks passed!"
