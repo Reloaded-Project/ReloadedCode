@@ -98,12 +98,52 @@ Setup requires three steps:
 
 The example file shows the complete setup.
 
-**Note**: The `default_tools` function returns cloneable `ToolCatalogEntry` items that can be reused for building multiple agents. The `AgentRegistryBuilder` uses these to construct tool descriptions and filter based on agent permissions. The `deps` parameter is passed to registry agents at invocation time.
+**Note**: The `default_tools` function (defined in `examples/serdesai-agents.rs`) returns cloneable `ToolCatalogEntry` items that can be reused for building multiple agents. The `AgentRegistryBuilder` uses these to construct tool descriptions and filter based on agent permissions. The `deps` parameter is passed to registry agents at invocation time.
 
 Other tools: `BashTool`, `WebFetchTool`, `TodoReadTool`, `TodoWriteTool`.
 Use `SystemPromptBuilder` to track tools and pass `pb.build()` to `.system_prompt()`. Set `working_directory()` so the environment section is populated.
 Use `AgentBuilderExt::tool()` to add tools that implement `Tool<Deps>` to the agent.
 Context strings are re-exported in `llm_coding_tools_serdesai::context` (e.g., `BASH`, `READ_ABSOLUTE`).
+
+### models.dev Resolver
+
+Use the models.dev catalog to resolve per-provider API keys/base URLs:
+
+```rust,no_run
+# use std::env;
+# use llm_coding_tools_models_dev::ModelsDevCatalog;
+# use llm_coding_tools_serdesai::{AgentDefaults, ModelsDevResolver, ProviderOverride, ProviderOverrides};
+# fn main() -> Result<(), Box<dyn std::error::Error>> {
+let catalog = ModelsDevCatalog::load_shared_cache_or_bundled()?.catalog;
+let overrides = ProviderOverrides::new().insert_override(
+    "openai",
+    ProviderOverride { api_key: Some(env::var("OPENAI_API_KEY")?), base_url: None, endpoint_env: None },
+);
+let resolver = ModelsDevResolver::new(Some(catalog), overrides.clone());
+
+let defaults = AgentDefaults {
+    model: "openai:gpt-4o".into(),
+    model_resolver: Some(resolver),
+    provider_overrides: overrides,
+    api_key: None,
+    base_url: None,
+    temperature: None,
+    top_p: None,
+    options: Default::default(),
+};
+# Ok(())
+# }
+```
+
+**OpenAI-compatible providers**: serdesAI does not infer providers from base URLs. Use an `openai:` model spec and set a provider-specific `base_url` via overrides.
+
+**Reasoning models**: If you need `OpenAIResponsesModel` for `o1`, `o3`, or `gpt-5`, construct it directly instead of using `ModelConfig`.
+
+**OpenRouter/HuggingFace**: `build_model_with_config` does not support these providers; use `OpenRouterModel::new` or `HuggingFaceModel::new` directly.
+OpenRouter does not support base URL overrides; resolver should not surface `base_url` for this provider.
+
+**Resolver fallback behavior**: When no resolver is provided, the registry attempts to load the models.dev catalog from the shared cache or bundled snapshot. If that fails, it falls back to an empty catalog (meaning only explicit specs are usable and no provider mapping occurs).
+
 
 ### Migration from Legacy Task APIs
 

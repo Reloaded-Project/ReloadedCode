@@ -44,6 +44,9 @@ permission:
 Prompt body goes here...
 ```
 
+**Note**: Provider selection is driven by the `provider:` prefix, not by URL inspection. OpenAI-compatible endpoints should still use `openai:` with a custom base URL provided via provider overrides.
+
+
 ### Mode Options
 
 The `mode` field controls how the agent can be invoked:
@@ -72,7 +75,7 @@ See `examples/serdesai-agents.rs` for the complete example.
 
 ```rust,no_run
 use llm_coding_tools_agents::{AgentCatalog, AgentLoader, Ruleset, Rule, PermissionAction};
-use llm_coding_tools_serdesai::{AgentDefaults, AgentRegistryBuilder, TaskTool, default_tools, TodoState};
+use llm_coding_tools_serdesai::{AgentDefaults, AgentRegistryBuilder, ProviderOverrides, TaskTool, default_tools, TodoState};
 use std::sync::Arc;
 
 // 1) Load agent configs
@@ -82,6 +85,8 @@ AgentLoader::new().add_directory(&mut catalog, "/home/user/.opencode")?;
 // 2) Build framework registry
 let defaults = AgentDefaults {
     model: "openai:hf:zai-org/GLM-4.7".into(),
+    model_resolver: None,
+    provider_overrides: ProviderOverrides::new(),
     api_key: Some(std::env::var("OPENAI_API_KEY").unwrap_or_default()),
     base_url: Some("https://api.synthetic.new/openai/v1".into()),
     temperature: None,

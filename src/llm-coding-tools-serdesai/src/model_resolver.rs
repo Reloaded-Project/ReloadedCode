@@ -7,7 +7,7 @@ use std::fmt;
 use std::time::Duration;
 
 /// Resolved model settings computed by a [`ModelResolver`].
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct ResolvedModel {
     /// Model spec in `provider:model` format.
     pub spec: String,
@@ -23,6 +23,19 @@ pub struct ResolvedModel {
     pub provider_id: String,
 }
 
+impl fmt::Debug for ResolvedModel {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("ResolvedModel")
+            .field("spec", &self.spec)
+            .field("api_key", &self.api_key.as_ref().map(|_| "[REDACTED]"))
+            .field("base_url", &self.base_url)
+            .field("timeout", &self.timeout)
+            .field("source", &self.source)
+            .field("provider_id", &self.provider_id)
+            .finish()
+    }
+}
+
 /// Tracks how a resolved model was determined.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ResolutionSource {
@@ -35,7 +48,7 @@ pub enum ResolutionSource {
 }
 
 /// Per-provider overrides for API key/base URL resolution.
-#[derive(Debug, Clone, Default)]
+#[derive(Clone, Default)]
 pub struct ProviderOverride {
     /// Explicit API key override for this provider.
     pub api_key: Option<String>,
@@ -45,13 +58,32 @@ pub struct ProviderOverride {
     pub endpoint_env: Option<String>,
 }
 
+impl fmt::Debug for ProviderOverride {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("ProviderOverride")
+            .field("api_key", &self.api_key.as_ref().map(|_| "[REDACTED]"))
+            .field("base_url", &self.base_url)
+            .field("endpoint_env", &self.endpoint_env)
+            .finish()
+    }
+}
+
 /// Overrides keyed by provider ID with optional default provider preference.
-#[derive(Debug, Clone, Default)]
+#[derive(Clone, Default)]
 pub struct ProviderOverrides {
     /// Preferred provider ID for ambiguous model IDs.
     default_provider: Option<String>,
     /// Per-provider override entries.
     providers: HashMap<String, ProviderOverride>,
+}
+
+impl fmt::Debug for ProviderOverrides {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("ProviderOverrides")
+            .field("default_provider", &self.default_provider)
+            .field("providers", &self.providers)
+            .finish()
+    }
 }
 
 impl ProviderOverrides {
@@ -83,6 +115,16 @@ impl ProviderOverrides {
     pub fn insert_override(mut self, provider: impl Into<String>, value: ProviderOverride) -> Self {
         self.providers.insert(provider.into(), value);
         self
+    }
+
+    /// Returns an override entry for a provider, if configured.
+    ///
+    /// Parameters:
+    /// - `provider`: provider ID to look up.
+    ///
+    /// Returns: `Some(&ProviderOverride)` when present.
+    pub fn get_override(&self, provider: &str) -> Option<&ProviderOverride> {
+        self.providers.get(provider)
     }
 }
 
@@ -154,7 +196,11 @@ impl fmt::Display for ModelResolveError {
                 f,
                 "model '{model_id}' is not supported by provider '{provider}'"
             ),
-            Self::Ambiguous { model_id, providers, default_provider } => write!(
+            Self::Ambiguous {
+                model_id,
+                providers,
+                default_provider,
+            } => write!(
                 f,
                 "model '{model_id}' is ambiguous across providers: {:?} (default: {:?})",
                 providers, default_provider
@@ -301,20 +347,23 @@ fn resolve_provider_model(
             Some("@ai-sdk/groq") => ("groq", false, true, false),
             Some("@ai-sdk/mistral") => ("mistral", true, true, false),
             Some("@ai-sdk/google") => ("google", true, true, false),
+            Some("@ai-sdk/cohere") => ("cohere", true, true, false),
             Some("@ai-sdk/ollama") => ("ollama", true, false, false),
+            Some("@ai-sdk/openrouter") => ("openrouter", false, true, false),
+            Some("@ai-sdk/huggingface") => ("huggingface", true, false, false),
             Some("@ai-sdk/azure")
             | Some("@ai-sdk/google-vertex")
             | Some("@ai-sdk/google-vertex/anthropic") => {
                 return Err(ModelResolveError::UnsupportedProvider {
                     provider: provider.id.clone(),
                     npm: provider.npm.clone(),
-                })
+                });
             }
             Some(_) | None => {
                 return Err(ModelResolveError::UnsupportedProvider {
                     provider: provider.id.clone(),
                     npm: provider.npm.clone(),
-                })
+                });
             }
         };
 

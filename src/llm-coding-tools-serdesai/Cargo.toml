@@ -22,7 +22,16 @@ llm-coding-tools-models-dev = { version = "0.1.0", path = "../llm-coding-tools-m
 
 # serdes-ai provides Tool trait, ToolDefinition, RunContext
 serdes-ai = "0.1"
-serdes-ai-models = { version = "0.1", features = ["openai"] }
+serdes-ai-models = { version = "0.1", features = [
+  "openai",
+  "anthropic",
+  "groq",
+  "mistral",
+  "google",
+  "cohere",
+  "openrouter",
+  "huggingface",
+] }
 serdes-ai-streaming = "0.1"
 futures = "0.3"
 

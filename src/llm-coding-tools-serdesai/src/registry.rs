@@ -1,22 +1,30 @@
 //! SerdesAI agent registry with precomputed tool context and system prompts.
 
+use crate::model_resolver::{ModelResolver, ModelsDevResolver, ProviderOverrides};
 use async_trait::async_trait;
 use llm_coding_tools_agents::{AgentCatalog, AgentConfig, AgentMode, Ruleset};
 use llm_coding_tools_core::SystemPromptBuilder;
+use llm_coding_tools_models_dev::ModelsDevCatalog;
 use serde_json::{Map, Value};
 use serdes_ai::agent::ModelConfig;
 use serdes_ai::{Agent, AgentBuilder, ModelSettings};
+use serdes_ai_models::huggingface::HuggingFaceModel;
+use serdes_ai_models::openrouter::OpenRouterModel;
 use std::collections::HashMap;
 use std::sync::Arc;
 
 /// Default model + sampling settings for serdesAI agents.
 #[derive(Debug, Clone)]
 pub struct AgentDefaults {
-    /// Default model ID (e.g., "provider/model-id").
+    /// Default model ID (e.g., "provider:model-id").
     pub model: String,
-    /// Default API key override (if any).
+    /// Optional resolver used to resolve per-agent model specs.
+    pub model_resolver: Option<ModelsDevResolver>,
+    /// Per-provider overrides applied by the resolver.
+    pub provider_overrides: ProviderOverrides,
+    /// Legacy OpenAI API key override (applied only when provider is `openai`).
     pub api_key: Option<String>,
-    /// Default base URL override (if any).
+    /// Legacy OpenAI base URL override (applied only when provider is `openai`).
     pub base_url: Option<String>,
     /// Default temperature override (if any).
     pub temperature: Option<f64>,
@@ -210,6 +218,16 @@ where
         &self,
         catalog: &AgentCatalog,
     ) -> Result<AgentRegistry<Agent<Arc<Deps>, String>>, AgentRegistryBuildError> {
+        // Build or fallback resolver
+        let resolver = if let Some(resolver) = self.defaults.model_resolver.clone() {
+            resolver
+        } else {
+            let catalog = ModelsDevCatalog::load_shared_cache_or_bundled()
+                .map(|result| result.catalog)
+                .ok();
+            ModelsDevResolver::new(catalog, self.defaults.provider_overrides.clone())
+        };
+
         let mut entries = HashMap::with_capacity(catalog.iter().count());
 
         for config in catalog.iter() {
@@ -224,6 +242,39 @@ where
                 })?;
             let temperature = config.temperature.or(self.defaults.temperature);
             let top_p = config.top_p.or(self.defaults.top_p);
+
+            // Resolve model spec using the resolver
+            let mut resolved =
+                resolver
+                    .resolve(&model)
+                    .map_err(|err| AgentRegistryBuildError::BuildFailed {
+                        agent: config.name.clone(),
+                        message: err.to_string(),
+                    })?;
+
+            // Extract provider prefix from resolved spec for backwards compatibility
+            let (spec_provider, resolved_model_id) = resolved
+                .spec
+                .split_once(':')
+                .unwrap_or(("", resolved.spec.as_str()));
+            // Use resolved.provider_id if set, otherwise fall back to spec prefix
+            let resolved_provider = if resolved.provider_id.is_empty() {
+                spec_provider
+            } else {
+                resolved.provider_id.as_str()
+            };
+
+            // Apply legacy OpenAI overrides only when provider is openai
+            if (resolved.provider_id.is_empty() || resolved.provider_id == "openai")
+                && resolved_provider == "openai"
+            {
+                if resolved.api_key.is_none() {
+                    resolved.api_key = self.defaults.api_key.clone();
+                }
+                if resolved.base_url.is_none() {
+                    resolved.base_url = self.defaults.base_url.clone();
+                }
+            }
 
             let ruleset = Ruleset::from_config(&config.permission);
             let mut allowed_tools = Vec::with_capacity(self.tools.len());
@@ -240,18 +291,55 @@ where
                 pb = pb.system_prompt(config.prompt.clone());
             }
 
-            let mut model_config = ModelConfig::new(&model);
-            if let Some(api_key) = &self.defaults.api_key {
-                model_config = model_config.with_api_key(api_key.clone());
-            }
-            if let Some(base_url) = &self.defaults.base_url {
-                model_config = model_config.with_base_url(base_url.clone());
-            }
-            let mut builder = AgentBuilder::<Arc<Deps>, String>::from_config(model_config)
-                .map_err(|err| AgentRegistryBuildError::BuildFailed {
-                    agent: config.name.clone(),
-                    message: err.to_string(),
-                })?;
+            // Branch on resolved provider to use appropriate constructor
+            let mut builder = match resolved_provider {
+                "openrouter" => {
+                    let model = if let Some(api_key) = resolved.api_key.as_deref() {
+                        OpenRouterModel::new(resolved_model_id, api_key)
+                    } else {
+                        OpenRouterModel::from_env(resolved_model_id).map_err(|err| {
+                            AgentRegistryBuildError::BuildFailed {
+                                agent: config.name.clone(),
+                                message: err.to_string(),
+                            }
+                        })?
+                    };
+                    // Note: OpenRouterModel does not support base URL overrides.
+                    AgentBuilder::<Arc<Deps>, String>::new(model)
+                }
+                "huggingface" => {
+                    let mut model = if let Some(api_key) = resolved.api_key.as_deref() {
+                        HuggingFaceModel::new(resolved_model_id, api_key)
+                    } else {
+                        HuggingFaceModel::from_env(resolved_model_id).map_err(|err| {
+                            AgentRegistryBuildError::BuildFailed {
+                                agent: config.name.clone(),
+                                message: err.to_string(),
+                            }
+                        })?
+                    };
+                    if let Some(endpoint) = resolved.base_url.as_deref() {
+                        model = model.with_endpoint(endpoint);
+                    }
+                    AgentBuilder::<Arc<Deps>, String>::new(model)
+                }
+                _ => {
+                    // Use ModelConfig for supported providers (openai, anthropic, groq, mistral, google, cohere, ollama, etc.)
+                    let mut model_config = ModelConfig::new(&resolved.spec);
+                    if let Some(api_key) = resolved.api_key.clone() {
+                        model_config = model_config.with_api_key(api_key);
+                    }
+                    if let Some(base_url) = resolved.base_url.clone() {
+                        model_config = model_config.with_base_url(base_url);
+                    }
+                    AgentBuilder::<Arc<Deps>, String>::from_config(model_config).map_err(|err| {
+                        AgentRegistryBuildError::BuildFailed {
+                            agent: config.name.clone(),
+                            message: err.to_string(),
+                        }
+                    })?
+                }
+            };
 
             let mut settings = ModelSettings::new();
             if let Some(temp) = temperature {
@@ -305,11 +393,15 @@ mod tests {
 
     #[test]
     fn agent_defaults_with_all_fields() {
+        use crate::model_resolver::{ModelsDevResolver, ProviderOverrides};
+
         let mut options = HashMap::new();
         options.insert("key1".to_string(), Value::Bool(true));
 
         let defaults = AgentDefaults {
             model: "test-model".to_string(),
+            model_resolver: Some(ModelsDevResolver::new(None, ProviderOverrides::new())),
+            provider_overrides: ProviderOverrides::new(),
             api_key: Some("test-key".to_string()),
             base_url: Some("https://example.com".to_string()),
             temperature: Some(0.7),
@@ -323,6 +415,7 @@ mod tests {
         assert_eq!(defaults.temperature, Some(0.7));
         assert_eq!(defaults.top_p, Some(0.9));
         assert_eq!(defaults.options.len(), 1);
+        assert!(defaults.model_resolver.is_some());
     }
 
     #[test]
@@ -426,6 +519,8 @@ mod tests {
 
         let defaults = AgentDefaults {
             model: "".to_string(), // Empty model
+            model_resolver: None,
+            provider_overrides: crate::model_resolver::ProviderOverrides::new(),
             api_key: None,
             base_url: None,
             temperature: None,

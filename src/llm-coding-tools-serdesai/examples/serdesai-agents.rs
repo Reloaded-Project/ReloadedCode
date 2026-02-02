@@ -13,13 +13,16 @@
 
 use futures::StreamExt;
 use llm_coding_tools_agents::{AgentCatalog, AgentLoader, PermissionAction, Rule, Ruleset};
+use llm_coding_tools_models_dev::ModelsDevCatalog;
 use llm_coding_tools_serdesai::agent_ext::AgentBuilderExt;
 use llm_coding_tools_serdesai::{
-    AgentDefaults, AgentRegistryBuilder, AllowedPathResolver, SystemPromptBuilder, TaskTool,
-    TodoState, default_tools,
+    AgentDefaults, AgentRegistryBuilder, AllowedPathResolver, ModelResolver, ModelsDevResolver,
+    ProviderOverride, ProviderOverrides, SystemPromptBuilder, TaskTool, TodoState, default_tools,
 };
 use serdes_ai::agent::ModelConfig;
 use serdes_ai::prelude::*;
+use serdes_ai_models::huggingface::HuggingFaceModel;
+use serdes_ai_models::openrouter::OpenRouterModel;
 use std::fmt::Write;
 use std::sync::Arc;
 
@@ -48,7 +51,7 @@ async fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
     // Set OPENCODE_USE_ALLOWED environment variable to enable sandboxed (allowed) tools.
     // Without the env var, tools use absolute paths with no restrictions.
     let use_allowed = std::env::var("OPENCODE_USE_ALLOWED").is_ok();
-    let resolver = if use_allowed {
+    let allowed_path_resolver = if use_allowed {
         Some(AllowedPathResolver::new([
             std::env::current_dir()?,
             std::env::temp_dir(),
@@ -62,7 +65,21 @@ async fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
     // Use default_tools to create a catalog of cloneable tools.
     // When use_allowed is true, tools are sandboxed to allowed directories.
     // When false, tools can access any path.
-    let tools = default_tools(true, resolver.clone(), TodoState::new());
+    let tools = default_tools(true, allowed_path_resolver.clone(), TodoState::new());
+
+    // === Load models.dev catalog and build model resolver ===
+    //
+    let models_dev_catalog = ModelsDevCatalog::load_shared_cache_or_bundled()?.catalog;
+    let provider_overrides = ProviderOverrides::new().insert_override(
+        "openai",
+        ProviderOverride {
+            api_key: Some(get_openai_api_key()),
+            base_url: Some(OPENAI_BASE_URL.to_string()),
+            endpoint_env: None,
+        },
+    );
+    let model_resolver =
+        ModelsDevResolver::new(Some(models_dev_catalog), provider_overrides.clone());
 
     // === Build registry ===
     //
@@ -70,18 +87,19 @@ async fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
     // for agents that don't override them in their config.
     let defaults = AgentDefaults {
         model: OPENAI_MODEL.to_string(),
-        api_key: Some(get_openai_api_key()),
-        base_url: Some(OPENAI_BASE_URL.to_string()),
+        model_resolver: Some(model_resolver.clone()),
+        provider_overrides,
+        api_key: None,
+        base_url: None,
         temperature: None,
         top_p: None,
         options: Default::default(),
     };
 
-    // Build the registry from the catalog and tool catalog.
+    // Build the registry from the agent catalog and tool catalog.
     // The registry prebuilds all agents with their allowed tools from the catalog.
     //
-    // Note: For OpenAI models with "openai:" prefix, AgentBuilder::from_model
-    // will resolve the model using environment variables like OPENAI_API_KEY.
+    // Note: The model resolver is used to resolve model specs into per-provider settings.
     let registry = AgentRegistryBuilder::<()>::new(defaults, tools).build(&catalog)?;
 
     // === Task tool permissions (allow Task for the single subagent only) ===
@@ -98,21 +116,62 @@ async fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
     // Build a system prompt that includes working directory and optionally allowed paths.
     let mut pb = SystemPromptBuilder::new()
         .working_directory(std::env::current_dir()?.display().to_string());
-    if let Some(ref resolver) = resolver {
+    if let Some(ref resolver) = allowed_path_resolver {
         pb = pb.allowed_paths(resolver);
     }
 
     // Create the primary agent with ONLY the Task tool (forces delegation to subagent).
     //
-    // Note: For OpenAI models with "openai:" prefix, use ModelConfig to set custom base URL.
-    let agent = AgentBuilder::<(), String>::from_config(
-        ModelConfig::new(OPENAI_MODEL)
-            .with_api_key(get_openai_api_key())
-            .with_base_url(OPENAI_BASE_URL),
-    )?
-    .tool(pb.track(task_tool))
-    .system_prompt(pb.build())
-    .build();
+    // Resolve the primary agent's model spec using the model resolver.
+    let resolved_primary = model_resolver.resolve(OPENAI_MODEL)?;
+    let (spec_provider, resolved_model_id) = resolved_primary
+        .spec
+        .split_once(':')
+        .unwrap_or(("", resolved_primary.spec.as_str()));
+    let resolved_provider = if resolved_primary.provider_id.is_empty() {
+        spec_provider
+    } else {
+        resolved_primary.provider_id.as_str()
+    };
+
+    // Branch on resolved provider to use appropriate constructor (same logic as registry)
+    let builder = match resolved_provider {
+        "openrouter" => {
+            let model = if let Some(api_key) = resolved_primary.api_key.as_deref() {
+                OpenRouterModel::new(resolved_model_id, api_key)
+            } else {
+                OpenRouterModel::from_env(resolved_model_id)?
+            };
+            // Note: OpenRouterModel does not support base URL overrides.
+            AgentBuilder::<(), String>::new(model)
+        }
+        "huggingface" => {
+            let mut model = if let Some(api_key) = resolved_primary.api_key.as_deref() {
+                HuggingFaceModel::new(resolved_model_id, api_key)
+            } else {
+                HuggingFaceModel::from_env(resolved_model_id)?
+            };
+            if let Some(endpoint) = resolved_primary.base_url.as_deref() {
+                model = model.with_endpoint(endpoint);
+            }
+            AgentBuilder::<(), String>::new(model)
+        }
+        _ => {
+            let mut model_config = ModelConfig::new(&resolved_primary.spec);
+            if let Some(api_key) = resolved_primary.api_key.clone() {
+                model_config = model_config.with_api_key(api_key);
+            }
+            if let Some(base_url) = resolved_primary.base_url.clone() {
+                model_config = model_config.with_base_url(base_url);
+            }
+            AgentBuilder::<(), String>::from_config(model_config)?
+        }
+    };
+
+    let agent = builder
+        .tool(pb.track(task_tool))
+        .system_prompt(pb.build())
+        .build();
 
     // === Print tool info ===
     println!("=== Agent Ready ({} tools) ===", agent.tools().len());

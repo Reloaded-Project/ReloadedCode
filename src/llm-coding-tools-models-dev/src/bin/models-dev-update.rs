@@ -56,10 +56,11 @@ struct ProviderSnapshot {
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let manifest_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     let output = manifest_dir.join("data/models.dev.min.json");
+    if let Some(parent) = output.parent() {
+        fs::create_dir_all(parent).await?;
+    }
 
-    let client = Client::builder()
-        .timeout(Duration::from_secs(30))
-        .build()?;
+    let client = Client::builder().timeout(Duration::from_secs(30)).build()?;
     let response = client
         .get("https://models.dev/api.json")
         .send()
