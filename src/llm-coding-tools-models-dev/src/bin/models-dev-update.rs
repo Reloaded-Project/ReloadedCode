@@ -7,7 +7,9 @@ use tokio::fs;
 #[derive(Debug, Deserialize)]
 #[serde(untagged)]
 enum FullSnapshot {
-    Nested { providers: std::collections::HashMap<String, FullProvider> },
+    Nested {
+        providers: std::collections::HashMap<String, FullProvider>,
+    },
     Flat(std::collections::HashMap<String, FullProvider>),
 }
 
@@ -56,7 +58,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let output = manifest_dir.join("data/models.dev.min.json");
 
     let client = Client::new();
-    let response = client.get("https://models.dev/api.json").send().await?.error_for_status()?;
+    let response = client
+        .get("https://models.dev/api.json")
+        .send()
+        .await?
+        .error_for_status()?;
     let bytes = response.bytes().await?;
 
     let full: FullSnapshot = serde_json::from_slice(&bytes)?;

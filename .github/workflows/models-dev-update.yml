@@ -1,0 +1,27 @@
+name: Update models.dev catalog
+
+on:
+  schedule:
+    - cron: "0 9 * * 1"
+  workflow_dispatch:
+
+jobs:
+  update-catalog:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@v4
+      - name: Run models.dev updater
+        working-directory: src
+        run: cargo run -p llm-coding-tools-models-dev --bin models-dev-update
+      - name: Create pull request
+        uses: peter-evans/create-pull-request@v6
+        with:
+          title: "chore: update models.dev catalog"
+          body: "Automated update of models.dev catalog snapshot."
+          commit-message: "chore: update models.dev catalog"
+          branch: "automation/models-dev-catalog"
+          add-paths: |
+            src/llm-coding-tools-models-dev/data/models.dev.min.json
