@@ -4,7 +4,7 @@
     {
       "label": "Auto Test on Save",
       "type": "shell",
-      "command": "cargo install cargo-watch --quiet && cargo watch -x \"test\" -w llm-coding-tools-core/src -w llm-coding-tools-rig/src",
+      "command": "cargo install cargo-watch --quiet && cargo watch -x \"test\" -w llm-coding-tools-core/src -w llm-coding-tools-serdesai/src",
       "group": "test",
       "presentation": {
         "reveal": "always"
@@ -14,7 +14,7 @@
     {
       "label": "Auto Coverage on Save",
       "type": "shell",
-      "command": "cargo install cargo-watch --quiet && cargo install cargo-tarpaulin --quiet && cargo watch -x \"tarpaulin --skip-clean --out Xml --out Html --engine llvm --target-dir target/coverage-build\" -w llm-coding-tools-core/src -w llm-coding-tools-rig/src",
+      "command": "cargo install cargo-watch --quiet && cargo install cargo-tarpaulin --quiet && cargo watch -x \"tarpaulin --skip-clean --out Xml --out Html --engine llvm --target-dir target/coverage-build\" -w llm-coding-tools-core/src -w llm-coding-tools-serdesai/src",
       "group": "test",
       "presentation": {
         "reveal": "always"

@@ -90,7 +90,6 @@ jobs:
         # Note: Can't use --all-features at workspace level because tokio/blocking are mutually exclusive
         run: |
           cargo doc -p llm-coding-tools-core --features tokio --document-private-items --no-deps --target ${{ matrix.target }}
-
           cargo doc -p llm-coding-tools-agents --document-private-items --no-deps --target ${{ matrix.target }}
           cargo doc -p llm-coding-tools-serdesai --document-private-items --no-deps --target ${{ matrix.target }}
 
