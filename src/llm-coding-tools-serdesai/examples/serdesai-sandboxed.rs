@@ -59,8 +59,8 @@ async fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
         .working_directory(std::env::current_dir()?.display().to_string())
         .allowed_paths(&resolver);
 
-    let model = OpenAIChatModel::new(OPENAI_MODEL, get_openai_api_key())
-        .with_base_url(OPENAI_BASE_URL);
+    let model =
+        OpenAIChatModel::new(OPENAI_MODEL, get_openai_api_key()).with_base_url(OPENAI_BASE_URL);
     let agent = AgentBuilder::<(), String>::new(model)
         .instructions("Use tools to answer; call at least one tool before responding.")
         .tool(pb.track(read))

@@ -35,8 +35,8 @@ async fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
     let (todo_read, todo_write, _state) = create_todo_tools();
 
     // === Build agent with tools - call .system_prompt() last ===
-    let model = OpenAIChatModel::new(OPENAI_MODEL, get_openai_api_key())
-        .with_base_url(OPENAI_BASE_URL);
+    let model =
+        OpenAIChatModel::new(OPENAI_MODEL, get_openai_api_key()).with_base_url(OPENAI_BASE_URL);
     let agent = AgentBuilder::<(), String>::new(model)
         .instructions("Use tools to answer; call at least one tool before responding.")
         // File operations

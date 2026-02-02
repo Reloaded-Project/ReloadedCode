@@ -18,8 +18,8 @@ use llm_coding_tools_serdesai::{
     AgentDefaults, AgentRegistryBuilder, AllowedPathResolver, SystemPromptBuilder, TaskTool,
     TodoState, default_tools,
 };
-use serdes_ai::prelude::*;
 use serdes_ai::agent::ModelConfig;
+use serdes_ai::prelude::*;
 use std::fmt::Write;
 use std::sync::Arc;
 
@@ -108,11 +108,11 @@ async fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
     let agent = AgentBuilder::<(), String>::from_config(
         ModelConfig::new(OPENAI_MODEL)
             .with_api_key(get_openai_api_key())
-            .with_base_url(OPENAI_BASE_URL)
+            .with_base_url(OPENAI_BASE_URL),
     )?
-        .tool(pb.track(task_tool))
-        .system_prompt(pb.build())
-        .build();
+    .tool(pb.track(task_tool))
+    .system_prompt(pb.build())
+    .build();
 
     // === Print tool info ===
     println!("=== Agent Ready ({} tools) ===", agent.tools().len());

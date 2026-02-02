@@ -247,12 +247,10 @@ where
             if let Some(base_url) = &self.defaults.base_url {
                 model_config = model_config.with_base_url(base_url.clone());
             }
-            let mut builder =
-                AgentBuilder::<Arc<Deps>, String>::from_config(model_config).map_err(|err| {
-                    AgentRegistryBuildError::BuildFailed {
-                        agent: config.name.clone(),
-                        message: err.to_string(),
-                    }
+            let mut builder = AgentBuilder::<Arc<Deps>, String>::from_config(model_config)
+                .map_err(|err| AgentRegistryBuildError::BuildFailed {
+                    agent: config.name.clone(),
+                    message: err.to_string(),
                 })?;
 
             let mut settings = ModelSettings::new();
