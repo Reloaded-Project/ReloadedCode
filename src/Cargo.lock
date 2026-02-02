@@ -1290,6 +1290,7 @@ dependencies = [
  "indexmap",
  "llm-coding-tools-agents",
  "llm-coding-tools-core",
+ "llm-coding-tools-models-dev",
  "reqwest 0.13.1",
  "serde",
  "serde_json",

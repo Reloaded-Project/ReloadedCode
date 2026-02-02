@@ -7,6 +7,8 @@ pub mod allowed;
 pub mod bash;
 mod common;
 pub mod convert;
+/// Model resolver for resolving model specs into provider-specific settings.
+pub mod model_resolver;
 pub mod registry;
 pub mod task;
 pub mod todo;
@@ -49,6 +51,10 @@ pub use llm_coding_tools_core::{
 
 // Re-export standalone tools
 pub use bash::BashTool;
+pub use model_resolver::{
+    ModelResolveError, ModelResolver, ModelsDevResolver, ProviderOverride, ProviderOverrides,
+    ResolutionSource, ResolvedModel,
+};
 pub use registry::{
     AgentDefaults, AgentRegistry, AgentRegistryBuildError, AgentRegistryBuilder,
     AgentRegistryEntry, RegistryAgent, RegistryAgentError,
