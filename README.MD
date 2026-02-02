@@ -56,6 +56,12 @@ cargo run --example serdesai-agents -p llm-coding-tools-serdesai
 
 Contributions are welcome! Please ensure all tests pass and the code follows our guidelines.
 
+## Deprecation Notice
+
+**Rig framework support (`llm-coding-tools-rig`) has been removed** (commit 17158db) due to library bugs that prevented examples from running reliably.
+
+You're welcome to submit a PR re-adding rig support if you're willing to maintain it. Since I don't use rig personally, I'm not able to actively maintain that integration. Alternatively, you can create your own crate building on `llm-coding-tools-core` directly.
+
 ## License
 
 Licensed under [Apache 2.0](./LICENSE).
