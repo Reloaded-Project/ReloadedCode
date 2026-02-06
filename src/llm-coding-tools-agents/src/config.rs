@@ -51,8 +51,7 @@ pub(crate) struct RawFrontmatter {
     pub name: Option<String>,
     #[serde(default)]
     pub mode: AgentMode,
-    #[serde(default)]
-    pub description: Option<String>,
+    pub description: String,
     #[serde(default)]
     pub model: Option<String>,
     #[serde(default)]
@@ -107,7 +106,7 @@ impl AgentConfig {
         Self {
             name: raw.name.unwrap_or(name),
             mode: raw.mode,
-            description: raw.description.unwrap_or_default(),
+            description: raw.description,
             model: raw.model,
             hidden: raw.hidden,
             temperature: raw.temperature,

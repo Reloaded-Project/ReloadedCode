@@ -51,8 +51,14 @@ impl AgentLoader {
     ) -> AgentLoadResult<()> {
         let dir = directory.into();
         load_directory_with(&dir, |path, name| {
-            let config = load_agent_file(path, name.to_string())?;
-            catalog.insert(config);
+            match load_agent_file(path, name.to_string()) {
+                Ok(config) => {
+                    catalog.insert(config);
+                }
+                Err(_) => {
+                    // Skip invalid agent files (e.g., missing required fields)
+                }
+            }
             Ok(())
         })
     }
@@ -411,7 +417,7 @@ mod tests {
         create_agent_file(
             dir.path(),
             "agents/nested/deep.md",
-            "---\nmode: primary\n---\nBody",
+            "---\nmode: primary\ndescription: Test\n---\nBody",
         );
 
         let loader = AgentLoader::new();
@@ -428,7 +434,7 @@ mod tests {
         create_agent_file(
             dir.path(),
             "agent/real.md",
-            "---\nmode: subagent\n---\nReal",
+            "---\nmode: subagent\ndescription: Test\n---\nReal",
         );
 
         let loader = AgentLoader::new();
@@ -458,8 +464,16 @@ mod tests {
     fn load_agents_scans_multiple_directories() {
         let dir1 = TempDir::new().unwrap();
         let dir2 = TempDir::new().unwrap();
-        create_agent_file(dir1.path(), "agent/first.md", "---\nmode: subagent\n---\n");
-        create_agent_file(dir2.path(), "agent/second.md", "---\nmode: primary\n---\n");
+        create_agent_file(
+            dir1.path(),
+            "agent/first.md",
+            "---\nmode: subagent\ndescription: First\n---\n",
+        );
+        create_agent_file(
+            dir2.path(),
+            "agent/second.md",
+            "---\nmode: primary\ndescription: Second\n---\n",
+        );
 
         let loader = AgentLoader::new();
         let mut catalog = AgentCatalog::new();
@@ -476,7 +490,7 @@ mod tests {
         create_agent_file(
             dir.path(),
             "agent/test.md",
-            "---\nmodel: provider/model:tag\nmode: subagent\n---\nBody",
+            "---\nmodel: provider/model:tag\nmode: subagent\ndescription: Test\n---\nBody",
         );
 
         let loader = AgentLoader::new();
@@ -495,7 +509,7 @@ mod tests {
         create_agent_file(
             dir.path(),
             "agent/perms.md",
-            "---\nmode: subagent\npermission:\n  bash: allow\n  task: deny\n---\n",
+            "---\nmode: subagent\ndescription: Test\npermission:\n  bash: allow\n  task: deny\n---\n",
         );
 
         let loader = AgentLoader::new();
@@ -512,7 +526,7 @@ mod tests {
         create_agent_file(
             dir.path(),
             "agent/flow.md",
-            "---\nmode: subagent\npermission:\n  task: { \"*\": \"deny\" }\n---\n",
+            "---\nmode: subagent\ndescription: Test\npermission:\n  task: { \"*\": \"deny\" }\n---\n",
         );
 
         let loader = AgentLoader::new();
@@ -542,19 +556,19 @@ mod tests {
         let cases = [
             (
                 "custom/example.md",
-                "---\nmode: subagent\n---\nBody",
+                "---\nmode: subagent\ndescription: Test\n---\nBody",
                 None,
                 "example",
             ),
             (
                 "custom/agent.md",
-                "---\nmode: subagent\n---\nBody",
+                "---\nmode: subagent\ndescription: Test\n---\nBody",
                 Some("override/name"),
                 "override/name",
             ),
             (
                 "custom/agent.md",
-                "---\nname: frontmatter-name\nmode: subagent\n---\nBody",
+                "---\nname: frontmatter-name\nmode: subagent\ndescription: Test\n---\nBody",
                 Some("override/name"),
                 "override/name",
             ),
@@ -639,11 +653,15 @@ mod tests {
     #[test]
     fn agent_loader_scans_directories_with_agent_patterns() {
         let dir = TempDir::new().unwrap();
-        create_agent_file(dir.path(), "agent/one.md", "---\nmode: subagent\n---\nOne");
+        create_agent_file(
+            dir.path(),
+            "agent/one.md",
+            "---\nmode: subagent\ndescription: First agent\n---\nOne",
+        );
         create_agent_file(
             dir.path(),
             "agents/nested/two.md",
-            "---\nmode: primary\n---\nTwo",
+            "---\nmode: primary\ndescription: Second agent\n---\nTwo",
         );
 
         let loader = AgentLoader::new();
@@ -688,7 +706,7 @@ mod tests {
     fn catalog_add_from_str_uses_frontmatter_name() {
         let loader = AgentLoader::new();
         let mut catalog = AgentCatalog::new();
-        let markdown = "---\nname: frontmatter-name\nmode: subagent\n---\nBody";
+        let markdown = "---\nname: frontmatter-name\nmode: subagent\ndescription: Test\n---\nBody";
 
         loader
             .add_from_str(&mut catalog, markdown, "default-name")
@@ -702,7 +720,7 @@ mod tests {
     fn catalog_add_from_str_errors_on_empty_name() {
         let loader = AgentLoader::new();
         let mut catalog = AgentCatalog::new();
-        let markdown = "---\nmode: subagent\n---\nBody";
+        let markdown = "---\nmode: subagent\ndescription: Test\n---\nBody";
 
         let result = loader.add_from_str(&mut catalog, markdown, "");
 
@@ -716,7 +734,7 @@ mod tests {
     fn catalog_add_from_bytes_validates_utf8() {
         let loader = AgentLoader::new();
         let mut catalog = AgentCatalog::new();
-        let bytes = b"---\nname: test\nmode: subagent\n---\nBody";
+        let bytes = b"---\nname: test\nmode: subagent\ndescription: Test\n---\nBody";
 
         loader.add_from_bytes(&mut catalog, bytes, "test").unwrap();
 
@@ -735,5 +753,112 @@ mod tests {
             result,
             Err(AgentLoadError::SchemaValidation { .. })
         ));
+    }
+
+    #[test]
+    fn load_agents_skips_files_with_missing_description() {
+        // Directory loading skips files missing required description field
+        let dir = TempDir::new().unwrap();
+        create_agent_file(
+            dir.path(),
+            "agent/no-desc.md",
+            "---\nmode: subagent\n---\nPrompt without description",
+        );
+        // Add a valid file to ensure directory load succeeds
+        create_agent_file(
+            dir.path(),
+            "agent/valid.md",
+            "---\nmode: subagent\ndescription: Valid agent\n---\nValid prompt",
+        );
+
+        let loader = AgentLoader::new();
+        let mut catalog = AgentCatalog::new();
+        loader.add_directory(&mut catalog, dir.path()).unwrap();
+
+        // Invalid file should be skipped
+        assert!(catalog.by_name("no-desc").is_none());
+        // Valid file should be loaded
+        assert!(catalog.by_name("valid").is_some());
+    }
+
+    #[test]
+    fn load_agents_succeeds_with_missing_mode() {
+        // Mode defaults to Subagent when not provided
+        let dir = TempDir::new().unwrap();
+        create_agent_file(
+            dir.path(),
+            "agent/no-mode.md",
+            "---\ndescription: Test agent\n---\nPrompt without mode",
+        );
+
+        let loader = AgentLoader::new();
+        let mut catalog = AgentCatalog::new();
+        loader.add_directory(&mut catalog, dir.path()).unwrap();
+
+        let agent = catalog.by_name("no-mode").unwrap();
+        assert_eq!(agent.mode, AgentMode::Subagent);
+        assert_eq!(agent.description, "Test agent");
+    }
+
+    #[test]
+    fn load_agents_skips_files_with_invalid_mode() {
+        // Directory loading skips files with invalid mode values
+        let dir = TempDir::new().unwrap();
+        create_agent_file(
+            dir.path(),
+            "agent/invalid-mode.md",
+            "---\nmode: invalid_mode\ndescription: Test agent\n---\nPrompt with invalid mode",
+        );
+        // Add a valid file to ensure directory load succeeds
+        create_agent_file(
+            dir.path(),
+            "agent/valid.md",
+            "---\nmode: subagent\ndescription: Valid agent\n---\nValid prompt",
+        );
+
+        let loader = AgentLoader::new();
+        let mut catalog = AgentCatalog::new();
+        loader.add_directory(&mut catalog, dir.path()).unwrap();
+
+        // Invalid file should be skipped
+        assert!(catalog.by_name("invalid-mode").is_none());
+        // Valid file should be loaded
+        assert!(catalog.by_name("valid").is_some());
+    }
+
+    #[test]
+    fn add_file_errors_on_missing_description() {
+        // Single file loading fails when description is missing
+        let dir = TempDir::new().unwrap();
+        create_agent_file(
+            dir.path(),
+            "agent/no-desc.md",
+            "---\nmode: subagent\n---\nPrompt without description",
+        );
+
+        let loader = AgentLoader::new();
+        let mut catalog = AgentCatalog::new();
+        let result = loader.add_file(&mut catalog, dir.path().join("agent/no-desc.md"));
+
+        assert!(result.is_err());
+        assert!(catalog.by_name("no-desc").is_none());
+    }
+
+    #[test]
+    fn add_file_errors_on_invalid_mode() {
+        // Single file loading fails with invalid mode
+        let dir = TempDir::new().unwrap();
+        create_agent_file(
+            dir.path(),
+            "agent/invalid-mode.md",
+            "---\nmode: invalid_mode\ndescription: Test agent\n---\nPrompt with invalid mode",
+        );
+
+        let loader = AgentLoader::new();
+        let mut catalog = AgentCatalog::new();
+        let result = loader.add_file(&mut catalog, dir.path().join("agent/invalid-mode.md"));
+
+        assert!(result.is_err());
+        assert!(catalog.by_name("invalid-mode").is_none());
     }
 }

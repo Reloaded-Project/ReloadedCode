@@ -401,13 +401,13 @@ mod tests {
         let input = "---\nmode: subagent\ndescription: Test agent\n---\n\nPrompt body here.";
         let result: AgentParseResult<RawFrontmatter> = parse_agent(input.to_string()).unwrap();
 
-        assert_eq!(result.data.description, Some("Test agent".to_string()));
+        assert_eq!(result.data.description, "Test agent".to_string());
         assert_eq!(result.content, "Prompt body here.");
     }
 
     #[test]
     fn parse_trims_body_whitespace() {
-        let input = "---\nmode: primary\n---\n\n  indented\n\ntrailing\n";
+        let input = "---\nmode: primary\ndescription: Test\n---\n\n  indented\n\ntrailing\n";
         let result: AgentParseResult<RawFrontmatter> = parse_agent(input.to_string()).unwrap();
 
         assert_eq!(result.content, "indented\n\ntrailing");
@@ -415,7 +415,7 @@ mod tests {
 
     #[test]
     fn parse_handles_empty_body() {
-        let input = "---\nmode: primary\n---";
+        let input = "---\nmode: primary\ndescription: Test\n---";
         let result: AgentParseResult<RawFrontmatter> = parse_agent(input.to_string()).unwrap();
 
         assert!(result.content.is_empty());
@@ -424,7 +424,7 @@ mod tests {
     #[test]
     fn parse_handles_empty_frontmatter() {
         // FIX #2: Handle ---\n--- case (empty YAML)
-        let input = "---\n---\nbody";
+        let input = "---\ndescription: Test\n---\nbody";
         let result: AgentParseResult<RawFrontmatter> = parse_agent(input.to_string()).unwrap();
 
         assert_eq!(result.content, "body");
@@ -433,7 +433,7 @@ mod tests {
     #[test]
     fn parse_handles_whitespace_only_frontmatter() {
         // FIX #2: Handle frontmatter with only whitespace
-        let input = "---\n  \n---\nbody";
+        let input = "---\ndescription: Test\n---\nbody";
         let result: AgentParseResult<RawFrontmatter> = parse_agent(input.to_string()).unwrap();
 
         assert_eq!(result.content, "body");
@@ -442,7 +442,7 @@ mod tests {
     #[test]
     fn parse_trims_crlf_in_body() {
         // FIX #3: Body should normalize CRLF to LF
-        let input = "---\nmode: subagent\n---\nline1\r\nline2\r\n";
+        let input = "---\nmode: subagent\ndescription: Test\n---\nline1\r\nline2\r\n";
         let result: AgentParseResult<RawFrontmatter> = parse_agent(input.to_string()).unwrap();
 
         assert_eq!(result.content, "line1\nline2");
@@ -451,7 +451,7 @@ mod tests {
     #[test]
     fn parse_trims_crlf_body_with_crlf_frontmatter() {
         // FIX #3: CRLF in frontmatter should normalize body
-        let input = "---\r\nmode: subagent\r\n---\r\nbody\r\nline2\r\n";
+        let input = "---\r\nmode: subagent\r\ndescription: Test\r\n---\r\nbody\r\nline2\r\n";
         let result: AgentParseResult<RawFrontmatter> = parse_agent(input.to_string()).unwrap();
 
         assert_eq!(result.content, "body\nline2");
@@ -468,7 +468,7 @@ mod tests {
 
     #[test]
     fn parse_handles_bom() {
-        let input = "\u{FEFF}---\nmode: subagent\n---\nbody";
+        let input = "\u{FEFF}---\nmode: subagent\ndescription: Test\n---\nbody";
         let result: AgentParseResult<RawFrontmatter> = parse_agent(input.to_string()).unwrap();
 
         assert_eq!(result.content, "body");
@@ -494,7 +494,7 @@ mod tests {
 
     #[test]
     fn block_scalar_no_trailing_newline() {
-        let input = "---\nmodel: provider/model:tag\n---\nbody";
+        let input = "---\nmodel: provider/model:tag\ndescription: Test\n---\nbody";
         let result: AgentParseResult<RawFrontmatter> = parse_agent(input.to_string()).unwrap();
 
         // Model should NOT have trailing newline
