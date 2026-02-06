@@ -74,10 +74,10 @@ impl AgentLoader {
             .map(|stem| stem.to_string_lossy().into_owned())
             .unwrap_or_default();
         if derived_name.is_empty() {
-            return Err(AgentLoadError::SchemaValidation {
-                path: path.to_path_buf(),
-                message: "agent file name is empty".to_string(),
-            });
+            return Err(AgentLoadError::schema_validation(
+                Some(path.to_path_buf()),
+                "agent file name is empty",
+            ));
         }
         let config = load_agent_file(&path, derived_name)?;
         catalog.insert(config);
@@ -102,10 +102,10 @@ impl AgentLoader {
         let path = path.into();
         let override_name = name.into();
         if override_name.is_empty() {
-            return Err(AgentLoadError::SchemaValidation {
-                path: path.to_path_buf(),
-                message: "agent name is empty".to_string(),
-            });
+            return Err(AgentLoadError::schema_validation(
+                Some(path.to_path_buf()),
+                "agent name is empty",
+            ));
         }
         let mut config = load_agent_file(&path, String::new())?;
         config.name = override_name;
@@ -173,10 +173,7 @@ impl AgentLoader {
         default_name: impl Into<String>,
     ) -> AgentLoadResult<()> {
         let content = std::str::from_utf8(bytes.as_ref()).map_err(|err| {
-            AgentLoadError::SchemaValidation {
-                path: PathBuf::from("<memory>"),
-                message: format!("invalid UTF-8: {err}"),
-            }
+            AgentLoadError::schema_validation(None, format!("invalid UTF-8: {err}"))
         })?;
         let config = config_from_str_strict(content, default_name)?;
         catalog.insert(config);
@@ -191,13 +188,10 @@ fn load_directory_with(
 ) -> AgentLoadResult<()> {
     if !dir.is_dir() {
         if dir.exists() {
-            return Err(AgentLoadError::Io {
-                path: dir.to_path_buf(),
-                source: std::io::Error::new(
-                    std::io::ErrorKind::NotADirectory,
-                    "path is not a directory",
-                ),
-            });
+            return Err(AgentLoadError::io(
+                Some(dir.to_path_buf()),
+                std::io::Error::new(std::io::ErrorKind::NotADirectory, "path is not a directory"),
+            ));
         }
         // Non-existent directories are allowed (nothing to load)
         return Ok(());
@@ -264,15 +258,11 @@ fn parse_agent_config(
 
 /// Loads a single agent configuration from a file.
 fn load_agent_file(path: &Path, name: String) -> AgentLoadResult<AgentConfig> {
-    let content = fs::read_to_string(path).map_err(|e| AgentLoadError::Io {
-        path: path.to_path_buf(),
-        source: e,
-    })?;
+    let content =
+        fs::read_to_string(path).map_err(|e| AgentLoadError::io(Some(path.to_path_buf()), e))?;
 
-    parse_agent_config(content, name).map_err(|err| AgentLoadError::Parse {
-        path: path.to_path_buf(),
-        source: err,
-    })
+    parse_agent_config(content, name)
+        .map_err(|err| AgentLoadError::parse(Some(path.to_path_buf()), err))
 }
 
 /// Strict parser for catalog-only string loading (validates non-empty name).
@@ -281,17 +271,14 @@ fn config_from_str_strict(
     default_name: impl Into<String>,
 ) -> AgentLoadResult<AgentConfig> {
     let name = default_name.into();
-    let config =
-        parse_agent_config(markdown.into(), name.clone()).map_err(|err| AgentLoadError::Parse {
-            path: PathBuf::from("<memory>"),
-            source: err,
-        })?;
+    let config = parse_agent_config(markdown.into(), name.clone())
+        .map_err(|err| AgentLoadError::parse(None, err))?;
 
     if config.name.is_empty() {
-        return Err(AgentLoadError::SchemaValidation {
-            path: PathBuf::from("<memory>"),
-            message: "agent name is empty".to_string(),
-        });
+        return Err(AgentLoadError::schema_validation(
+            None,
+            "agent name is empty",
+        ));
     }
 
     Ok(config)
