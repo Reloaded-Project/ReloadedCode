@@ -1,6 +1,14 @@
-//! Agent markdown parser for files with YAML frontmatter headers.
+//! Agent markdown parser for files with YAML frontmatter.
+//!
+//! Parses markdown that starts with `---` frontmatter and returns deserialized
+//! frontmatter data plus normalized body content (LF line endings, trimmed).
+//! YAML frontmatter is preprocessed by the `preprocessor` module before
+//! deserialization to handle unquoted colon-containing values safely.
+
+mod preprocessor;
 
 use crlf_to_lf_inplace::crlf_to_lf_inplace;
+use preprocessor::preprocess_frontmatter_yaml;
 use serde::de::DeserializeOwned;
 use thiserror::Error;
 
@@ -41,7 +49,7 @@ pub(crate) fn parse_agent<T: DeserializeOwned>(
     // Process YAML while we can still borrow content
     let yaml = &content[offsets.yaml_start..offsets.yaml_end];
     let yaml_preprocessed = preprocess_frontmatter_yaml(yaml);
-    let data: T = serde_yaml::from_str(yaml_preprocessed.as_str()).map_err(|e| {
+    let data: T = serde_yaml::from_str(yaml_preprocessed.as_ref()).map_err(|e| {
         AgentParseError::InvalidYaml {
             message: e.to_string(),
         }
@@ -137,264 +145,10 @@ fn extract_body_inplace(content: &mut String, body_start: usize) -> String {
     body
 }
 
-#[inline]
-fn is_valid_key(key: &str) -> bool {
-    let bytes = key.as_bytes();
-    let Some((&first, rest)) = bytes.split_first() else {
-        return false;
-    };
-    if !(first.is_ascii_alphabetic() || first == b'_') {
-        return false;
-    }
-    rest.iter()
-        .all(|byte| byte.is_ascii_alphanumeric() || *byte == b'_' || *byte == b'-')
-}
-
-/// Checks if a YAML line contains an unquoted colon in the value that needs
-/// block scalar conversion.
-///
-/// Returns `Some((key, value))` if the line should be converted to block scalar
-/// format, `None` if it's already safe for YAML parsing.
-///
-/// # Returns `None` (no conversion needed) when:
-///
-/// - Line is empty or a comment (`# ...`)
-/// - Line is indented (continuation of a block scalar)
-/// - No colon found (not a key-value pair)
-/// - Key is not a valid YAML identifier
-/// - Value is empty or already a block scalar indicator (`|`, `>`, `|-`, `>-`)
-/// - Value is quoted (`"..."` or `'...'`)
-/// - Value is a flow sequence (`[...]`) or mapping (`{...}`)
-/// - Value doesn't contain a colon (no ambiguity to fix)
-#[inline]
-fn block_scalar_parts(line: &str) -> Option<(&str, &str)> {
-    let trimmed = line.trim();
-    if trimmed.is_empty() || trimmed.starts_with('#') {
-        return None;
-    }
-
-    let first = *line.as_bytes().first()?;
-    if first == b' ' || first == b'\t' {
-        return None;
-    }
-
-    let colon_pos = line.find(':')?;
-    let key = line[..colon_pos].trim();
-    if !is_valid_key(key) {
-        return None;
-    }
-
-    let value = line[colon_pos + 1..].trim();
-    if value.is_empty() || value == ">" || value == "|" || value == "|-" || value == ">-" {
-        return None;
-    }
-
-    let first_value = value.as_bytes().first().copied();
-    if matches!(first_value, Some(b'"') | Some(b'\'')) {
-        return None;
-    }
-
-    if matches!(first_value, Some(b'{') | Some(b'[')) {
-        return None;
-    }
-
-    if !value.contains(':') {
-        return None;
-    }
-
-    Some((key, value))
-}
-
-/// Preprocesses YAML frontmatter to handle inline `key: value:with:colons`.
-/// The input is the YAML slice only (no `---` delimiters).
-///
-/// # Problem
-///
-/// YAML interprets colons as key-value separators. A value like `provider/model:tag`
-/// would be misparsed as a nested mapping. This function converts such lines to
-/// block scalar format, which treats the entire value as a literal string.
-///
-/// # Transformations
-///
-/// **Converted to block scalar** (value contains unquoted colon):
-///
-/// ```text
-/// Input:
-/// model: provider/model:tag
-/// api_url: http://localhost:8080
-///
-/// Output:
-/// model: |-
-///   provider/model:tag
-/// api_url: |-
-///   http://localhost:8080
-/// ```
-///
-/// **Preserved unchanged** (already safe for YAML parsing):
-///
-/// ```text
-/// Input:
-/// # comment: with:colon           # Comments are ignored
-/// description: No colons here     # No colon in value
-/// model: "provider/model:tag"     # Double-quoted
-/// model: 'provider/model:tag'     # Single-quoted
-/// content: |                      # Block scalar indicator
-///   line:with:colon
-/// items: ["a:b", "c:d"]           # Flow array syntax
-/// config: { "key": "a:b" }        # Flow mapping syntax
-///
-/// Output: (identical to input)
-/// ```
-///
-/// # Notes
-///
-/// - Uses `|-` (literal block, strip chomp) to avoid trailing newlines in values.
-/// - Input is expected to be LF-normalized.
-/// - Output uses LF line endings.
-/// - This matches OpenCode's `preprocessFrontmatter` behavior.
-fn preprocess_frontmatter_yaml(input: &str) -> YamlPreprocessed<'_> {
-    if input.is_empty() {
-        return YamlPreprocessed::Borrowed(input);
-    }
-
-    let converted = convert_block_scalars(input);
-    match converted {
-        Some(output) => YamlPreprocessed::Owned(output),
-        None => YamlPreprocessed::Borrowed(input),
-    }
-}
-
-enum YamlPreprocessed<'a> {
-    Borrowed(&'a str),
-    Owned(String),
-}
-
-impl YamlPreprocessed<'_> {
-    #[inline]
-    fn as_str(&self) -> &str {
-        match self {
-            YamlPreprocessed::Borrowed(value) => value,
-            YamlPreprocessed::Owned(value) => value.as_str(),
-        }
-    }
-}
-
-/// Converts lines with unquoted colons in values to block scalar format.
-/// Returns `None` when no conversion is needed.
-fn convert_block_scalars(input: &str) -> Option<String> {
-    let input_len = input.len();
-    let mut output: Option<String> = None;
-    let mut need_newline = false;
-    let mut offset = 0usize;
-
-    for line in input.split_terminator('\n') {
-        if let Some(out) = output.as_mut() {
-            if need_newline {
-                out.push('\n');
-            }
-            if let Some((key, value)) = block_scalar_parts(line) {
-                out.push_str(key);
-                out.push_str(": |-\n  ");
-                out.push_str(value);
-            } else {
-                out.push_str(line);
-            }
-            need_newline = true;
-        } else if let Some((key, value)) = block_scalar_parts(line) {
-            let mut out = String::with_capacity(input_len + 3);
-            if offset > 0 {
-                out.push_str(&input[..offset]);
-            }
-            out.push_str(key);
-            out.push_str(": |-\n  ");
-            out.push_str(value);
-            output = Some(out);
-            need_newline = true;
-        }
-
-        offset += line.len();
-        if offset < input_len {
-            offset += 1;
-        }
-    }
-
-    output
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::config::RawFrontmatter;
-
-    #[test]
-    fn preprocess_handles_colons_in_value() {
-        let input = "model: provider/model:tag";
-        let output = preprocess_frontmatter_yaml(input);
-        assert!(output.as_str().contains("model: |-"));
-        assert!(output.as_str().contains("  provider/model:tag"));
-    }
-
-    #[test]
-    fn preprocess_preserves_quoted_values() {
-        let input = "model: \"provider/model:tag\"";
-        let output = preprocess_frontmatter_yaml(input);
-        assert!(output.as_str().contains("model: \"provider/model:tag\""));
-    }
-
-    #[test]
-    fn preprocess_preserves_block_scalars() {
-        let input = "desc: |\n  multiline";
-        let output = preprocess_frontmatter_yaml(input);
-        assert_eq!(input, output.as_str());
-    }
-
-    #[test]
-    fn preprocess_skips_comments() {
-        let input = "# comment: with:colon\nmode: subagent";
-        let output = preprocess_frontmatter_yaml(input);
-        assert!(output.as_str().contains("# comment: with:colon"));
-    }
-
-    #[test]
-    fn preprocess_skips_flow_mappings() {
-        let input = "task: { \"*\": \"deny\" }";
-        let output = preprocess_frontmatter_yaml(input);
-        assert!(output.as_str().contains("task: { \"*\": \"deny\" }"));
-    }
-
-    #[test]
-    fn preprocess_skips_flow_arrays() {
-        let input = "items: [\"a:b\", \"c:d\"]";
-        let output = preprocess_frontmatter_yaml(input);
-        assert!(output.as_str().contains("items: [\"a:b\", \"c:d\"]"));
-    }
-
-    #[test]
-    fn preprocess_handles_key_with_whitespace_around_colon() {
-        let input = "model : provider/model:tag";
-        let output = preprocess_frontmatter_yaml(input);
-        assert!(output.as_str().contains("model: |-"));
-        assert!(output.as_str().contains("  provider/model:tag"));
-    }
-
-    #[test]
-    fn preprocess_handles_crlf_line_endings() {
-        let mut input = "model: provider/model:tag\r\napi_url: http://localhost:8080".to_string();
-        crlf_to_lf_inplace(&mut input);
-        let output = preprocess_frontmatter_yaml(&input);
-        assert!(output.as_str().contains("model: |-"));
-        assert!(output.as_str().contains("  provider/model:tag"));
-    }
-
-    #[test]
-    fn preprocess_skips_indented_lines() {
-        // FIX #1: Indented lines should be skipped (continuation of previous value)
-        let input = "desc: |\n  line:with:colons";
-        let output = preprocess_frontmatter_yaml(input);
-        // Should NOT convert the indented line
-        assert!(output.as_str().contains("  line:with:colons"));
-        assert!(!output.as_str().contains("  line: |-")); // Should not have nested block scalar
-    }
 
     #[test]
     fn parse_extracts_frontmatter_and_content() {
