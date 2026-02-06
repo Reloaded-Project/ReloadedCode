@@ -58,22 +58,4 @@ impl TaskOutput {
         self.metadata = Some(metadata);
         self
     }
-
-    /// Formats the output for LLM consumption.
-    pub fn format(&self) -> String {
-        let mut content = self.summary.clone();
-
-        if self.session_id.is_some() || self.metadata.is_some() {
-            content.push_str("\n\n<task_metadata>\n");
-            if let Some(ref session_id) = self.session_id {
-                content.push_str(&format!("session_id: {}\n", session_id));
-            }
-            if let Some(ref metadata) = self.metadata {
-                content.push_str(&format!("metadata: {}\n", metadata));
-            }
-            content.push_str("</task_metadata>");
-        }
-
-        content
-    }
 }
