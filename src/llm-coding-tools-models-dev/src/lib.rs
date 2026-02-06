@@ -4,6 +4,7 @@ use std::collections::{HashMap, HashSet};
 use std::env;
 use std::io::{self, BufReader, BufWriter, Cursor, Read};
 use std::path::{Path, PathBuf};
+use std::time::Duration;
 use thiserror::Error;
 use tokio::fs;
 use tokio::io::AsyncWriteExt;
@@ -348,7 +349,10 @@ impl ModelsDevCatalog {
             fs::create_dir_all(parent).await?;
         }
 
-        let client = Client::new();
+        let client = Client::builder()
+            .timeout(Duration::from_secs(30))
+            .build()
+            .map_err(io::Error::other)?;
         let mut response = client
             .get(url)
             .send()
