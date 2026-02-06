@@ -106,7 +106,12 @@ where
         let description = if lines.is_empty() {
             "Task tool is not available - no accessible agents.".to_string()
         } else {
-            const TEMPLATE: &str = "Launch a new agent to handle complex, multistep tasks autonomously.\n\nAvailable agent types and the tools they have access to:\n{agents}\n\nWhen using the Task tool, you must specify a subagent_type parameter to select which agent type to use.";
+            const TEMPLATE: &str = r#"Launch a new agent to handle complex, multistep tasks autonomously.
+
+Available agent types and the tools they have access to:
+{agents}
+
+When using the Task tool, you must specify a subagent_type parameter to select which agent type to use."#;
             TEMPLATE.replace("{agents}", &lines.join("\n"))
         };
 

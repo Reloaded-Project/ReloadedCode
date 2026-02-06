@@ -328,6 +328,7 @@ mod tests {
     use super::*;
     use crate::config::AgentMode;
     use indexmap::IndexMap;
+    use indoc::indoc;
     use std::collections::HashMap;
     use std::fs::{self, File};
     use std::io::Write;
@@ -382,7 +383,13 @@ mod tests {
         create_agent_file(
             dir.path(),
             "agent/test-agent.md",
-            "---\nmode: subagent\ndescription: Test\n---\nPrompt",
+            indoc! {"
+                ---
+                mode: subagent
+                description: Test
+                ---
+                Prompt"
+            },
         );
 
         let loader = AgentLoader::new();
@@ -399,7 +406,13 @@ mod tests {
         create_agent_file(
             dir.path(),
             "agent/test-agent.md",
-            "---\nmode: subagent\ndescription: Test\n---\nPrompt",
+            indoc! {"
+                ---
+                mode: subagent
+                description: Test
+                ---
+                Prompt"
+            },
         );
 
         let loader = AgentLoader::new();
@@ -417,7 +430,13 @@ mod tests {
         create_agent_file(
             dir.path(),
             "agents/nested/deep.md",
-            "---\nmode: primary\ndescription: Test\n---\nBody",
+            indoc! {"
+                ---
+                mode: primary
+                description: Test
+                ---
+                Body"
+            },
         );
 
         let loader = AgentLoader::new();
@@ -434,7 +453,13 @@ mod tests {
         create_agent_file(
             dir.path(),
             "agent/real.md",
-            "---\nmode: subagent\ndescription: Test\n---\nReal",
+            indoc! {"
+                ---
+                mode: subagent
+                description: Test
+                ---
+                Real"
+            },
         );
 
         let loader = AgentLoader::new();
@@ -450,7 +475,12 @@ mod tests {
         create_agent_file(
             dir.path(),
             "other/file.md",
-            "---\nmode: subagent\n---\nBody",
+            indoc! {"
+                ---
+                mode: subagent
+                ---
+                Body"
+            },
         );
 
         let loader = AgentLoader::new();
@@ -467,12 +497,22 @@ mod tests {
         create_agent_file(
             dir1.path(),
             "agent/first.md",
-            "---\nmode: subagent\ndescription: First\n---\n",
+            indoc! {"
+                ---
+                mode: subagent
+                description: First
+                ---"
+            },
         );
         create_agent_file(
             dir2.path(),
             "agent/second.md",
-            "---\nmode: primary\ndescription: Second\n---\n",
+            indoc! {"
+                ---
+                mode: primary
+                description: Second
+                ---"
+            },
         );
 
         let loader = AgentLoader::new();
@@ -490,7 +530,14 @@ mod tests {
         create_agent_file(
             dir.path(),
             "agent/test.md",
-            "---\nmodel: provider/model:tag\nmode: subagent\ndescription: Test\n---\nBody",
+            indoc! {"
+                ---
+                model: provider/model:tag
+                mode: subagent
+                description: Test
+                ---
+                Body"
+            },
         );
 
         let loader = AgentLoader::new();
@@ -509,7 +556,15 @@ mod tests {
         create_agent_file(
             dir.path(),
             "agent/perms.md",
-            "---\nmode: subagent\ndescription: Test\npermission:\n  bash: allow\n  task: deny\n---\n",
+            indoc! {"
+                ---
+                mode: subagent
+                description: Test
+                permission:
+                  bash: allow
+                  task: deny
+                ---"
+            },
         );
 
         let loader = AgentLoader::new();
@@ -526,7 +581,14 @@ mod tests {
         create_agent_file(
             dir.path(),
             "agent/flow.md",
-            "---\nmode: subagent\ndescription: Test\npermission:\n  task: { \"*\": \"deny\" }\n---\n",
+            indoc! {r#"
+                ---
+                mode: subagent
+                description: Test
+                permission:
+                  task: { "*": "deny" }
+                ---"#
+            },
         );
 
         let loader = AgentLoader::new();
@@ -556,19 +618,37 @@ mod tests {
         let cases = [
             (
                 "custom/example.md",
-                "---\nmode: subagent\ndescription: Test\n---\nBody",
+                indoc! {"
+                    ---
+                    mode: subagent
+                    description: Test
+                    ---
+                    Body"
+                },
                 None,
                 "example",
             ),
             (
                 "custom/agent.md",
-                "---\nmode: subagent\ndescription: Test\n---\nBody",
+                indoc! {"
+                    ---
+                    mode: subagent
+                    description: Test
+                    ---
+                    Body"
+                },
                 Some("override/name"),
                 "override/name",
             ),
             (
                 "custom/agent.md",
-                "---\nname: frontmatter-name\nmode: subagent\ndescription: Test\n---\nBody",
+                indoc! {"
+                    ---
+                    name: frontmatter-name
+                    mode: subagent
+                    description: Test
+                    ---
+                    Body            "},
                 Some("override/name"),
                 "override/name",
             ),
@@ -602,7 +682,13 @@ mod tests {
         create_agent_file(
             dir.path(),
             "custom/agent.md",
-            "---\nmode: subagent\ndescription: First\n---\nBody",
+            indoc! {"
+                ---
+                mode: subagent
+                description: First
+                ---
+                Body"
+            },
         );
 
         let loader = AgentLoader::new();
@@ -637,7 +723,13 @@ mod tests {
         create_agent_file(
             dir.path(),
             "custom/explicit.md",
-            "---\nmode: subagent\ndescription: Explicit\n---\nBody",
+            indoc! {"
+                ---
+                mode: subagent
+                description: Explicit
+                ---
+                Body"
+            },
         );
 
         let loader = AgentLoader::new();
@@ -656,12 +748,24 @@ mod tests {
         create_agent_file(
             dir.path(),
             "agent/one.md",
-            "---\nmode: subagent\ndescription: First agent\n---\nOne",
+            indoc! {"
+                ---
+                mode: subagent
+                description: First agent
+                ---
+                One"
+            },
         );
         create_agent_file(
             dir.path(),
             "agents/nested/two.md",
-            "---\nmode: primary\ndescription: Second agent\n---\nTwo",
+            indoc! {"
+                ---
+                mode: primary
+                description: Second agent
+                ---
+                Two"
+            },
         );
 
         let loader = AgentLoader::new();
@@ -692,7 +796,13 @@ mod tests {
     fn catalog_add_from_str_uses_default_name_when_missing() {
         let loader = AgentLoader::new();
         let mut catalog = AgentCatalog::new();
-        let markdown = "---\nmode: subagent\ndescription: From string\n---\nBody";
+        let markdown = indoc! {"
+            ---
+            mode: subagent
+            description: From string
+            ---
+            Body"
+        };
 
         loader
             .add_from_str(&mut catalog, markdown, "string-agent")
@@ -706,7 +816,14 @@ mod tests {
     fn catalog_add_from_str_uses_frontmatter_name() {
         let loader = AgentLoader::new();
         let mut catalog = AgentCatalog::new();
-        let markdown = "---\nname: frontmatter-name\nmode: subagent\ndescription: Test\n---\nBody";
+        let markdown = indoc! {"
+            ---
+            name: frontmatter-name
+            mode: subagent
+            description: Test
+            ---
+            Body"
+        };
 
         loader
             .add_from_str(&mut catalog, markdown, "default-name")
@@ -720,8 +837,13 @@ mod tests {
     fn catalog_add_from_str_errors_on_empty_name() {
         let loader = AgentLoader::new();
         let mut catalog = AgentCatalog::new();
-        let markdown = "---\nmode: subagent\ndescription: Test\n---\nBody";
-
+        let markdown = indoc! {"
+            ---
+            mode: subagent
+            description: Test
+            ---
+            Body"
+        };
         let result = loader.add_from_str(&mut catalog, markdown, "");
 
         assert!(matches!(
@@ -734,7 +856,13 @@ mod tests {
     fn catalog_add_from_bytes_validates_utf8() {
         let loader = AgentLoader::new();
         let mut catalog = AgentCatalog::new();
-        let bytes = b"---\nname: test\nmode: subagent\ndescription: Test\n---\nBody";
+        let bytes = indoc! {b"
+            ---
+            name: test
+            mode: subagent
+            description: Test
+            ---
+            Body"};
 
         loader.add_from_bytes(&mut catalog, bytes, "test").unwrap();
 
@@ -762,13 +890,24 @@ mod tests {
         create_agent_file(
             dir.path(),
             "agent/no-desc.md",
-            "---\nmode: subagent\n---\nPrompt without description",
+            indoc! {"
+                ---
+                mode: subagent
+                ---
+                Prompt without description"
+            },
         );
         // Add a valid file to ensure directory load succeeds
         create_agent_file(
             dir.path(),
             "agent/valid.md",
-            "---\nmode: subagent\ndescription: Valid agent\n---\nValid prompt",
+            indoc! {"
+                ---
+                mode: subagent
+                description: Valid agent
+                ---
+                Valid prompt"
+            },
         );
 
         let loader = AgentLoader::new();
@@ -788,7 +927,12 @@ mod tests {
         create_agent_file(
             dir.path(),
             "agent/no-mode.md",
-            "---\ndescription: Test agent\n---\nPrompt without mode",
+            indoc! {"
+                ---
+                description: Test agent
+                ---
+                Prompt without mode"
+            },
         );
 
         let loader = AgentLoader::new();
@@ -807,13 +951,25 @@ mod tests {
         create_agent_file(
             dir.path(),
             "agent/invalid-mode.md",
-            "---\nmode: invalid_mode\ndescription: Test agent\n---\nPrompt with invalid mode",
+            indoc! {"
+                ---
+                mode: invalid_mode
+                description: Test agent
+                ---
+                Prompt with invalid mode"
+            },
         );
         // Add a valid file to ensure directory load succeeds
         create_agent_file(
             dir.path(),
             "agent/valid.md",
-            "---\nmode: subagent\ndescription: Valid agent\n---\nValid prompt",
+            indoc! {"
+                ---
+                mode: subagent
+                description: Valid agent
+                ---
+                Valid prompt"
+            },
         );
 
         let loader = AgentLoader::new();
@@ -833,7 +989,12 @@ mod tests {
         create_agent_file(
             dir.path(),
             "agent/no-desc.md",
-            "---\nmode: subagent\n---\nPrompt without description",
+            indoc! {"
+                ---
+                mode: subagent
+                ---
+                Prompt without description"
+            },
         );
 
         let loader = AgentLoader::new();
@@ -851,7 +1012,13 @@ mod tests {
         create_agent_file(
             dir.path(),
             "agent/invalid-mode.md",
-            "---\nmode: invalid_mode\ndescription: Test agent\n---\nPrompt with invalid mode",
+            indoc! {"
+                ---
+                mode: invalid_mode
+                description: Test agent
+                ---
+                Prompt with invalid mode"
+            },
         );
 
         let loader = AgentLoader::new();

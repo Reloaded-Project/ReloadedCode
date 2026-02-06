@@ -1121,6 +1121,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "indoc"
+version = "2.0.7"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "79cf5c93f93228cf8efb3ba362535fb11199ac548a09ce117c9b1adc3030d706"
+dependencies = [
+ "rustversion",
+]
+
+[[package]]
 name = "ipnet"
 version = "2.11.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1236,6 +1245,7 @@ dependencies = [
  "crlf-to-lf-inplace",
  "ignore",
  "indexmap",
+ "indoc",
  "serde",
  "serde_json",
  "serde_yaml",
@@ -1253,6 +1263,7 @@ dependencies = [
  "grep-searcher",
  "html-to-markdown-rs",
  "ignore",
+ "indoc",
  "maybe-async",
  "memchr",
  "parking_lot",
@@ -1288,6 +1299,7 @@ dependencies = [
  "async-trait",
  "futures",
  "indexmap",
+ "indoc",
  "llm-coding-tools-agents",
  "llm-coding-tools-core",
  "llm-coding-tools-models-dev",

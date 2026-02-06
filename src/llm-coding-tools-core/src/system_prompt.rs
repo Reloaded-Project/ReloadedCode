@@ -436,6 +436,7 @@ impl Substitute for String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use indoc::indoc;
 
     struct MockTool {
         id: u32,
@@ -1083,7 +1084,11 @@ mod tests {
     #[test]
     fn system_prompt_no_trailing_newline_gets_separator() {
         // System prompt without trailing newline should get "\n\n" separator
-        let mut pb = SystemPromptBuilder::new().system_prompt("# System\n\nNo trailing newline");
+        let mut pb = SystemPromptBuilder::new().system_prompt(indoc! {"
+            # System
+
+            No trailing newline"
+        });
         let _ = pb.track(MockTool { id: 1 });
 
         let preamble = pb.build();
@@ -1102,8 +1107,11 @@ mod tests {
     #[test]
     fn system_prompt_single_trailing_newline_gets_one_more() {
         // System prompt ending with \n should get "\n" to make "\n\n"
-        let mut pb =
-            SystemPromptBuilder::new().system_prompt("# System\n\nEnds with single newline\n");
+        let mut pb = SystemPromptBuilder::new().system_prompt(indoc! {"
+            # System
+
+            Ends with single newline
+        "});
         let _ = pb.track(MockTool { id: 1 });
 
         let preamble = pb.build();
@@ -1122,8 +1130,12 @@ mod tests {
     #[test]
     fn system_prompt_double_trailing_newline_no_extra() {
         // System prompt ending with \n\n should get no extra separator
-        let mut pb =
-            SystemPromptBuilder::new().system_prompt("# System\n\nEnds with double newline\n\n");
+        let mut pb = SystemPromptBuilder::new().system_prompt(indoc! {"
+            # System
+
+            Ends with double newline
+
+        "});
         let _ = pb.track(MockTool { id: 1 });
 
         let preamble = pb.build();
@@ -1142,7 +1154,11 @@ mod tests {
     #[test]
     fn system_prompt_trailing_newlines_with_environment() {
         let pb = SystemPromptBuilder::new()
-            .system_prompt("# System\n\nEnds with single newline\n")
+            .system_prompt(indoc! {"
+            # System
+
+            Ends with single newline
+        "})
             .working_directory("/home/user");
 
         let preamble = pb.build();
@@ -1161,7 +1177,10 @@ mod tests {
     fn system_prompt_chains_fluently() {
         // Verify fluent chaining with other methods
         let pb = SystemPromptBuilder::new()
-            .system_prompt("# System\n\nContent.")
+            .system_prompt(indoc! {"
+                # System
+
+                Content."})
             .working_directory("/home/user")
             .add_context("A", "a");
 
@@ -1188,7 +1207,10 @@ mod tests {
         let resolver = AllowedPathResolver::from_canonical(["/home/user/project", "/tmp"]);
 
         let mut pb = SystemPromptBuilder::new()
-            .system_prompt("# System Instructions\n\nYou are helpful.")
+            .system_prompt(indoc! {"
+                # System Instructions
+
+                You are helpful."})
             .working_directory("/home/user/project")
             .allowed_paths(&resolver)
             .add_context("Git Workflow", "Git guidance content.")

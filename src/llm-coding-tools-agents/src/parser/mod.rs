@@ -165,10 +165,18 @@ fn extract_body_inplace(mut content: String, body_start: usize) -> String {
 mod tests {
     use super::*;
     use crate::config::RawFrontmatter;
+    use indoc::indoc;
 
     #[test]
     fn parse_extracts_frontmatter_and_content() {
-        let input = "---\nmode: subagent\ndescription: Test agent\n---\n\nPrompt body here.";
+        let input: &str = indoc! {"
+            ---
+            mode: subagent
+            description: Test agent
+            ---
+
+            Prompt body here."
+        };
         let result: AgentParseResult<RawFrontmatter> = parse_agent(input.to_string()).unwrap();
 
         assert_eq!(result.data.description, "Test agent".to_string());
@@ -177,7 +185,16 @@ mod tests {
 
     #[test]
     fn parse_trims_body_whitespace() {
-        let input = "---\nmode: primary\ndescription: Test\n---\n\n  indented\n\ntrailing\n";
+        let input = indoc! {"
+            ---
+            mode: primary
+            description: Test
+            ---
+
+              indented
+
+            trailing
+        "};
         let result: AgentParseResult<RawFrontmatter> = parse_agent(input.to_string()).unwrap();
 
         assert_eq!(result.content, "indented\n\ntrailing");
@@ -185,7 +202,14 @@ mod tests {
 
     #[test]
     fn parse_trims_ascii_whitespace_with_multibyte_body() {
-        let input = "---\nmode: primary\ndescription: Test\n---\n\n  🙂 café 漢字  \n";
+        let input = indoc! {"
+            ---
+            mode: primary
+            description: Test
+            ---
+
+              🙂 café 漢字  
+        "};
         let result: AgentParseResult<RawFrontmatter> = parse_agent(input.to_string()).unwrap();
 
         assert_eq!(result.content, "🙂 café 漢字");
@@ -193,7 +217,12 @@ mod tests {
 
     #[test]
     fn parse_handles_empty_body() {
-        let input = "---\nmode: primary\ndescription: Test\n---";
+        let input = indoc! {"
+            ---
+            mode: primary
+            description: Test
+            ---"
+        };
         let result: AgentParseResult<RawFrontmatter> = parse_agent(input.to_string()).unwrap();
 
         assert!(result.content.is_empty());
@@ -202,7 +231,12 @@ mod tests {
     #[test]
     fn parse_handles_empty_frontmatter() {
         // FIX #2: Handle ---\n--- case (empty YAML)
-        let input = "---\ndescription: Test\n---\nbody";
+        let input = indoc! {"
+            ---
+            description: Test
+            ---
+            body"
+        };
         let result: AgentParseResult<RawFrontmatter> = parse_agent(input.to_string()).unwrap();
 
         assert_eq!(result.content, "body");
@@ -211,7 +245,12 @@ mod tests {
     #[test]
     fn parse_handles_whitespace_only_frontmatter() {
         // FIX #2: Handle frontmatter with only whitespace
-        let input = "---\ndescription: Test\n---\nbody";
+        let input = indoc! {"
+            ---
+            description: Test
+            ---
+            body"
+        };
         let result: AgentParseResult<RawFrontmatter> = parse_agent(input.to_string()).unwrap();
 
         assert_eq!(result.content, "body");
@@ -237,7 +276,13 @@ mod tests {
 
     #[test]
     fn parse_rejects_frontmatter_not_at_start() {
-        let input = "some text\n---\nmode: subagent\n---\nbody";
+        let input = indoc! {"
+            some text
+            ---
+            mode: subagent
+            ---
+            body"
+        };
         let result: Result<AgentParseResult<RawFrontmatter>, AgentParseError> =
             parse_agent(input.to_string());
 
@@ -246,7 +291,14 @@ mod tests {
 
     #[test]
     fn parse_handles_bom() {
-        let input = "\u{FEFF}---\nmode: subagent\ndescription: Test\n---\nbody";
+        let input = indoc! {"
+            ---
+            mode: subagent
+            description: Test
+            ---
+            body"
+        };
+        let input = format!("\u{FEFF}{}", input);
         let result: AgentParseResult<RawFrontmatter> = parse_agent(input.to_string()).unwrap();
 
         assert_eq!(result.content, "body");
@@ -263,7 +315,12 @@ mod tests {
 
     #[test]
     fn parse_returns_error_for_invalid_yaml() {
-        let input = "---\n[invalid yaml\n---\nbody";
+        let input = indoc! {"
+            ---
+            [invalid yaml
+            ---
+            body"
+        };
         let result: Result<AgentParseResult<RawFrontmatter>, AgentParseError> =
             parse_agent(input.to_string());
 
@@ -272,7 +329,13 @@ mod tests {
 
     #[test]
     fn block_scalar_no_trailing_newline() {
-        let input = "---\nmodel: provider/model:tag\ndescription: Test\n---\nbody";
+        let input = indoc! {"
+            ---
+            model: provider/model:tag
+            description: Test
+            ---
+            body"
+        };
         let result: AgentParseResult<RawFrontmatter> = parse_agent(input.to_string()).unwrap();
 
         // Model should NOT have trailing newline
