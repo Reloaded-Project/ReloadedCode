@@ -230,35 +230,22 @@ mod tests {
 
     #[test]
     fn parse_handles_empty_frontmatter() {
-        // FIX #2: Handle ---\n--- case (empty YAML)
+        // Handle frontmatter with only whitespace - should error since
+        // RawFrontmatter requires description field
         let input = indoc! {"
             ---
-            description: Test
+             
             ---
             body"
         };
-        let result: AgentParseResult<RawFrontmatter> = parse_agent(input.to_string()).unwrap();
+        let result = parse_agent::<RawFrontmatter>(input.to_string());
 
-        assert_eq!(result.content, "body");
-    }
-
-    #[test]
-    fn parse_handles_whitespace_only_frontmatter() {
-        // FIX #2: Handle frontmatter with only whitespace
-        let input = indoc! {"
-            ---
-            description: Test
-            ---
-            body"
-        };
-        let result: AgentParseResult<RawFrontmatter> = parse_agent(input.to_string()).unwrap();
-
-        assert_eq!(result.content, "body");
+        assert!(result.is_err());
     }
 
     #[test]
     fn parse_trims_crlf_in_body() {
-        // FIX #3: Body should normalize CRLF to LF
+        // Handle body should normalize CRLF to LF
         let input = "---\nmode: subagent\ndescription: Test\n---\nline1\r\nline2\r\n";
         let result: AgentParseResult<RawFrontmatter> = parse_agent(input.to_string()).unwrap();
 
