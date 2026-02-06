@@ -55,8 +55,8 @@ pub(crate) fn parse_agent<T: DeserializeOwned>(
         }
     })?;
 
-    // Extract body in-place (avoids reallocation)
-    let body = extract_body_inplace(&mut content, offsets.body_start);
+    // Extract body by mutating and reusing the existing allocation.
+    let body = extract_body_inplace(content, offsets.body_start);
 
     Ok(AgentParseResult {
         data,
@@ -115,34 +115,50 @@ fn find_frontmatter_offsets(content: &str) -> Option<FrontmatterOffsets> {
     })
 }
 
-/// Extracts the body from the content string in-place.
-/// Splits off the body portion and trims whitespace without reallocation.
+/// Extracts the body by mutating the original string in-place.
+/// Reuses the existing allocation and leaves only the trimmed body.
 #[inline]
-fn extract_body_inplace(content: &mut String, body_start: usize) -> String {
+fn extract_body_inplace(mut content: String, body_start: usize) -> String {
     if body_start >= content.len() {
-        return String::new();
+        content.clear();
+        return content;
     }
 
-    // Split off the body portion (from body_start to end)
-    let mut body = content.split_off(body_start);
+    let len = content.len();
+    let bytes = content.as_bytes();
+    let mut start_offset = body_start;
+    let mut end_offset = len;
 
-    // Trim leading whitespace in place
-    let leading = body.bytes().take_while(|b| b.is_ascii_whitespace()).count();
-    if leading > 0 {
-        body.drain(..leading);
+    // UTF-8 byte classes:
+    // | Range       | Meaning                  | `is_ascii_whitespace()`  |
+    // |-------------|--------------------------|--------------------------|
+    // | `0x00..=7F` | ASCII / single-byte UTF-8| can be true              |
+    // | `0x80..=BF` | UTF-8 continuation byte  | always false             |
+    // | `0xC2..=F4` | UTF-8 leading byte       | always false             |
+    // Therefore ASCII byte-wise trimming cannot cut through a multibyte code point.
+    while start_offset < len && bytes[start_offset].is_ascii_whitespace() {
+        start_offset += 1;
+    }
+    while end_offset > start_offset && bytes[end_offset - 1].is_ascii_whitespace() {
+        end_offset -= 1;
     }
 
-    // Trim trailing whitespace in place
-    let trailing = body
-        .bytes()
-        .rev()
-        .take_while(|b| b.is_ascii_whitespace())
-        .count();
-    if trailing > 0 {
-        body.truncate(body.len() - trailing);
+    debug_assert!(content.is_char_boundary(body_start));
+    debug_assert!(content.is_char_boundary(start_offset));
+    debug_assert!(content.is_char_boundary(end_offset));
+
+    let body_len = end_offset - start_offset;
+    if start_offset == 0 && body_len == len {
+        return content;
     }
 
-    body
+    unsafe {
+        let vec = content.as_mut_vec();
+        core::ptr::copy(vec.as_ptr().add(start_offset), vec.as_mut_ptr(), body_len);
+        vec.set_len(body_len);
+    }
+
+    content
 }
 
 #[cfg(test)]
@@ -165,6 +181,14 @@ mod tests {
         let result: AgentParseResult<RawFrontmatter> = parse_agent(input.to_string()).unwrap();
 
         assert_eq!(result.content, "indented\n\ntrailing");
+    }
+
+    #[test]
+    fn parse_trims_ascii_whitespace_with_multibyte_body() {
+        let input = "---\nmode: primary\ndescription: Test\n---\n\n  🙂 café 漢字  \n";
+        let result: AgentParseResult<RawFrontmatter> = parse_agent(input.to_string()).unwrap();
+
+        assert_eq!(result.content, "🙂 café 漢字");
     }
 
     #[test]
