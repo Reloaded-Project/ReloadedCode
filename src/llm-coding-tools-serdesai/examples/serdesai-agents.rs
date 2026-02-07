@@ -15,8 +15,8 @@ use futures::StreamExt;
 use llm_coding_tools_agents::{AgentCatalog, AgentLoader};
 use llm_coding_tools_models_dev::ModelsDevCatalog;
 use llm_coding_tools_serdesai::{
-    AgentDefaults, AgentRegistryBuilder, AllowedPathResolver, ModelsDevResolver,
-    ProviderOverride, ProviderOverrides, TodoState, default_tools,
+    AgentDefaults, AgentRegistryBuilder, AllowedPathResolver, ModelsDevResolver, ProviderOverride,
+    ProviderOverrides, TodoState, default_tools,
 };
 use serdes_ai::prelude::*;
 use std::fmt::Write;
@@ -120,7 +120,10 @@ async fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
         .ok_or_else(|| "missing file-reader agent".to_string())?;
 
     // === Print tool info ===
-    println!("=== Agent Ready ({} tools) ===", primary.agent.tools().len());
+    println!(
+        "=== Agent Ready ({} tools) ===",
+        primary.agent.tools().len()
+    );
 
     // === Invoke a subagent via Task ===
     //

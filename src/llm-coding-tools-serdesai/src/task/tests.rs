@@ -283,8 +283,7 @@ async fn task_tool_description_filters_by_mode_and_permission() {
     rules.push(Rule::new("task", "subagent-denied", PermissionAction::Deny));
     let tool = TaskTool::new(Arc::new(registry), rules, Arc::new(()));
 
-    let defn =
-        <TaskTool<MockAgent, ()> as serdes_ai::tools::Tool<()>>::definition(&tool);
+    let defn = <TaskTool<MockAgent, ()> as serdes_ai::tools::Tool<()>>::definition(&tool);
     let description = defn.description();
 
     // Mode-invocable + permission-allowed targets appear
@@ -330,13 +329,17 @@ async fn task_tool_invocation_respects_wildcard_last_match_wins() {
     assert_validation_message(denied_result.unwrap_err(), "Access denied");
 
     // Test: ops-generic should be allowed (matches wildcard "ops-*", no later matching rule)
-    let wildcard = serde_json::json!({"description":"d","prompt":"p","subagent_type":"ops-generic"});
-    let wildcard_result = tool.call(&RunContext::minimal("test-model"), wildcard).await;
+    let wildcard =
+        serde_json::json!({"description":"d","prompt":"p","subagent_type":"ops-generic"});
+    let wildcard_result = tool
+        .call(&RunContext::minimal("test-model"), wildcard)
+        .await;
     assert!(wildcard_result.is_ok());
     assert!(wildcard_prompt.lock().unwrap().is_some());
 
     // Test: ops-approved should be allowed (last match is explicit allow after specific deny)
-    let allowed = serde_json::json!({"description":"d","prompt":"p","subagent_type":"ops-approved"});
+    let allowed =
+        serde_json::json!({"description":"d","prompt":"p","subagent_type":"ops-approved"});
     let allowed_result = tool.call(&RunContext::minimal("test-model"), allowed).await;
     assert!(allowed_result.is_ok());
     assert!(approved_prompt.lock().unwrap().is_some());
@@ -368,12 +371,14 @@ async fn task_tool_invocation_outcome_matrix() {
     let tool = TaskTool::new(Arc::new(registry), rules, Arc::new(()));
 
     // Outcome 1: Unknown target -> validation error (REQ-010)
-    let unknown = serde_json::json!({"description":"d","prompt":"p","subagent_type":"missing-agent"});
+    let unknown =
+        serde_json::json!({"description":"d","prompt":"p","subagent_type":"missing-agent"});
     let unknown_result = tool.call(&RunContext::minimal("test-model"), unknown).await;
     assert_validation_message(unknown_result.unwrap_err(), "Unknown agent type");
 
     // Outcome 2: Primary target -> validation error for non-invocable (REQ-011)
-    let primary = serde_json::json!({"description":"d","prompt":"p","subagent_type":"primary-agent"});
+    let primary =
+        serde_json::json!({"description":"d","prompt":"p","subagent_type":"primary-agent"});
     let primary_result = tool.call(&RunContext::minimal("test-model"), primary).await;
     assert_validation_message(
         primary_result.unwrap_err(),
@@ -386,8 +391,11 @@ async fn task_tool_invocation_outcome_matrix() {
     assert_validation_message(denied_result.unwrap_err(), "Access denied");
 
     // Outcome 4: Allowed target -> successful dispatch (REQ-013)
-    let permitted = serde_json::json!({"description":"d","prompt":"p","subagent_type":"allowed-agent"});
-    let permitted_result = tool.call(&RunContext::minimal("test-model"), permitted).await;
+    let permitted =
+        serde_json::json!({"description":"d","prompt":"p","subagent_type":"allowed-agent"});
+    let permitted_result = tool
+        .call(&RunContext::minimal("test-model"), permitted)
+        .await;
     assert!(permitted_result.is_ok());
     assert!(allowed_prompt.lock().unwrap().is_some());
 }

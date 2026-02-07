@@ -620,12 +620,12 @@ where
         }
 
         let registry = Arc::new(AgentRegistry { entries });
-        registry_handle
-            .set(Arc::clone(&registry))
-            .map_err(|_| AgentRegistryBuildError::BuildFailed {
+        registry_handle.set(Arc::clone(&registry)).map_err(|_| {
+            AgentRegistryBuildError::BuildFailed {
                 agent: "*".to_string(),
                 message: "recursive task registry handle already initialized".to_string(),
-            })?;
+            }
+        })?;
 
         Ok(registry)
     }

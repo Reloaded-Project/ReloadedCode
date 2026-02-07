@@ -5,8 +5,8 @@ use llm_coding_tools_agents::{
 use llm_coding_tools_core::tool_names;
 use llm_coding_tools_models_dev::ModelsDevCatalog;
 use llm_coding_tools_serdesai::{
-    default_tools, AgentDefaults, AgentRegistryBuildError, AgentRegistryBuilder, ModelsDevResolver,
-    ProviderOverride, ProviderOverrides, TodoState,
+    AgentDefaults, AgentRegistryBuildError, AgentRegistryBuilder, ModelsDevResolver,
+    ProviderOverride, ProviderOverrides, TodoState, default_tools,
 };
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};

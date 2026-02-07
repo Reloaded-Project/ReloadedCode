@@ -9,8 +9,8 @@ use llm_coding_tools_agents::{
     AgentConfig, AgentMode, PermissionAction, PermissionRule, Rule, Ruleset,
 };
 use llm_coding_tools_serdesai::{
-    AgentRegistry, AgentRegistryEntry, RegistryAgent, RegistryAgentError,
-    TaskDefinitionSnapshot, TaskRegistryHandle, TaskTargetSummary, TaskTool,
+    AgentRegistry, AgentRegistryEntry, RegistryAgent, RegistryAgentError, TaskDefinitionSnapshot,
+    TaskRegistryHandle, TaskTargetSummary, TaskTool,
 };
 use serdes_ai::tools::{RunContext, Tool};
 use std::collections::HashMap;
@@ -86,11 +86,7 @@ impl RegistryAgent<()> for ScriptedAgent {
 }
 
 /// Creates a registry entry with the given name, mode, and permission rules.
-fn make_entry(
-    name: &str,
-    mode: AgentMode,
-    ruleset: Ruleset,
-) -> AgentRegistryEntry<ScriptedAgent> {
+fn make_entry(name: &str, mode: AgentMode, ruleset: Ruleset) -> AgentRegistryEntry<ScriptedAgent> {
     AgentRegistryEntry {
         config: AgentConfig {
             name: name.to_string(),
@@ -166,7 +162,11 @@ async fn depth_2_allow_chain_succeeds() {
         .call(&RunContext::minimal("test-model"), args)
         .await;
 
-    assert!(result.is_ok(), "Expected successful delegation, got: {:?}", result);
+    assert!(
+        result.is_ok(),
+        "Expected successful delegation, got: {:?}",
+        result
+    );
 }
 
 #[tokio::test]
@@ -240,7 +240,10 @@ async fn depth_2_fails_when_caller_denies_target() {
         .call(&RunContext::minimal("test-model"), args)
         .await;
 
-    assert!(result.is_err(), "Expected access denied when caller denies target");
+    assert!(
+        result.is_err(),
+        "Expected access denied when caller denies target"
+    );
     let err = result.unwrap_err();
     let err_str = format!("{:?}", err);
     assert!(
@@ -328,7 +331,10 @@ async fn depth_3_chain_with_runtime_permission_lookup() {
             }),
         )
         .await;
-    assert!(result.is_err(), "agent-a should not be able to call agent-c directly");
+    assert!(
+        result.is_err(),
+        "agent-a should not be able to call agent-c directly"
+    );
 }
 
 #[test]

@@ -109,7 +109,10 @@ enum TaskCallerAuthority {
     /// Static ruleset from legacy construction.
     StaticRules(Ruleset),
     /// Registry-caller with name for runtime lookup and build-time rules fallback.
-    RegistryCaller { caller_name: String, build_rules: Ruleset },
+    RegistryCaller {
+        caller_name: String,
+        build_rules: Ruleset,
+    },
 }
 
 /// Task tool for serdesAI framework.
@@ -195,7 +198,9 @@ where
         self.registry
             .get()
             .map(|registry| registry.as_ref())
-            .ok_or_else(|| ToolError::execution_failed("Task registry is not initialized".to_string()))
+            .ok_or_else(|| {
+                ToolError::execution_failed("Task registry is not initialized".to_string())
+            })
     }
 
     fn resolve_runtime_rules<'a>(&'a self, registry: &'a AgentRegistry<A>) -> Cow<'a, Ruleset> {
@@ -320,7 +325,8 @@ When using the Task tool, you must specify a subagent_type parameter to select w
         }
 
         let caller_rules = self.resolve_runtime_rules(registry);
-        if caller_rules.evaluate(tool_names::TASK, &input.subagent_type) != PermissionAction::Allow {
+        if caller_rules.evaluate(tool_names::TASK, &input.subagent_type) != PermissionAction::Allow
+        {
             return Err(ToolError::validation_error(
                 tool_names::TASK,
                 Some("subagent_type".to_string()),
