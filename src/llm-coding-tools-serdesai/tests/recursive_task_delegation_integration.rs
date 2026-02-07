@@ -72,9 +72,6 @@ impl ScriptedAgent {
         }
     }
 
-    fn last_prompt(&self) -> Arc<Mutex<Option<String>>> {
-        Arc::clone(&self.last_prompt)
-    }
 }
 
 #[async_trait]
