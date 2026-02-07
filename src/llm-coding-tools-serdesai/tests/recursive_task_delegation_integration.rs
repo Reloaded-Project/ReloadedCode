@@ -71,7 +71,6 @@ impl ScriptedAgent {
             last_prompt: Arc::new(Mutex::new(None)),
         }
     }
-
 }
 
 #[async_trait]

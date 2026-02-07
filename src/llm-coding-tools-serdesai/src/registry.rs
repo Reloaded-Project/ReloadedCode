@@ -440,7 +440,8 @@ where
                 top_p,
             } = self.resolve_model_and_builder(config, &resolver)?;
 
-            let mut builder = self.register_allowed_tools(builder, &mut prompt_builder, allowed_tools);
+            let mut builder =
+                self.register_allowed_tools(builder, &mut prompt_builder, allowed_tools);
             builder = self.apply_settings_and_params(builder, temperature, top_p, &config.options);
 
             let system_prompt = prompt_builder.build();
@@ -495,7 +496,9 @@ where
             let setup = self.resolve_model_and_builder(config, &resolver)?;
             let mut tool_names = Vec::with_capacity(setup.tool_names.len() + 1);
             tool_names.extend(setup.tool_names.iter().cloned());
-            if task_has_any_allow(&config.permission) && !Self::contains_task_tool(&setup.tool_names) {
+            if task_has_any_allow(&config.permission)
+                && !Self::contains_task_tool(&setup.tool_names)
+            {
                 tool_names.push(tool_names::TASK.to_string());
             }
             planned_targets.push(TaskTargetSummary {
@@ -522,7 +525,8 @@ where
                 top_p,
             } = setup;
 
-            let mut builder = self.register_allowed_tools(builder, &mut prompt_builder, allowed_tools);
+            let mut builder =
+                self.register_allowed_tools(builder, &mut prompt_builder, allowed_tools);
 
             if task_has_any_allow(&config.permission) && !Self::contains_task_tool(&tool_names) {
                 let task_tool = TaskTool::for_registry_caller(
