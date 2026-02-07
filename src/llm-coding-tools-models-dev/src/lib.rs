@@ -1,3 +1,5 @@
+#![doc = include_str!(concat!("../", env!("CARGO_PKG_README")))]
+
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
