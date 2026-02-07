@@ -3,6 +3,7 @@
 use crate::agent_ext::AgentBuilderExt;
 use crate::model_resolver::{ModelResolver, ModelsDevResolver, ProviderOverrides};
 use crate::task::{TaskDefinitionSnapshot, TaskRegistryHandle, TaskTargetSummary, TaskTool};
+use crate::tool_catalog::ToolCatalogEntry;
 use async_trait::async_trait;
 use indexmap::IndexMap;
 use llm_coding_tools_agents::{
@@ -208,8 +209,18 @@ fn task_has_any_allow(permission: &IndexMap<String, PermissionRule>) -> bool {
 /// Builder for constructing a serdesAI registry from configs + tools.
 pub struct AgentRegistryBuilder<Deps> {
     defaults: AgentDefaults,
-    tools: Vec<crate::tool_catalog::ToolCatalogEntry>,
+    tools: Vec<ToolCatalogEntry>,
     _deps: std::marker::PhantomData<Deps>,
+}
+
+struct SharedBuildSetup<Deps> {
+    builder: AgentBuilder<Arc<Deps>, String>,
+    prompt_builder: SystemPromptBuilder,
+    ruleset: Ruleset,
+    allowed_tools: Vec<ToolCatalogEntry>,
+    tool_names: Vec<String>,
+    temperature: Option<f64>,
+    top_p: Option<f64>,
 }
 
 impl<Deps> AgentRegistryBuilder<Deps>
@@ -223,12 +234,185 @@ where
     /// - `tools`: cloneable tool catalog used for filtering and agent construction.
     ///
     /// Returns: a new [`AgentRegistryBuilder`].
-    pub fn new(defaults: AgentDefaults, tools: Vec<crate::tool_catalog::ToolCatalogEntry>) -> Self {
+    pub fn new(defaults: AgentDefaults, tools: Vec<ToolCatalogEntry>) -> Self {
         Self {
             defaults,
             tools,
             _deps: std::marker::PhantomData,
         }
+    }
+
+    fn create_resolver_from_defaults(&self) -> ModelsDevResolver {
+        if let Some(resolver) = self.defaults.model_resolver.clone() {
+            resolver
+        } else {
+            let catalog = ModelsDevCatalog::load_shared_cache_or_bundled()
+                .map(|result| result.catalog)
+                .ok();
+            ModelsDevResolver::new(catalog, self.defaults.provider_overrides.clone())
+        }
+    }
+
+    fn resolve_model_and_builder(
+        &self,
+        config: &AgentConfig,
+        resolver: &ModelsDevResolver,
+    ) -> Result<SharedBuildSetup<Deps>, AgentRegistryBuildError> {
+        let model = config
+            .model
+            .clone()
+            .filter(|m| !m.is_empty())
+            .or_else(|| Some(self.defaults.model.clone()))
+            .filter(|m| !m.is_empty())
+            .ok_or_else(|| AgentRegistryBuildError::MissingModel {
+                agent: config.name.clone(),
+            })?;
+        let temperature = config.temperature.or(self.defaults.temperature);
+        let top_p = config.top_p.or(self.defaults.top_p);
+
+        let mut resolved =
+            resolver
+                .resolve(&model)
+                .map_err(|err| AgentRegistryBuildError::BuildFailed {
+                    agent: config.name.clone(),
+                    message: err.to_string(),
+                })?;
+
+        let (spec_provider, resolved_model_id) = resolved
+            .spec
+            .split_once(':')
+            .unwrap_or(("", resolved.spec.as_str()));
+        let resolved_provider = if resolved.provider_id.is_empty() {
+            spec_provider
+        } else {
+            resolved.provider_id.as_str()
+        };
+
+        if (resolved.provider_id.is_empty() || resolved.provider_id == "openai")
+            && resolved_provider == "openai"
+        {
+            if resolved.api_key.is_none() {
+                resolved.api_key = self.defaults.api_key.clone();
+            }
+            if resolved.base_url.is_none() {
+                resolved.base_url = self.defaults.base_url.clone();
+            }
+        }
+
+        let ruleset = Ruleset::from_config(&config.permission);
+        let mut allowed_tools = Vec::with_capacity(self.tools.len());
+        let mut tool_names = Vec::with_capacity(self.tools.len());
+        for tool in &self.tools {
+            if ruleset.is_allowed(tool.name(), "*") {
+                allowed_tools.push(tool.clone());
+                tool_names.push(tool.name().to_string());
+            }
+        }
+
+        let mut prompt_builder = SystemPromptBuilder::new();
+        if !config.prompt.is_empty() {
+            prompt_builder = prompt_builder.system_prompt(config.prompt.clone());
+        }
+
+        let builder = match resolved_provider {
+            "openrouter" => {
+                let model = if let Some(api_key) = resolved.api_key.as_deref() {
+                    OpenRouterModel::new(resolved_model_id, api_key)
+                } else {
+                    OpenRouterModel::from_env(resolved_model_id).map_err(|err| {
+                        AgentRegistryBuildError::BuildFailed {
+                            agent: config.name.clone(),
+                            message: err.to_string(),
+                        }
+                    })?
+                };
+                AgentBuilder::<Arc<Deps>, String>::new(model)
+            }
+            "huggingface" => {
+                let mut model = if let Some(api_key) = resolved.api_key.as_deref() {
+                    HuggingFaceModel::new(resolved_model_id, api_key)
+                } else {
+                    HuggingFaceModel::from_env(resolved_model_id).map_err(|err| {
+                        AgentRegistryBuildError::BuildFailed {
+                            agent: config.name.clone(),
+                            message: err.to_string(),
+                        }
+                    })?
+                };
+                if let Some(endpoint) = resolved.base_url.as_deref() {
+                    model = model.with_endpoint(endpoint);
+                }
+                AgentBuilder::<Arc<Deps>, String>::new(model)
+            }
+            _ => {
+                let mut model_config = ModelConfig::new(&resolved.spec);
+                if let Some(api_key) = resolved.api_key {
+                    model_config = model_config.with_api_key(api_key);
+                }
+                if let Some(base_url) = resolved.base_url {
+                    model_config = model_config.with_base_url(base_url);
+                }
+                AgentBuilder::<Arc<Deps>, String>::from_config(model_config).map_err(|err| {
+                    AgentRegistryBuildError::BuildFailed {
+                        agent: config.name.clone(),
+                        message: err.to_string(),
+                    }
+                })?
+            }
+        };
+
+        Ok(SharedBuildSetup {
+            builder,
+            prompt_builder,
+            ruleset,
+            allowed_tools,
+            tool_names,
+            temperature,
+            top_p,
+        })
+    }
+
+    fn apply_settings_and_params(
+        &self,
+        mut builder: AgentBuilder<Arc<Deps>, String>,
+        temperature: Option<f64>,
+        top_p: Option<f64>,
+        options: &HashMap<String, Value>,
+    ) -> AgentBuilder<Arc<Deps>, String> {
+        let mut settings = ModelSettings::new();
+        if let Some(value) = temperature {
+            settings = settings.temperature(value);
+        }
+        if let Some(value) = top_p {
+            settings = settings.top_p(value);
+        }
+
+        let mut params = Map::with_capacity(self.defaults.options.len() + options.len());
+        for (key, value) in &self.defaults.options {
+            params.insert(key.clone(), value.clone());
+        }
+        for (key, value) in options {
+            params.insert(key.clone(), value.clone());
+        }
+        if !params.is_empty() {
+            settings = settings.extra(Value::Object(params));
+        }
+        if !settings.is_empty() {
+            builder = builder.model_settings(settings);
+        }
+        builder
+    }
+
+    fn register_allowed_tools(
+        &self,
+        mut builder: AgentBuilder<Arc<Deps>, String>,
+        prompt_builder: &mut SystemPromptBuilder,
+        allowed_tools: Vec<ToolCatalogEntry>,
+    ) -> AgentBuilder<Arc<Deps>, String> {
+        for tool in allowed_tools {
+            builder = tool.register_with_prompt(builder, prompt_builder);
+        }
+        builder
     }
 
     /// Builds a serdesAI registry from the provided agent catalog.
@@ -241,156 +425,25 @@ where
         &self,
         catalog: &AgentCatalog,
     ) -> Result<AgentRegistry<Agent<Arc<Deps>, String>>, AgentRegistryBuildError> {
-        // Build or fallback resolver
-        let resolver = if let Some(resolver) = self.defaults.model_resolver.clone() {
-            resolver
-        } else {
-            let catalog = ModelsDevCatalog::load_shared_cache_or_bundled()
-                .map(|result| result.catalog)
-                .ok();
-            ModelsDevResolver::new(catalog, self.defaults.provider_overrides.clone())
-        };
+        let resolver = self.create_resolver_from_defaults();
 
         let mut entries = HashMap::with_capacity(catalog.iter().count());
 
         for config in catalog.iter() {
-            let model = config
-                .model
-                .clone()
-                .filter(|m| !m.is_empty())
-                .or_else(|| Some(self.defaults.model.clone()))
-                .filter(|m| !m.is_empty())
-                .ok_or_else(|| AgentRegistryBuildError::MissingModel {
-                    agent: config.name.clone(),
-                })?;
-            let temperature = config.temperature.or(self.defaults.temperature);
-            let top_p = config.top_p.or(self.defaults.top_p);
+            let SharedBuildSetup {
+                builder,
+                mut prompt_builder,
+                ruleset,
+                allowed_tools,
+                tool_names,
+                temperature,
+                top_p,
+            } = self.resolve_model_and_builder(config, &resolver)?;
 
-            // Resolve model spec using the resolver
-            let mut resolved =
-                resolver
-                    .resolve(&model)
-                    .map_err(|err| AgentRegistryBuildError::BuildFailed {
-                        agent: config.name.clone(),
-                        message: err.to_string(),
-                    })?;
+            let mut builder = self.register_allowed_tools(builder, &mut prompt_builder, allowed_tools);
+            builder = self.apply_settings_and_params(builder, temperature, top_p, &config.options);
 
-            // Extract provider prefix from resolved spec for backwards compatibility
-            let (spec_provider, resolved_model_id) = resolved
-                .spec
-                .split_once(':')
-                .unwrap_or(("", resolved.spec.as_str()));
-            // Use resolved.provider_id if set, otherwise fall back to spec prefix
-            let resolved_provider = if resolved.provider_id.is_empty() {
-                spec_provider
-            } else {
-                resolved.provider_id.as_str()
-            };
-
-            // Apply legacy OpenAI overrides only when provider is openai
-            if (resolved.provider_id.is_empty() || resolved.provider_id == "openai")
-                && resolved_provider == "openai"
-            {
-                if resolved.api_key.is_none() {
-                    resolved.api_key = self.defaults.api_key.clone();
-                }
-                if resolved.base_url.is_none() {
-                    resolved.base_url = self.defaults.base_url.clone();
-                }
-            }
-
-            let ruleset = Ruleset::from_config(&config.permission);
-            let mut allowed_tools = Vec::with_capacity(self.tools.len());
-            let mut tool_names = Vec::with_capacity(self.tools.len());
-            for tool in &self.tools {
-                if ruleset.is_allowed(tool.name(), "*") {
-                    allowed_tools.push(tool.clone());
-                    tool_names.push(tool.name().to_string());
-                }
-            }
-
-            let mut pb = SystemPromptBuilder::new();
-            if !config.prompt.is_empty() {
-                pb = pb.system_prompt(config.prompt.clone());
-            }
-
-            // Branch on resolved provider to use appropriate constructor
-            let mut builder = match resolved_provider {
-                "openrouter" => {
-                    let model = if let Some(api_key) = resolved.api_key.as_deref() {
-                        OpenRouterModel::new(resolved_model_id, api_key)
-                    } else {
-                        OpenRouterModel::from_env(resolved_model_id).map_err(|err| {
-                            AgentRegistryBuildError::BuildFailed {
-                                agent: config.name.clone(),
-                                message: err.to_string(),
-                            }
-                        })?
-                    };
-                    // Note: OpenRouterModel does not support base URL overrides.
-                    AgentBuilder::<Arc<Deps>, String>::new(model)
-                }
-                "huggingface" => {
-                    let mut model = if let Some(api_key) = resolved.api_key.as_deref() {
-                        HuggingFaceModel::new(resolved_model_id, api_key)
-                    } else {
-                        HuggingFaceModel::from_env(resolved_model_id).map_err(|err| {
-                            AgentRegistryBuildError::BuildFailed {
-                                agent: config.name.clone(),
-                                message: err.to_string(),
-                            }
-                        })?
-                    };
-                    if let Some(endpoint) = resolved.base_url.as_deref() {
-                        model = model.with_endpoint(endpoint);
-                    }
-                    AgentBuilder::<Arc<Deps>, String>::new(model)
-                }
-                _ => {
-                    // Use ModelConfig for supported providers (openai, anthropic, groq, mistral, google, cohere, ollama, etc.)
-                    let mut model_config = ModelConfig::new(&resolved.spec);
-                    if let Some(api_key) = resolved.api_key.clone() {
-                        model_config = model_config.with_api_key(api_key);
-                    }
-                    if let Some(base_url) = resolved.base_url.clone() {
-                        model_config = model_config.with_base_url(base_url);
-                    }
-                    AgentBuilder::<Arc<Deps>, String>::from_config(model_config).map_err(|err| {
-                        AgentRegistryBuildError::BuildFailed {
-                            agent: config.name.clone(),
-                            message: err.to_string(),
-                        }
-                    })?
-                }
-            };
-
-            let mut settings = ModelSettings::new();
-            if let Some(temp) = temperature {
-                settings = settings.temperature(temp);
-            }
-            if let Some(value) = top_p {
-                settings = settings.top_p(value);
-            }
-
-            let mut params = Map::with_capacity(self.defaults.options.len() + config.options.len());
-            for (key, value) in &self.defaults.options {
-                params.insert(key.clone(), value.clone());
-            }
-            for (key, value) in &config.options {
-                params.insert(key.clone(), value.clone());
-            }
-            if !params.is_empty() {
-                settings = settings.extra(Value::Object(params));
-            }
-            if !settings.is_empty() {
-                builder = builder.model_settings(settings);
-            }
-
-            for tool in allowed_tools {
-                builder = tool.register_with_prompt(builder, &mut pb);
-            }
-
-            let system_prompt = pb.build();
+            let system_prompt = prompt_builder.build();
             let agent = builder.system_prompt(system_prompt.clone()).build();
 
             entries.insert(
@@ -431,28 +484,18 @@ where
         catalog: &AgentCatalog,
         task_deps: Arc<Deps>,
     ) -> Result<Arc<AgentRegistry<Agent<Arc<Deps>, String>>>, AgentRegistryBuildError> {
-        let resolver = if let Some(resolver) = self.defaults.model_resolver.clone() {
-            resolver
-        } else {
-            let catalog = ModelsDevCatalog::load_shared_cache_or_bundled()
-                .map(|result| result.catalog)
-                .ok();
-            ModelsDevResolver::new(catalog, self.defaults.provider_overrides.clone())
-        };
+        let resolver = self.create_resolver_from_defaults();
 
         let registry_handle: Arc<TaskRegistryHandle<Agent<Arc<Deps>, String>>> =
             Arc::new(TaskRegistryHandle::new());
 
         let mut planned_targets = Vec::with_capacity(catalog.iter().count());
+        let mut shared_setups = Vec::with_capacity(catalog.iter().count());
         for config in catalog.iter() {
-            let ruleset = Ruleset::from_config(&config.permission);
-            let mut tool_names = Vec::with_capacity(self.tools.len() + 1);
-            for tool in &self.tools {
-                if ruleset.is_allowed(tool.name(), "*") {
-                    tool_names.push(tool.name().to_string());
-                }
-            }
-            if task_has_any_allow(&config.permission) && !Self::contains_task_tool(&tool_names) {
+            let setup = self.resolve_model_and_builder(config, &resolver)?;
+            let mut tool_names = Vec::with_capacity(setup.tool_names.len() + 1);
+            tool_names.extend(setup.tool_names.iter().cloned());
+            if task_has_any_allow(&config.permission) && !Self::contains_task_tool(&setup.tool_names) {
                 tool_names.push(tool_names::TASK.to_string());
             }
             planned_targets.push(TaskTargetSummary {
@@ -460,116 +503,26 @@ where
                 mode: config.mode,
                 tool_names,
             });
+            shared_setups.push((config.clone(), setup));
         }
 
         let snapshot = TaskDefinitionSnapshot {
             targets: planned_targets,
         };
 
-        let mut entries = HashMap::with_capacity(catalog.iter().count());
-        for config in catalog.iter() {
-            let ruleset = Ruleset::from_config(&config.permission);
-            let temperature = config.temperature.or(self.defaults.temperature);
-            let top_p = config.top_p.or(self.defaults.top_p);
+        let mut entries = HashMap::with_capacity(shared_setups.len());
+        for (config, setup) in shared_setups {
+            let SharedBuildSetup {
+                builder,
+                mut prompt_builder,
+                ruleset,
+                allowed_tools,
+                mut tool_names,
+                temperature,
+                top_p,
+            } = setup;
 
-            let model = config
-                .model
-                .clone()
-                .filter(|m| !m.is_empty())
-                .or_else(|| Some(self.defaults.model.clone()))
-                .filter(|m| !m.is_empty())
-                .ok_or_else(|| AgentRegistryBuildError::MissingModel {
-                    agent: config.name.clone(),
-                })?;
-
-            let mut resolved =
-                resolver
-                    .resolve(&model)
-                    .map_err(|err| AgentRegistryBuildError::BuildFailed {
-                        agent: config.name.clone(),
-                        message: err.to_string(),
-                    })?;
-
-            let (spec_provider, resolved_model_id) = resolved
-                .spec
-                .split_once(':')
-                .unwrap_or(("", resolved.spec.as_str()));
-            let resolved_provider = if resolved.provider_id.is_empty() {
-                spec_provider
-            } else {
-                resolved.provider_id.as_str()
-            };
-
-            if (resolved.provider_id.is_empty() || resolved.provider_id == "openai")
-                && resolved_provider == "openai"
-            {
-                if resolved.api_key.is_none() {
-                    resolved.api_key = self.defaults.api_key.clone();
-                }
-                if resolved.base_url.is_none() {
-                    resolved.base_url = self.defaults.base_url.clone();
-                }
-            }
-
-            let mut pb = SystemPromptBuilder::new();
-            if !config.prompt.is_empty() {
-                pb = pb.system_prompt(config.prompt.clone());
-            }
-
-            let mut builder = match resolved_provider {
-                "openrouter" => {
-                    let model = if let Some(api_key) = resolved.api_key.as_deref() {
-                        OpenRouterModel::new(resolved_model_id, api_key)
-                    } else {
-                        OpenRouterModel::from_env(resolved_model_id).map_err(|err| {
-                            AgentRegistryBuildError::BuildFailed {
-                                agent: config.name.clone(),
-                                message: err.to_string(),
-                            }
-                        })?
-                    };
-                    AgentBuilder::<Arc<Deps>, String>::new(model)
-                }
-                "huggingface" => {
-                    let mut model = if let Some(api_key) = resolved.api_key.as_deref() {
-                        HuggingFaceModel::new(resolved_model_id, api_key)
-                    } else {
-                        HuggingFaceModel::from_env(resolved_model_id).map_err(|err| {
-                            AgentRegistryBuildError::BuildFailed {
-                                agent: config.name.clone(),
-                                message: err.to_string(),
-                            }
-                        })?
-                    };
-                    if let Some(endpoint) = resolved.base_url.as_deref() {
-                        model = model.with_endpoint(endpoint);
-                    }
-                    AgentBuilder::<Arc<Deps>, String>::new(model)
-                }
-                _ => {
-                    let mut model_config = ModelConfig::new(&resolved.spec);
-                    if let Some(api_key) = resolved.api_key.clone() {
-                        model_config = model_config.with_api_key(api_key);
-                    }
-                    if let Some(base_url) = resolved.base_url.clone() {
-                        model_config = model_config.with_base_url(base_url);
-                    }
-                    AgentBuilder::<Arc<Deps>, String>::from_config(model_config).map_err(|err| {
-                        AgentRegistryBuildError::BuildFailed {
-                            agent: config.name.clone(),
-                            message: err.to_string(),
-                        }
-                    })?
-                }
-            };
-
-            let mut tool_names = Vec::with_capacity(self.tools.len() + 1);
-            for tool in &self.tools {
-                if ruleset.is_allowed(tool.name(), "*") {
-                    builder = tool.clone().register_with_prompt(builder, &mut pb);
-                    tool_names.push(tool.name().to_string());
-                }
-            }
+            let mut builder = self.register_allowed_tools(builder, &mut prompt_builder, allowed_tools);
 
             if task_has_any_allow(&config.permission) && !Self::contains_task_tool(&tool_names) {
                 let task_tool = TaskTool::for_registry_caller(
@@ -579,32 +532,13 @@ where
                     snapshot.clone(),
                     Arc::clone(&task_deps),
                 );
-                builder = builder.tool(pb.track(task_tool));
+                builder = builder.tool(prompt_builder.track(task_tool));
                 tool_names.push(tool_names::TASK.to_string());
             }
 
-            let mut settings = ModelSettings::new();
-            if let Some(temp) = temperature {
-                settings = settings.temperature(temp);
-            }
-            if let Some(value) = top_p {
-                settings = settings.top_p(value);
-            }
-            let mut params = Map::with_capacity(self.defaults.options.len() + config.options.len());
-            for (key, value) in &self.defaults.options {
-                params.insert(key.clone(), value.clone());
-            }
-            for (key, value) in &config.options {
-                params.insert(key.clone(), value.clone());
-            }
-            if !params.is_empty() {
-                settings = settings.extra(Value::Object(params));
-            }
-            if !settings.is_empty() {
-                builder = builder.model_settings(settings);
-            }
+            builder = self.apply_settings_and_params(builder, temperature, top_p, &config.options);
 
-            let system_prompt = pb.build();
+            let system_prompt = prompt_builder.build();
             let agent = builder.system_prompt(system_prompt.clone()).build();
 
             entries.insert(
