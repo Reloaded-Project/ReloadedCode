@@ -15,6 +15,7 @@ This crate provides a standalone catalog for models.dev provider and model data,
 ## Usage
 
 ```rust
+# fn main() -> Result<(), Box<dyn std::error::Error>> {
 use llm_coding_tools_models_dev::{ModelsDevCatalog, CatalogSource};
 use std::collections::HashSet;
 
@@ -26,8 +27,9 @@ assert!(matches!(source, CatalogSource::Bundled));
 let providers = catalog.resolve_provider_for_model("gpt-4o");
 if let Some(provider_ids) = providers {
     for provider_id in provider_ids {
-        let metadata = catalog.get_provider(provider_id)?;
-        println!("Provider: {} - env: {:?}", metadata.id, metadata.env);
+        if let Some(metadata) = catalog.get_provider(provider_id) {
+            println!("Provider: {} - env: {:?}", metadata.id, metadata.env);
+        }
     }
 }
 
@@ -35,6 +37,8 @@ if let Some(provider_ids) = providers {
 let mut filter = HashSet::new();
 filter.insert("gpt-4o".to_string());
 let (catalog, _) = ModelsDevCatalog::from_bundled_filtered(&filter)?;
+# Ok(())
+# }
 ```
 
 ## Update Binary
