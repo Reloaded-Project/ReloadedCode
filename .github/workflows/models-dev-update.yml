@@ -13,6 +13,10 @@ jobs:
       pull-requests: write
     steps:
       - uses: actions/checkout@v4
+      - uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          toolchain: stable
+          cache: true
       - name: Run models.dev updater
         working-directory: src
         run: cargo run -p llm-coding-tools-models-dev --bin models-dev-update
