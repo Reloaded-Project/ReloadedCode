@@ -136,7 +136,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // 1. Load agent configs
     let loader = AgentLoader::new();
     let mut catalog = AgentCatalog::new();
-    loader.add_file(&mut catalog, "agents.toml")?;
+    loader.add_file(&mut catalog, "agents/example.md")?;
 
     // 2. Build registry with defaults and tools
     let defaults = AgentDefaults {
