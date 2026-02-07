@@ -1,6 +1,6 @@
 use reqwest::Client;
 use serde::Deserialize;
-use serde_json::to_vec_pretty;
+use serde_json::to_vec;
 use std::{collections::BTreeMap, env, path::PathBuf, time::Duration};
 use tokio::fs;
 
@@ -87,7 +87,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
 
     let snapshot = Snapshot { providers };
-    let json = to_vec_pretty(&snapshot)?;
+    let json = to_vec(&snapshot)?;
     fs::write(output, json).await?;
     Ok(())
 }
