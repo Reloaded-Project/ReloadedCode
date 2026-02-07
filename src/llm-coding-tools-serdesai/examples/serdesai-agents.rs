@@ -27,11 +27,12 @@ use std::fmt::Write;
 use std::sync::Arc;
 
 // Set your OpenAI API key here or via OPENAI_API_KEY environment variable.
+const OPENAI_API_KEY: &str = "";
 const OPENAI_MODEL: &str = "openai:hf:zai-org/GLM-4.7";
 const OPENAI_BASE_URL: &str = "https://api.synthetic.new/openai/v1";
 
 fn get_openai_api_key() -> String {
-    std::env::var("OPENAI_API_KEY").unwrap_or_default()
+    std::env::var("OPENAI_API_KEY").unwrap_or_else(|_| OPENAI_API_KEY.to_string())
 }
 
 // Embedded subagent config (loaded via include_str!)
