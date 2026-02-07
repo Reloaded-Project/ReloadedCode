@@ -1,6 +1,6 @@
 [package]
 name = "llm-coding-tools-core"
-version = "0.1.0"
+version = "0.2.0"
 edition = "2021"
 description = "Lightweight, high-performance core types and utilities for coding tools - framework agnostic"
 repository = "https://github.com/Sewer56/llm-coding-tools"

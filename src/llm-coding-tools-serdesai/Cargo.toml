@@ -1,6 +1,6 @@
 [package]
 name = "llm-coding-tools-serdesai"
-version = "0.1.0"
+version = "0.2.0"
 edition = "2024"
 description = "Lightweight, high-performance serdesAI framework Tool implementations for coding tools"
 repository = "https://github.com/Sewer56/llm-coding-tools"
@@ -10,7 +10,7 @@ include = ["src/**/*", "examples/**/*", "README.md"]
 
 [dependencies]
 # Core tool operations (file read/write/edit, glob, grep, bash, etc.)
-llm-coding-tools-core = { version = "0.1.0", path = "../llm-coding-tools-core", features = [
+llm-coding-tools-core = { version = "0.2.0", path = "../llm-coding-tools-core", features = [
     "tokio",
 ] }
 

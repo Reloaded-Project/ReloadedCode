@@ -5,8 +5,8 @@
 use crate::convert::to_serdes_result;
 use async_trait::async_trait;
 use llm_coding_tools_core::context::ToolContext;
-use llm_coding_tools_core::operations::execute_command;
 use llm_coding_tools_core::tool_names;
+use llm_coding_tools_core::tools::execute_command;
 use serde::Deserialize;
 use serdes_ai::tools::{RunContext, SchemaBuilder, Tool, ToolDefinition, ToolError, ToolResult};
 use std::path::{Path, PathBuf};

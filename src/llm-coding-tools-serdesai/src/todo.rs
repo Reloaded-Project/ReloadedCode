@@ -6,8 +6,8 @@ use crate::convert::to_serdes_result;
 use async_trait::async_trait;
 use llm_coding_tools_core::ToolOutput;
 use llm_coding_tools_core::context::ToolContext;
-use llm_coding_tools_core::operations::{read_todos, write_todos};
 use llm_coding_tools_core::tool_names;
+use llm_coding_tools_core::tools::{read_todos, write_todos};
 use serde::Deserialize;
 use serdes_ai::tools::{RunContext, SchemaBuilder, Tool, ToolDefinition, ToolError, ToolResult};
 

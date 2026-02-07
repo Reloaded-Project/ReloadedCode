@@ -1,9 +1,9 @@
 //! Write file tool using [`AllowedPathResolver`].
 
 use async_trait::async_trait;
-use llm_coding_tools_core::operations::write_file;
 use llm_coding_tools_core::path::AllowedPathResolver;
 use llm_coding_tools_core::tool_names;
+use llm_coding_tools_core::tools::write_file;
 use llm_coding_tools_core::{ToolContext, ToolOutput};
 use serde::Deserialize;
 use serdes_ai::tools::{RunContext, SchemaBuilder, Tool, ToolDefinition, ToolError, ToolResult};

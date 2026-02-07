@@ -1,9 +1,9 @@
 //! Glob pattern file finding tool using [`AllowedPathResolver`].
 
 use async_trait::async_trait;
-use llm_coding_tools_core::operations::glob_files;
 use llm_coding_tools_core::path::AllowedPathResolver;
 use llm_coding_tools_core::tool_names;
+use llm_coding_tools_core::tools::glob_files;
 use llm_coding_tools_core::{ToolContext, ToolOutput};
 use serde::Deserialize;
 use serdes_ai::tools::{RunContext, SchemaBuilder, Tool, ToolDefinition, ToolError, ToolResult};

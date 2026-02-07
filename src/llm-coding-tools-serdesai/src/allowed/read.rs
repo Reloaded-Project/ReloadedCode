@@ -2,9 +2,9 @@
 
 use async_trait::async_trait;
 use llm_coding_tools_core::ToolContext;
-use llm_coding_tools_core::operations::read_file;
 use llm_coding_tools_core::path::AllowedPathResolver;
 use llm_coding_tools_core::tool_names;
+use llm_coding_tools_core::tools::read_file;
 use serde::Deserialize;
 use serdes_ai::tools::{RunContext, SchemaBuilder, Tool, ToolDefinition, ToolError, ToolResult};
 

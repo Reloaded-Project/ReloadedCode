@@ -1,6 +1,6 @@
 //! Common output types for tool responses.
 
-use crate::operations::WebFetchOutput;
+use crate::tools::WebFetchOutput;
 use serde::Serialize;
 
 /// Wrapper for tool output with truncation metadata.

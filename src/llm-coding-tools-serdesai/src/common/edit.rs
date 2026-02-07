@@ -1,7 +1,7 @@
 //! Shared helpers for Edit tool implementations.
 
-use llm_coding_tools_core::operations::EditError;
 use llm_coding_tools_core::tool_names;
+use llm_coding_tools_core::tools::EditError;
 use serdes_ai::tools::ToolError;
 
 use crate::convert::core_error_to_serdes;

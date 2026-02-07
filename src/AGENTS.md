@@ -13,6 +13,11 @@ The `async` and `blocking` features are mutually exclusive - enabling both cause
 # Project Structure
 
 - `llm-coding-tools-core/` - Framework-agnostic core library
+  - `src/tools/` - Core tool implementations (read, write, edit, glob, grep, bash, etc.)
+  - `src/path/` - Path resolution (absolute and allowed)
+  - `src/error.rs` - Unified error types
+  - `src/output.rs` - Tool output formatting
+  - `src/util.rs` - Shared utilities
 - `llm-coding-tools-agents/` - Agent config loading and permission model
 - `llm-coding-tools-models-dev/` - models.dev catalog integration and snapshot tooling
 - `llm-coding-tools-serdesai/` - serdesAI framework Tool implementations

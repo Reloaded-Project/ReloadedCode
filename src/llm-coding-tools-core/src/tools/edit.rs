@@ -1,11 +1,11 @@
-//! File editing operation with exact string replacement.
+//! File editing tool with exact string replacement.
 
 use crate::error::ToolError;
 use crate::fs;
 use crate::path::PathResolver;
 use thiserror::Error;
 
-/// Errors specific to edit operations.
+/// Errors specific to edit tools.
 #[derive(Debug, Error)]
 pub enum EditError {
     /// I/O or path validation error.
