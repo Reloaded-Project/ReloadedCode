@@ -1,6 +1,7 @@
 # llm-coding-tools-agents
 
 Agent configuration loading from OpenCode-style markdown files with YAML frontmatter.
+Including the building blocks for a 'task' tool.
 
 ## Features
 
@@ -14,7 +15,7 @@ Agent configuration loading from OpenCode-style markdown files with YAML frontma
 
 Load agent configurations into [`AgentCatalog`] using [`AgentLoader`]:
 
-```rust
+```rust,no_run
 use llm_coding_tools_agents::{AgentLoader, AgentCatalog};
 use std::path::Path;
 
