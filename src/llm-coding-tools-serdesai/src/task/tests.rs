@@ -49,6 +49,7 @@ fn make_entry(name: &str, mode: AgentMode, hidden: bool) -> AgentRegistryEntry<M
             options: std::collections::HashMap::new(),
             prompt: String::new(),
         },
+        ruleset: Ruleset::new(),
         tool_names: vec!["Read".to_string(), "Bash".to_string()],
         system_prompt: String::new(),
         agent: MockAgent {

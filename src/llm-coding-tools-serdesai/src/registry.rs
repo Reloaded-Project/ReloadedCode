@@ -1,9 +1,15 @@
 //! SerdesAI agent registry with precomputed tool context and system prompts.
 
+use crate::agent_ext::AgentBuilderExt;
 use crate::model_resolver::{ModelResolver, ModelsDevResolver, ProviderOverrides};
+use crate::task::{TaskDefinitionSnapshot, TaskRegistryHandle, TaskTargetSummary, TaskTool};
 use async_trait::async_trait;
-use llm_coding_tools_agents::{AgentCatalog, AgentConfig, AgentMode, Ruleset};
+use indexmap::IndexMap;
+use llm_coding_tools_agents::{
+    AgentCatalog, AgentConfig, AgentMode, PermissionAction, PermissionRule, Ruleset,
+};
 use llm_coding_tools_core::SystemPromptBuilder;
+use llm_coding_tools_core::tool_names;
 use llm_coding_tools_models_dev::ModelsDevCatalog;
 use serde_json::{Map, Value};
 use serdes_ai::agent::ModelConfig;
@@ -124,6 +130,8 @@ where
 pub struct AgentRegistryEntry<A> {
     /// Source configuration used to build the agent.
     pub config: AgentConfig,
+    /// Runtime-evaluated ruleset derived from config.permission.
+    pub ruleset: Ruleset,
     /// Allowed tool names after permission filtering.
     pub tool_names: Vec<String>,
     /// Prebuilt system prompt (tool context + agent prompt).
@@ -180,6 +188,21 @@ impl<A> AgentRegistry<A> {
     pub fn iter(&self) -> impl Iterator<Item = (&String, &AgentRegistryEntry<A>)> {
         self.entries.iter()
     }
+}
+
+fn permission_rule_has_allow(rule: &PermissionRule) -> bool {
+    match rule {
+        PermissionRule::Action(action) => *action == PermissionAction::Allow,
+        PermissionRule::Pattern(patterns) => patterns
+            .values()
+            .any(|action| *action == PermissionAction::Allow),
+    }
+}
+
+fn task_has_any_allow(permission: &IndexMap<String, PermissionRule>) -> bool {
+    permission.iter().any(|(key, rule)| {
+        key.eq_ignore_ascii_case(tool_names::TASK) && permission_rule_has_allow(rule)
+    })
 }
 
 /// Builder for constructing a serdesAI registry from configs + tools.
@@ -374,6 +397,7 @@ where
                 config.name.clone(),
                 AgentRegistryEntry {
                     config: config.clone(), // AgentConfig is small and cheap to clone for error cases
+                    ruleset,
                     tool_names,
                     system_prompt,
                     agent,
@@ -382,6 +406,228 @@ where
         }
 
         Ok(AgentRegistry { entries })
+    }
+
+    fn contains_task_tool(names: &[String]) -> bool {
+        names
+            .iter()
+            .any(|name| name.eq_ignore_ascii_case(tool_names::TASK))
+    }
+
+    /// Builds a registry with recursive Task tool wiring enabled.
+    ///
+    /// This two-phase construction allows agents to delegate to each other
+    /// via Task tool, with permissions evaluated at each hop based on the
+    /// caller agent's own permission rules.
+    ///
+    /// Parameters:
+    /// - `catalog`: agent configurations defining available agents.
+    /// - `task_deps`: dependencies passed to Task tool executions.
+    ///
+    /// Returns: a populated [`AgentRegistry`] wrapped in [`Arc`].
+    #[allow(clippy::type_complexity)]
+    pub fn build_with_recursive_task(
+        &self,
+        catalog: &AgentCatalog,
+        task_deps: Arc<Deps>,
+    ) -> Result<Arc<AgentRegistry<Agent<Arc<Deps>, String>>>, AgentRegistryBuildError> {
+        let resolver = if let Some(resolver) = self.defaults.model_resolver.clone() {
+            resolver
+        } else {
+            let catalog = ModelsDevCatalog::load_shared_cache_or_bundled()
+                .map(|result| result.catalog)
+                .ok();
+            ModelsDevResolver::new(catalog, self.defaults.provider_overrides.clone())
+        };
+
+        let registry_handle: Arc<TaskRegistryHandle<Agent<Arc<Deps>, String>>> =
+            Arc::new(TaskRegistryHandle::new());
+
+        let mut planned_targets = Vec::with_capacity(catalog.iter().count());
+        for config in catalog.iter() {
+            let ruleset = Ruleset::from_config(&config.permission);
+            let mut tool_names = Vec::with_capacity(self.tools.len() + 1);
+            for tool in &self.tools {
+                if ruleset.is_allowed(tool.name(), "*") {
+                    tool_names.push(tool.name().to_string());
+                }
+            }
+            if task_has_any_allow(&config.permission) && !Self::contains_task_tool(&tool_names) {
+                tool_names.push(tool_names::TASK.to_string());
+            }
+            planned_targets.push(TaskTargetSummary {
+                name: config.name.clone(),
+                mode: config.mode,
+                tool_names,
+            });
+        }
+
+        let snapshot = TaskDefinitionSnapshot {
+            targets: planned_targets,
+        };
+
+        let mut entries = HashMap::with_capacity(catalog.iter().count());
+        for config in catalog.iter() {
+            let ruleset = Ruleset::from_config(&config.permission);
+            let temperature = config.temperature.or(self.defaults.temperature);
+            let top_p = config.top_p.or(self.defaults.top_p);
+
+            let model = config
+                .model
+                .clone()
+                .filter(|m| !m.is_empty())
+                .or_else(|| Some(self.defaults.model.clone()))
+                .filter(|m| !m.is_empty())
+                .ok_or_else(|| AgentRegistryBuildError::MissingModel {
+                    agent: config.name.clone(),
+                })?;
+
+            let mut resolved =
+                resolver
+                    .resolve(&model)
+                    .map_err(|err| AgentRegistryBuildError::BuildFailed {
+                        agent: config.name.clone(),
+                        message: err.to_string(),
+                    })?;
+
+            let (spec_provider, resolved_model_id) = resolved
+                .spec
+                .split_once(':')
+                .unwrap_or(("", resolved.spec.as_str()));
+            let resolved_provider = if resolved.provider_id.is_empty() {
+                spec_provider
+            } else {
+                resolved.provider_id.as_str()
+            };
+
+            if (resolved.provider_id.is_empty() || resolved.provider_id == "openai")
+                && resolved_provider == "openai"
+            {
+                if resolved.api_key.is_none() {
+                    resolved.api_key = self.defaults.api_key.clone();
+                }
+                if resolved.base_url.is_none() {
+                    resolved.base_url = self.defaults.base_url.clone();
+                }
+            }
+
+            let mut pb = SystemPromptBuilder::new();
+            if !config.prompt.is_empty() {
+                pb = pb.system_prompt(config.prompt.clone());
+            }
+
+            let mut builder = match resolved_provider {
+                "openrouter" => {
+                    let model = if let Some(api_key) = resolved.api_key.as_deref() {
+                        OpenRouterModel::new(resolved_model_id, api_key)
+                    } else {
+                        OpenRouterModel::from_env(resolved_model_id).map_err(|err| {
+                            AgentRegistryBuildError::BuildFailed {
+                                agent: config.name.clone(),
+                                message: err.to_string(),
+                            }
+                        })?
+                    };
+                    AgentBuilder::<Arc<Deps>, String>::new(model)
+                }
+                "huggingface" => {
+                    let mut model = if let Some(api_key) = resolved.api_key.as_deref() {
+                        HuggingFaceModel::new(resolved_model_id, api_key)
+                    } else {
+                        HuggingFaceModel::from_env(resolved_model_id).map_err(|err| {
+                            AgentRegistryBuildError::BuildFailed {
+                                agent: config.name.clone(),
+                                message: err.to_string(),
+                            }
+                        })?
+                    };
+                    if let Some(endpoint) = resolved.base_url.as_deref() {
+                        model = model.with_endpoint(endpoint);
+                    }
+                    AgentBuilder::<Arc<Deps>, String>::new(model)
+                }
+                _ => {
+                    let mut model_config = ModelConfig::new(&resolved.spec);
+                    if let Some(api_key) = resolved.api_key.clone() {
+                        model_config = model_config.with_api_key(api_key);
+                    }
+                    if let Some(base_url) = resolved.base_url.clone() {
+                        model_config = model_config.with_base_url(base_url);
+                    }
+                    AgentBuilder::<Arc<Deps>, String>::from_config(model_config).map_err(|err| {
+                        AgentRegistryBuildError::BuildFailed {
+                            agent: config.name.clone(),
+                            message: err.to_string(),
+                        }
+                    })?
+                }
+            };
+
+            let mut tool_names = Vec::with_capacity(self.tools.len() + 1);
+            for tool in &self.tools {
+                if ruleset.is_allowed(tool.name(), "*") {
+                    builder = tool.clone().register_with_prompt(builder, &mut pb);
+                    tool_names.push(tool.name().to_string());
+                }
+            }
+
+            if task_has_any_allow(&config.permission) && !Self::contains_task_tool(&tool_names) {
+                let task_tool = TaskTool::for_registry_caller(
+                    Arc::clone(&registry_handle),
+                    config.name.clone(),
+                    ruleset.clone(),
+                    snapshot.clone(),
+                    Arc::clone(&task_deps),
+                );
+                builder = builder.tool(pb.track(task_tool));
+                tool_names.push(tool_names::TASK.to_string());
+            }
+
+            let mut settings = ModelSettings::new();
+            if let Some(temp) = temperature {
+                settings = settings.temperature(temp);
+            }
+            if let Some(value) = top_p {
+                settings = settings.top_p(value);
+            }
+            let mut params = Map::with_capacity(self.defaults.options.len() + config.options.len());
+            for (key, value) in &self.defaults.options {
+                params.insert(key.clone(), value.clone());
+            }
+            for (key, value) in &config.options {
+                params.insert(key.clone(), value.clone());
+            }
+            if !params.is_empty() {
+                settings = settings.extra(Value::Object(params));
+            }
+            if !settings.is_empty() {
+                builder = builder.model_settings(settings);
+            }
+
+            let system_prompt = pb.build();
+            let agent = builder.system_prompt(system_prompt.clone()).build();
+
+            entries.insert(
+                config.name.clone(),
+                AgentRegistryEntry {
+                    config: config.clone(),
+                    ruleset,
+                    tool_names,
+                    system_prompt,
+                    agent,
+                },
+            );
+        }
+
+        let registry = Arc::new(AgentRegistry { entries });
+        registry_handle
+            .set(Arc::clone(&registry))
+            .map_err(|_| AgentRegistryBuildError::BuildFailed {
+                agent: "*".to_string(),
+                message: "recursive task registry handle already initialized".to_string(),
+            })?;
+
+        Ok(registry)
     }
 }
 
@@ -435,6 +681,7 @@ mod tests {
 
         let entry = AgentRegistryEntry {
             config,
+            ruleset: Ruleset::new(),
             tool_names: vec!["Read".to_string()],
             system_prompt: String::new(),
             agent: Arc::new(()),
@@ -460,6 +707,7 @@ mod tests {
 
         let entry = AgentRegistryEntry {
             config,
+            ruleset: Ruleset::new(),
             tool_names: vec!["Read".to_string()],
             system_prompt: String::new(),
             agent: Arc::new(()),
@@ -484,6 +732,7 @@ mod tests {
         };
         let entry = AgentRegistryEntry {
             config,
+            ruleset: Ruleset::new(),
             tool_names: vec![],
             system_prompt: String::new(),
             agent: Arc::new(()),
@@ -508,6 +757,7 @@ mod tests {
 
         let entry1 = AgentRegistryEntry {
             config: config1,
+            ruleset: Ruleset::new(),
             tool_names: vec!["Read".to_string()],
             system_prompt: String::new(),
             agent: Arc::new(()),

@@ -59,7 +59,7 @@ pub use registry::{
     AgentDefaults, AgentRegistry, AgentRegistryBuildError, AgentRegistryBuilder,
     AgentRegistryEntry, RegistryAgent, RegistryAgentError,
 };
-pub use task::TaskTool;
+pub use task::{TaskDefinitionSnapshot, TaskRegistryHandle, TaskTargetSummary, TaskTool};
 pub use todo::{TodoReadTool, TodoWriteTool, create_todo_tools};
 pub use tool_catalog::{ToolCatalogEntry, default_tools};
 pub use webfetch::WebFetchTool;

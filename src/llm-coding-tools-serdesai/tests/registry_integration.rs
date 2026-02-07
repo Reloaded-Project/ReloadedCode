@@ -1,12 +1,15 @@
 use indexmap::IndexMap;
-use llm_coding_tools_agents::{AgentCatalog, AgentConfig, AgentMode};
+use llm_coding_tools_agents::{
+    AgentCatalog, AgentConfig, AgentMode, PermissionAction, PermissionRule,
+};
+use llm_coding_tools_core::tool_names;
 use llm_coding_tools_models_dev::ModelsDevCatalog;
 use llm_coding_tools_serdesai::{
-    AgentDefaults, AgentRegistryBuildError, AgentRegistryBuilder, ModelsDevResolver,
-    ProviderOverride, ProviderOverrides,
+    default_tools, AgentDefaults, AgentRegistryBuildError, AgentRegistryBuilder, ModelsDevResolver,
+    ProviderOverride, ProviderOverrides, TodoState,
 };
 use std::collections::HashMap;
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
 
 static ENV_LOCK: Mutex<()> = Mutex::new(());
 
@@ -209,4 +212,101 @@ fn registry_builds_openrouter_directly() {
     unsafe {
         std::env::remove_var("OPENROUTER_API_KEY");
     }
+}
+
+#[test]
+fn recursive_builder_injects_task_only_for_allow_configs_and_dedups() {
+    let _guard = ENV_LOCK.lock().unwrap();
+    unsafe { std::env::set_var("OPENAI_API_KEY", "key") };
+
+    let json = r#"{"providers":{"openai":{"id":"openai","npm":"@ai-sdk/openai","api":null,"env":["OPENAI_API_KEY"],"models":{"gpt-4o":{}}}}}"#;
+    let resolver = ModelsDevResolver::new(Some(catalog_from_json(json)), ProviderOverrides::new());
+    let defaults = base_defaults(resolver);
+    let tools = default_tools(true, None, TodoState::new());
+
+    let mut allow_patterns = IndexMap::new();
+    allow_patterns.insert("agent-b".to_string(), PermissionAction::Allow);
+    let mut deny_patterns = IndexMap::new();
+    deny_patterns.insert("agent-c".to_string(), PermissionAction::Deny);
+
+    let config_a = AgentConfig {
+        name: "agent-a".to_string(),
+        mode: AgentMode::Subagent,
+        description: "a".to_string(),
+        model: None,
+        hidden: false,
+        temperature: None,
+        top_p: None,
+        permission: IndexMap::from([(
+            tool_names::TASK.to_string(),
+            PermissionRule::Pattern(allow_patterns),
+        )]),
+        options: HashMap::new(),
+        prompt: String::new(),
+    };
+
+    let config_b = AgentConfig {
+        name: "agent-b".to_string(),
+        mode: AgentMode::Subagent,
+        description: "b".to_string(),
+        model: None,
+        hidden: false,
+        temperature: None,
+        top_p: None,
+        permission: IndexMap::from([(
+            tool_names::TASK.to_string(),
+            PermissionRule::Action(PermissionAction::Allow),
+        )]),
+        options: HashMap::new(),
+        prompt: String::new(),
+    };
+
+    let config_c = AgentConfig {
+        name: "agent-c".to_string(),
+        mode: AgentMode::Subagent,
+        description: "c".to_string(),
+        model: None,
+        hidden: false,
+        temperature: None,
+        top_p: None,
+        permission: IndexMap::from([(
+            tool_names::TASK.to_string(),
+            PermissionRule::Pattern(deny_patterns),
+        )]),
+        options: HashMap::new(),
+        prompt: String::new(),
+    };
+
+    let catalog = AgentCatalog::from_entries(vec![config_a, config_b, config_c]);
+    let registry = AgentRegistryBuilder::<()>::new(defaults, tools)
+        .build_with_recursive_task(&catalog, Arc::new(()))
+        .unwrap();
+
+    let a = registry.get("agent-a").unwrap();
+    let b = registry.get("agent-b").unwrap();
+    let c = registry.get("agent-c").unwrap();
+
+    assert_eq!(
+        a.tool_names
+            .iter()
+            .filter(|n| *n == tool_names::TASK)
+            .count(),
+        1
+    );
+    assert_eq!(
+        b.tool_names
+            .iter()
+            .filter(|n| *n == tool_names::TASK)
+            .count(),
+        1
+    );
+    assert_eq!(
+        c.tool_names
+            .iter()
+            .filter(|n| *n == tool_names::TASK)
+            .count(),
+        0
+    );
+
+    unsafe { std::env::remove_var("OPENAI_API_KEY") };
 }
