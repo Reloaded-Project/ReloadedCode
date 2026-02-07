@@ -1,6 +1,7 @@
 //! Benchmarks for agent parsing.
 
-use criterion::{black_box, criterion_group, criterion_main, BenchmarkId, Criterion, Throughput};
+use core::hint::black_box;
+use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion, Throughput};
 use llm_coding_tools_agents::{AgentCatalog, AgentLoader};
 
 /// Loads a real agent fixture file at runtime.
