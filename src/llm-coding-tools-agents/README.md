@@ -1,7 +1,6 @@
 # llm-coding-tools-agents
 
 Agent configuration loading from OpenCode-style markdown files with YAML frontmatter.
-Including the building blocks for a 'task' tool.
 
 ## Features
 
@@ -60,12 +59,12 @@ The `mode` field controls how the agent can be invoked:
 ## Task Tool (Registry-Driven Flow)
 
 The Task tool allows agents to invoke other agents with permission-based access control.
-This crate provides the [`TaskInput`] and [`TaskOutput`] types used by framework-specific
-Task tools. The Task tool behavior is implemented in framework adapters (serdesAI).
+Task types ([`TaskInput`] and [`TaskOutput`]) are provided by `llm-coding-tools-core`.
+The Task tool behavior is implemented in framework adapters (serdesAI).
 
 ### Registry-Driven Task Flow
 
-The new flow for using Task tools is:
+The flow for using Task tools is:
 
 1. **Load agent configs** into [`AgentCatalog`] using [`AgentLoader`]
 2. **Build a framework registry** using `AgentRegistryBuilder` (serdesAI)
@@ -77,6 +76,7 @@ See `examples/serdesai-agents.rs` for the complete example.
 
 ```rust,no_run
 use llm_coding_tools_agents::{AgentCatalog, AgentLoader, Ruleset, Rule, PermissionAction};
+use llm_coding_tools_core::operations::{TaskInput, TaskOutput};
 use llm_coding_tools_serdesai::{AgentDefaults, AgentRegistryBuilder, ProviderOverrides, TaskTool, default_tools, TodoState};
 use std::sync::Arc;
 
@@ -105,20 +105,6 @@ let deps = ();
 let task_tool = TaskTool::new(Arc::new(registry), rules, Arc::new(deps));
 # Ok::<(), Box<dyn std::error::Error>>(())
 ```
-
-### Task Input / Output Types
-
-**`TaskInput`**: Input structure for task execution
-- `description`: Short (3-5 words) description of the task
-- `prompt`: The task for the agent to perform
-- `subagent_type`: The type/name of the agent to invoke
-- `session_id`: Optional session ID for continuation
-- `command`: Optional command that triggered this task
-
-**`TaskOutput`**: Output structure from task execution
-- `summary`: The text response from the agent
-- `session_id`: Session ID for continuation (if supported)
-- `metadata`: Optional execution metadata
 
 ### Permission Enforcement
 

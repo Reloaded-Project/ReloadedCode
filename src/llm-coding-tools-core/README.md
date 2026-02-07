@@ -9,6 +9,7 @@ This crate provides the foundational building blocks for coding tool implementat
 - `ToolError` - Unified error type for all tool operations
 - `ToolResult<T>` - Result type alias using ToolError
 - `ToolOutput` - Wrapper for tool responses with truncation metadata
+- `TaskInput` / `TaskOutput` - Task execution input/output types for agent-to-agent delegation
 - Utility functions for text processing and formatting
 - `context` module - LLM guidance strings for tool usage
 
@@ -61,6 +62,10 @@ Available context strings:
 - `EDIT_ABSOLUTE`, `EDIT_ALLOWED` - file editing
 - `GLOB_ABSOLUTE`, `GLOB_ALLOWED` - pattern matching
 - `GREP_ABSOLUTE`, `GREP_ALLOWED` - content search
+
+## Task Types
+
+`TaskInput` and `TaskOutput` for agent-to-agent delegation. See `llm-coding-tools-serdesai` for usage.
 
 ## Design Principles
 

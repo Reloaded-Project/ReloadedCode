@@ -5,7 +5,6 @@
 //! - Directory scanning for agent configs in `agent/**/*.md` and `agents/**/*.md`
 //! - Permission evaluation with wildcard pattern matching (last-match-wins)
 //! - [`AgentLoader`] for composing agent configs from multiple sources
-//! - [`TaskInput`] / [`TaskOutput`] types for framework Task tools
 //!
 //! The new registry-driven Task flow:
 //! 1. Load agent configs into [`AgentCatalog`] using [`AgentLoader`]
@@ -62,7 +61,6 @@ mod error;
 mod loader;
 mod parser;
 mod permission;
-mod task;
 
 pub use catalog::AgentCatalog;
 pub use config::{AgentConfig, AgentMode, PermissionAction, PermissionRule};
@@ -71,4 +69,3 @@ pub use error::AgentLoadResult;
 pub use loader::AgentLoader;
 pub use parser::AgentParseError;
 pub use permission::{Rule, Ruleset};
-pub use task::{TaskInput, TaskOutput};

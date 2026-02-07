@@ -28,7 +28,7 @@ pub use system_prompt::{Substitute, SystemPromptBuilder};
 pub use operations::{
     edit_file, execute_command, glob_files, grep_search, read_file, read_todos, write_file,
     write_todos, BashOutput, EditError, GlobOutput, GrepFileMatches, GrepLineMatch, GrepOutput,
-    Todo, TodoPriority, TodoState, TodoStatus,
+    TaskInput, TaskOutput, Todo, TodoPriority, TodoState, TodoStatus,
 };
 
 // Re-export webfetch operations (requires async or blocking feature)

@@ -5,8 +5,9 @@
 use crate::convert::to_serdes_result;
 use crate::registry::{AgentRegistry, RegistryAgent};
 use async_trait::async_trait;
-use llm_coding_tools_agents::{AgentMode, PermissionAction, Ruleset, TaskInput};
+use llm_coding_tools_agents::{AgentMode, PermissionAction, Ruleset};
 use llm_coding_tools_core::context::ToolContext;
+use llm_coding_tools_core::operations::TaskInput;
 use llm_coding_tools_core::tool_names;
 use serde::Deserialize;
 use serdes_ai::tools::{RunContext, SchemaBuilder, Tool, ToolDefinition, ToolError, ToolResult};
