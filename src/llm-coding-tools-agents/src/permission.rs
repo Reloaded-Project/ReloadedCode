@@ -562,4 +562,26 @@ mod tests {
         assert!(allowed.contains(&"Bash".to_string())); // Not "bash"
         assert!(allowed.contains(&"READ".to_string())); // Not "read"
     }
+
+    #[test]
+    fn ruleset_precedence_specific_overrides_wildcard_when_specific_is_last() {
+        let mut ruleset = Ruleset::new();
+        ruleset.push(Rule::new("task", "*", PermissionAction::Deny));
+        ruleset.push(Rule::new("task", "orchestrator-*", PermissionAction::Allow));
+        assert_eq!(
+            ruleset.evaluate("task", "orchestrator-review"),
+            PermissionAction::Allow
+        );
+    }
+
+    #[test]
+    fn ruleset_precedence_wildcard_overrides_specific_when_wildcard_is_last() {
+        let mut ruleset = Ruleset::new();
+        ruleset.push(Rule::new("task", "orchestrator-*", PermissionAction::Allow));
+        ruleset.push(Rule::new("task", "*", PermissionAction::Deny));
+        assert_eq!(
+            ruleset.evaluate("task", "orchestrator-review"),
+            PermissionAction::Deny
+        );
+    }
 }

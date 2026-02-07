@@ -77,7 +77,7 @@ where
     RuntimeDeps: Send + Sync,
 {
     fn definition(&self) -> ToolDefinition {
-        // Build the Task tool description, omitting hidden agents
+        // Build the Task tool description from invocable + permitted agents
         let mut names: Vec<_> = self
             .registry
             .iter()
@@ -91,9 +91,6 @@ where
                 Some(entry) => entry,
                 None => continue,
             };
-            if entry.config.hidden {
-                continue;
-            }
             if !entry.is_invocable() {
                 continue;
             }

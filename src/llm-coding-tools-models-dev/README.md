@@ -45,7 +45,7 @@ Regenerate the vendored snapshot from models.dev:
 cargo run -p llm-coding-tools-models-dev --bin models-dev-update
 ```
 
-This fetches the latest data from https://models.dev/api.json and writes a minimal snapshot to `data/models.dev.min.json`.
+This fetches the latest data from <https://models.dev/api.json> and writes a minimal snapshot to `data/models.dev.min.json`.
 
 ## License
 

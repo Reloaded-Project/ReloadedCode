@@ -11,9 +11,9 @@ pub enum AgentMode {
     /// Can be selected as primary agent for conversations.
     Primary,
     /// Only available as subagent via Task tool.
-    #[default]
     Subagent,
     /// Available in both contexts.
+    #[default]
     All,
 }
 
@@ -54,6 +54,9 @@ pub(crate) struct RawFrontmatter {
     pub description: String,
     #[serde(default)]
     pub model: Option<String>,
+    /// Legacy visibility flag accepted for compatibility only.
+    ///
+    /// Runtime behavior in headless mode ignores this field.
     #[serde(default)]
     pub hidden: bool,
     #[serde(default)]
@@ -80,7 +83,9 @@ pub struct AgentConfig {
     /// Optional model override (format: "provider/model-id").
     #[serde(default)]
     pub model: Option<String>,
-    /// Hide from @ autocomplete menu.
+    /// Legacy visibility flag accepted for compatibility only.
+    ///
+    /// Runtime behavior in headless mode ignores this field.
     #[serde(default)]
     pub hidden: bool,
     /// Temperature for sampling.

@@ -469,6 +469,29 @@ mod tests {
     }
 
     #[test]
+    fn agent_registry_entry_is_invocable_for_all_mode() {
+        let config = AgentConfig {
+            name: "test".to_string(),
+            mode: AgentMode::All,
+            description: String::new(),
+            model: None,
+            hidden: false,
+            temperature: None,
+            top_p: None,
+            permission: IndexMap::new(),
+            options: HashMap::new(),
+            prompt: String::new(),
+        };
+        let entry = AgentRegistryEntry {
+            config,
+            tool_names: vec![],
+            system_prompt: String::new(),
+            agent: Arc::new(()),
+        };
+        assert!(entry.is_invocable());
+    }
+
+    #[test]
     fn agent_registry_from_entries_and_get() {
         let config1 = AgentConfig {
             name: "agent1".to_string(),

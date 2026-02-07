@@ -41,7 +41,7 @@ fn make_entry(name: &str, mode: AgentMode, hidden: bool) -> AgentRegistryEntry<M
 }
 
 #[tokio::test]
-async fn task_tool_omits_hidden_agents_in_description() {
+async fn task_tool_hidden_flag_is_noop_for_description() {
     let registry = AgentRegistry::from_entries([
         (
             "visible".to_string(),
@@ -60,7 +60,7 @@ async fn task_tool_omits_hidden_agents_in_description() {
     let defn = <TaskTool<MockAgent, ()> as serdes_ai::tools::Tool<()>>::definition(&tool);
     let description = defn.description();
     assert!(description.contains("visible"));
-    assert!(!description.contains("hidden"));
+    assert!(description.contains("hidden"));
 }
 
 #[tokio::test]

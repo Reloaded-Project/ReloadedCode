@@ -10,6 +10,7 @@ mod preprocessor;
 use crlf_to_lf_inplace::crlf_to_lf_inplace;
 use preprocessor::preprocess_frontmatter_yaml;
 use serde::de::DeserializeOwned;
+use serde_yaml::Value;
 use thiserror::Error;
 
 /// Parser error variants independent of file paths.
@@ -23,6 +24,13 @@ pub enum AgentParseError {
     #[error("invalid YAML frontmatter: {message}")]
     InvalidYaml {
         /// YAML parser error message.
+        message: String,
+    },
+
+    /// Schema validation failed.
+    #[error("schema validation failed: {message}")]
+    SchemaValidation {
+        /// Validation error message.
         message: String,
     },
 }
@@ -49,10 +57,16 @@ pub(crate) fn parse_agent<T: DeserializeOwned>(
     // Process YAML while we can still borrow content
     let yaml = &content[offsets.yaml_start..offsets.yaml_end];
     let yaml_preprocessed = preprocess_frontmatter_yaml(yaml);
-    let data: T = serde_yaml::from_str(yaml_preprocessed.as_ref()).map_err(|e| {
+
+    let yaml_value: Value = serde_yaml::from_str(yaml_preprocessed.as_ref()).map_err(|e| {
         AgentParseError::InvalidYaml {
             message: e.to_string(),
         }
+    })?;
+    validate_headless_contract(&yaml_value)?;
+
+    let data: T = serde_yaml::from_value(yaml_value).map_err(|e| AgentParseError::InvalidYaml {
+        message: e.to_string(),
     })?;
 
     // Extract body by mutating and reusing the existing allocation.
@@ -62,6 +76,44 @@ pub(crate) fn parse_agent<T: DeserializeOwned>(
         data,
         content: body,
     })
+}
+
+/// Validates headless-only frontmatter contract.
+///
+/// Parameters:
+/// - `frontmatter`: parsed YAML root value.
+///
+/// Returns: `Ok(())` when valid; `SchemaValidation` for unsupported constructs.
+fn validate_headless_contract(frontmatter: &Value) -> Result<(), AgentParseError> {
+    let Value::Mapping(root) = frontmatter else {
+        return Ok(());
+    };
+    let permission_key = Value::String("permission".to_string());
+    let task_key = Value::String("task".to_string());
+
+    let Some(Value::Mapping(permission_map)) = root.get(&permission_key) else {
+        return Ok(());
+    };
+    let Some(task_rule) = permission_map.get(&task_key) else {
+        return Ok(());
+    };
+
+    if task_rule_contains_ask(task_rule) {
+        return Err(AgentParseError::SchemaValidation {
+            message: "permission.task: ask is unsupported; use allow or deny".to_string(),
+        });
+    }
+    Ok(())
+}
+
+fn task_rule_contains_ask(rule: &Value) -> bool {
+    match rule {
+        Value::String(action) => action.eq_ignore_ascii_case("ask"),
+        Value::Mapping(patterns) => patterns.values().any(
+            |value| matches!(value, Value::String(action) if action.eq_ignore_ascii_case("ask")),
+        ),
+        _ => false,
+    }
 }
 
 #[derive(Clone, Copy)]
@@ -339,10 +391,81 @@ mod tests {
                 },
                 "invalid YAML frontmatter: bad",
             ),
+            (
+                AgentParseError::SchemaValidation {
+                    message: "schema bad".to_string(),
+                },
+                "schema validation failed: schema bad",
+            ),
         ];
 
         for (err, expected) in cases {
             assert_eq!(err.to_string(), expected);
         }
+    }
+
+    #[test]
+    fn parse_rejects_permission_task_ask_scalar() {
+        let input = indoc! {"
+            ---
+            description: Test
+            permission:
+              task: ask
+            ---
+            body"
+        };
+        let result = parse_agent::<RawFrontmatter>(input.to_string());
+        assert!(matches!(
+            result,
+            Err(AgentParseError::SchemaValidation { message })
+                if message.contains("permission.task: ask is unsupported")
+        ));
+    }
+
+    #[test]
+    fn parse_rejects_permission_task_ask_pattern_map() {
+        let input = indoc! {"
+            ---
+            description: Test
+            permission:
+              task:
+                '*': ask
+            ---
+            body"
+        };
+        let result = parse_agent::<RawFrontmatter>(input.to_string());
+        assert!(matches!(
+            result,
+            Err(AgentParseError::SchemaValidation { message })
+                if message.contains("permission.task: ask is unsupported")
+        ));
+    }
+
+    #[test]
+    fn parse_accepts_permission_task_allow_scalar() {
+        let input = indoc! {"
+            ---
+            description: Test
+            permission:
+              task: allow
+            ---
+            body"
+        };
+        let result: AgentParseResult<RawFrontmatter> = parse_agent(input.to_string()).unwrap();
+        assert_eq!(result.data.description, "Test");
+    }
+
+    #[test]
+    fn parse_accepts_hidden_true_no_validation_failure() {
+        let input = indoc! {"
+            ---
+            description: Test
+            hidden: true
+            ---
+            body"
+        };
+        let result: AgentParseResult<RawFrontmatter> = parse_agent(input.to_string()).unwrap();
+        assert_eq!(result.data.description, "Test");
+        assert!(result.data.hidden);
     }
 }

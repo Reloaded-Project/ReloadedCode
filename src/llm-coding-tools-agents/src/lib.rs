@@ -15,12 +15,12 @@
 //! # Example: Load agents
 //!
 //! ```no_run
-//! use llm_coding_tools_agents::{AgentLoader, AgentCatalog};
+//! use llm_coding_tools_agents::{AgentLoader, AgentCatalog, AgentLoadError};
 //! use std::path::Path;
 //!
 //! let mut loader = AgentLoader::new();
 //! let mut catalog = AgentCatalog::new();
-//! loader.add_directory(&mut catalog, Path::new("/etc/opencode"))?;
+//! loader.add_directory(&mut catalog, Path::new("/etc/opencode"), None::<fn(&Path, &AgentLoadError)>)?;
 //! loader.add_file(&mut catalog, Path::new("/path/to/custom_agent.md"))?;
 //! # Ok::<(), llm_coding_tools_agents::AgentLoadError>(())
 //! ```

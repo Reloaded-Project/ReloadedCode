@@ -128,6 +128,7 @@ fn subagents_do_not_inherit_openai_defaults() {
 
 #[test]
 fn unsupported_providers_error() {
+    let _guard = ENV_LOCK.lock().unwrap();
     let json = r#"{"providers":{"azure":{"id":"azure","npm":"@ai-sdk/azure","api":null,"env":["AZURE_API_KEY"],"models":{"m1":{}}}}}"#;
     let resolver = ModelsDevResolver::new(Some(catalog_from_json(json)), ProviderOverrides::new());
     let defaults = base_defaults(resolver);

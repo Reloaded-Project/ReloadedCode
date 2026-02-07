@@ -53,7 +53,8 @@ The `mode` field controls how the agent can be invoked:
 
 - `subagent`: Runs as a supportive agent invoked by a primary agent. Can execute tasks but cannot spawn other subagents.
 - `primary`: The main agent that can spawn or coordinate subagents. Full tool access including Task tool for invoking other agents.
-- `primary-only`: Restricts the agent to run only as a primary. Cannot be invoked as a subagent by other agents.
+- `all`: Agent can run as primary or subagent.
+- If `mode` is omitted, loader defaults to `all`.
 
 ## Task Tool (Registry-Driven Flow)
 
@@ -123,9 +124,10 @@ let task_tool = TaskTool::new(Arc::new(registry), rules, Arc::new(deps));
 The framework `TaskTool` implementations enforce access validation:
 
 1. Checks if the agent exists (returns validation error if not)
-2. Verifies the agent is invocable (not primary-only mode)
+2. Verifies the agent is invocable (`subagent` or `all`)
 3. Checks caller's `task` permission for the requested agent
 4. Uses the agent's permission rules to filter available tools
+5. `permission.task` supports only `allow`/`deny`; `ask` is rejected during validation.
 
 Framework registries precompute allowed tools based on each agent's permission rules
 during registry construction.

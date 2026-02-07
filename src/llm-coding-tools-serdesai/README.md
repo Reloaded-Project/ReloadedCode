@@ -100,10 +100,31 @@ The example file shows the complete setup.
 
 **Note**: The `default_tools` function (defined in `examples/serdesai-agents.rs`) returns cloneable `ToolCatalogEntry` items that can be reused for building multiple agents. The `AgentRegistryBuilder` uses these to construct tool descriptions and filter based on agent permissions. The `deps` parameter is passed to registry agents at invocation time.
 
-Other tools: `BashTool`, `WebFetchTool`, `TodoReadTool`, `TodoWriteTool`.
-Use `SystemPromptBuilder` to track tools and pass `pb.build()` to `.system_prompt()`. Set `working_directory()` so the environment section is populated.
-Use `AgentBuilderExt::tool()` to add tools that implement `Tool<Deps>` to the agent.
-Context strings are re-exported in `llm_coding_tools_serdesai::context` (e.g., `BASH`, `READ_ABSOLUTE`).
+### Other Tools
+
+The following tools are available for use with agents:
+
+- `BashTool` - Execute shell commands
+- `WebFetchTool` - Fetch content from URLs
+- `TodoReadTool` / `TodoWriteTool` - Manage todo items
+
+Use `SystemPromptBuilder` to track tools and populate the environment section:
+
+```rust,ignore
+use llm_coding_tools_serdesai::SystemPromptBuilder;
+
+let pb = SystemPromptBuilder::new()
+    .working_directory(std::env::current_dir()?);
+agent_builder.system_prompt(pb.build());
+```
+
+Add tools to agents using `AgentBuilderExt::tool()`:
+
+```rust,ignore
+agent_builder.tool(MyTool::new());
+```
+
+Context strings (e.g., `BASH`, `READ_ABSOLUTE`) are re-exported in `llm_coding_tools_serdesai::context`.
 
 ### models.dev Resolver
 

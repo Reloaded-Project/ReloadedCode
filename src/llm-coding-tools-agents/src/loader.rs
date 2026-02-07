@@ -20,12 +20,12 @@ use std::path::{Path, PathBuf};
 /// # Example
 ///
 /// ```no_run
-/// use llm_coding_tools_agents::{AgentLoader, AgentCatalog};
+/// use llm_coding_tools_agents::{AgentLoader, AgentCatalog, AgentLoadError};
 /// use std::path::Path;
 ///
 /// let mut loader = AgentLoader::new();
 /// let mut catalog = AgentCatalog::new();
-/// loader.add_directory(&mut catalog, Path::new("~/.opencode"))?;
+/// loader.add_directory(&mut catalog, Path::new("~/.opencode"), None::<fn(&Path, &AgentLoadError)>)?;
 /// loader.add_file(&mut catalog, Path::new("/path/to/custom_agent.md"))?;
 /// # Ok::<(), llm_coding_tools_agents::AgentLoadError>(())
 /// ```
@@ -44,10 +44,19 @@ impl AgentLoader {
     ///
     /// * `catalog` - The catalog to insert agents into
     /// * `directory` - Root directory to scan for `agent/**/*.md` and `agents/**/*.md`
+    /// * `on_error` - Optional callback invoked for each file that fails to load,
+    ///   receiving the file path and the error. Use this for logging or diagnostics.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error only for directory-level failures (e.g., path is not a directory).
+    /// Individual file load failures are reported via `on_error` and do not fail the overall
+    /// operation.
     pub fn add_directory(
         &self,
         catalog: &mut AgentCatalog,
         directory: impl Into<PathBuf>,
+        mut on_error: Option<impl FnMut(&Path, &AgentLoadError)>,
     ) -> AgentLoadResult<()> {
         let dir = directory.into();
         load_directory_with(&dir, |path, name| {
@@ -55,8 +64,10 @@ impl AgentLoader {
                 Ok(config) => {
                     catalog.insert(config);
                 }
-                Err(_) => {
-                    // Skip invalid agent files (e.g., missing required fields)
+                Err(e) => {
+                    if let Some(ref mut handler) = on_error {
+                        handler(path, &e);
+                    }
                 }
             }
             Ok(())
@@ -262,13 +273,21 @@ fn parse_agent_config(
     ))
 }
 
+fn map_parse_error(path: Option<PathBuf>, err: AgentParseError) -> AgentLoadError {
+    match err {
+        AgentParseError::SchemaValidation { message } => {
+            AgentLoadError::schema_validation(path, message)
+        }
+        other => AgentLoadError::parse(path, other),
+    }
+}
+
 /// Loads a single agent configuration from a file.
 fn load_agent_file(path: &Path, name: String) -> AgentLoadResult<AgentConfig> {
     let content =
         fs::read_to_string(path).map_err(|e| AgentLoadError::io(Some(path.to_path_buf()), e))?;
 
-    parse_agent_config(content, name)
-        .map_err(|err| AgentLoadError::parse(Some(path.to_path_buf()), err))
+    parse_agent_config(content, name).map_err(|err| map_parse_error(Some(path.to_path_buf()), err))
 }
 
 /// Strict parser for catalog-only string loading (validates non-empty name).
@@ -277,16 +296,14 @@ fn config_from_str_strict(
     default_name: impl Into<String>,
 ) -> AgentLoadResult<AgentConfig> {
     let name = default_name.into();
-    let config = parse_agent_config(markdown.into(), name.clone())
-        .map_err(|err| AgentLoadError::parse(None, err))?;
-
+    let config =
+        parse_agent_config(markdown.into(), name).map_err(|err| map_parse_error(None, err))?;
     if config.name.is_empty() {
         return Err(AgentLoadError::schema_validation(
             None,
             "agent name is empty",
         ));
     }
-
     Ok(config)
 }
 
@@ -394,7 +411,9 @@ mod tests {
 
         let loader = AgentLoader::new();
         let mut catalog = AgentCatalog::new();
-        loader.add_directory(&mut catalog, dir.path()).unwrap();
+        loader
+            .add_directory(&mut catalog, dir.path(), None::<fn(&Path, &AgentLoadError)>)
+            .unwrap();
 
         // Name should be "test-agent", not something derived from absolute path
         assert!(catalog.by_name("test-agent").is_some());
@@ -417,7 +436,9 @@ mod tests {
 
         let loader = AgentLoader::new();
         let mut catalog = AgentCatalog::new();
-        loader.add_directory(&mut catalog, dir.path()).unwrap();
+        loader
+            .add_directory(&mut catalog, dir.path(), None::<fn(&Path, &AgentLoadError)>)
+            .unwrap();
 
         assert!(catalog.by_name("test-agent").is_some());
         assert_eq!(catalog.by_name("test-agent").unwrap().description, "Test");
@@ -441,7 +462,9 @@ mod tests {
 
         let loader = AgentLoader::new();
         let mut catalog = AgentCatalog::new();
-        loader.add_directory(&mut catalog, dir.path()).unwrap();
+        loader
+            .add_directory(&mut catalog, dir.path(), None::<fn(&Path, &AgentLoadError)>)
+            .unwrap();
 
         assert!(catalog.by_name("nested/deep").is_some());
     }
@@ -464,7 +487,9 @@ mod tests {
 
         let loader = AgentLoader::new();
         let mut catalog = AgentCatalog::new();
-        loader.add_directory(&mut catalog, dir.path()).unwrap();
+        loader
+            .add_directory(&mut catalog, dir.path(), None::<fn(&Path, &AgentLoadError)>)
+            .unwrap();
 
         assert!(catalog.by_name("real").is_some());
     }
@@ -485,7 +510,9 @@ mod tests {
 
         let loader = AgentLoader::new();
         let mut catalog = AgentCatalog::new();
-        loader.add_directory(&mut catalog, dir.path()).unwrap();
+        loader
+            .add_directory(&mut catalog, dir.path(), None::<fn(&Path, &AgentLoadError)>)
+            .unwrap();
 
         assert!(catalog.iter().count() == 0);
     }
@@ -517,8 +544,20 @@ mod tests {
 
         let loader = AgentLoader::new();
         let mut catalog = AgentCatalog::new();
-        loader.add_directory(&mut catalog, dir1.path()).unwrap();
-        loader.add_directory(&mut catalog, dir2.path()).unwrap();
+        loader
+            .add_directory(
+                &mut catalog,
+                dir1.path(),
+                None::<fn(&Path, &AgentLoadError)>,
+            )
+            .unwrap();
+        loader
+            .add_directory(
+                &mut catalog,
+                dir2.path(),
+                None::<fn(&Path, &AgentLoadError)>,
+            )
+            .unwrap();
 
         assert!(catalog.by_name("first").is_some());
         assert!(catalog.by_name("second").is_some());
@@ -542,7 +581,9 @@ mod tests {
 
         let loader = AgentLoader::new();
         let mut catalog = AgentCatalog::new();
-        loader.add_directory(&mut catalog, dir.path()).unwrap();
+        loader
+            .add_directory(&mut catalog, dir.path(), None::<fn(&Path, &AgentLoadError)>)
+            .unwrap();
 
         assert_eq!(
             catalog.by_name("test").unwrap().model,
@@ -569,7 +610,9 @@ mod tests {
 
         let loader = AgentLoader::new();
         let mut catalog = AgentCatalog::new();
-        loader.add_directory(&mut catalog, dir.path()).unwrap();
+        loader
+            .add_directory(&mut catalog, dir.path(), None::<fn(&Path, &AgentLoadError)>)
+            .unwrap();
         let perms = &catalog.by_name("perms").unwrap().permission;
 
         assert_eq!(perms.len(), 2);
@@ -593,7 +636,9 @@ mod tests {
 
         let loader = AgentLoader::new();
         let mut catalog = AgentCatalog::new();
-        loader.add_directory(&mut catalog, dir.path()).unwrap();
+        loader
+            .add_directory(&mut catalog, dir.path(), None::<fn(&Path, &AgentLoadError)>)
+            .unwrap();
         // Should parse without error (flow syntax preserved)
         assert!(catalog.by_name("flow").is_some());
     }
@@ -770,7 +815,9 @@ mod tests {
 
         let loader = AgentLoader::new();
         let mut catalog = AgentCatalog::new();
-        loader.add_directory(&mut catalog, dir.path()).unwrap();
+        loader
+            .add_directory(&mut catalog, dir.path(), None::<fn(&Path, &AgentLoadError)>)
+            .unwrap();
 
         assert!(catalog.by_name("one").is_some());
         assert!(catalog.by_name("nested/two").is_some());
@@ -912,7 +959,9 @@ mod tests {
 
         let loader = AgentLoader::new();
         let mut catalog = AgentCatalog::new();
-        loader.add_directory(&mut catalog, dir.path()).unwrap();
+        loader
+            .add_directory(&mut catalog, dir.path(), None::<fn(&Path, &AgentLoadError)>)
+            .unwrap();
 
         // Invalid file should be skipped
         assert!(catalog.by_name("no-desc").is_none());
@@ -922,7 +971,7 @@ mod tests {
 
     #[test]
     fn load_agents_succeeds_with_missing_mode() {
-        // Mode defaults to Subagent when not provided
+        // Mode defaults to All when not provided
         let dir = TempDir::new().unwrap();
         create_agent_file(
             dir.path(),
@@ -937,10 +986,12 @@ mod tests {
 
         let loader = AgentLoader::new();
         let mut catalog = AgentCatalog::new();
-        loader.add_directory(&mut catalog, dir.path()).unwrap();
+        loader
+            .add_directory(&mut catalog, dir.path(), None::<fn(&Path, &AgentLoadError)>)
+            .unwrap();
 
         let agent = catalog.by_name("no-mode").unwrap();
-        assert_eq!(agent.mode, AgentMode::Subagent);
+        assert_eq!(agent.mode, AgentMode::All);
         assert_eq!(agent.description, "Test agent");
     }
 
@@ -974,7 +1025,9 @@ mod tests {
 
         let loader = AgentLoader::new();
         let mut catalog = AgentCatalog::new();
-        loader.add_directory(&mut catalog, dir.path()).unwrap();
+        loader
+            .add_directory(&mut catalog, dir.path(), None::<fn(&Path, &AgentLoadError)>)
+            .unwrap();
 
         // Invalid file should be skipped
         assert!(catalog.by_name("invalid-mode").is_none());
@@ -1027,5 +1080,68 @@ mod tests {
 
         assert!(result.is_err());
         assert!(catalog.by_name("invalid-mode").is_none());
+    }
+
+    #[test]
+    fn add_file_rejects_permission_task_ask_scalar() {
+        let loader = AgentLoader::new();
+        let mut catalog = AgentCatalog::new();
+        let markdown = indoc! {"
+            ---
+            description: Ask scalar
+            permission:
+              task: ask
+            ---
+            Prompt"
+        };
+
+        let result = loader.add_from_str(&mut catalog, markdown, "ask-scalar");
+        assert!(matches!(
+            result,
+            Err(AgentLoadError::SchemaValidation { message, .. })
+                if message.contains("permission.task: ask is unsupported")
+        ));
+    }
+
+    #[test]
+    fn add_file_rejects_permission_task_ask_pattern_map() {
+        let loader = AgentLoader::new();
+        let mut catalog = AgentCatalog::new();
+        let markdown = indoc! {r#"
+            ---
+            description: Ask map
+            permission:
+              task:
+                "*": ask
+            ---
+            Prompt"#
+        };
+
+        let result = loader.add_from_str(&mut catalog, markdown, "ask-map");
+        assert!(matches!(
+            result,
+            Err(AgentLoadError::SchemaValidation { message, .. })
+                if message.contains("permission.task: ask is unsupported")
+        ));
+    }
+
+    #[test]
+    fn add_from_str_accepts_hidden_true() {
+        let loader = AgentLoader::new();
+        let mut catalog = AgentCatalog::new();
+        let markdown = indoc! {"
+            ---
+            description: Hidden agent
+            hidden: true
+            ---
+            Prompt"
+        };
+
+        loader
+            .add_from_str(&mut catalog, markdown, "hidden-agent")
+            .unwrap();
+        let agent = catalog.by_name("hidden-agent").unwrap();
+        assert!(agent.hidden);
+        assert_eq!(agent.description, "Hidden agent");
     }
 }

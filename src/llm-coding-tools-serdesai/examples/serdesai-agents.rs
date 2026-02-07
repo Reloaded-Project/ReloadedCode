@@ -32,7 +32,17 @@ const OPENAI_MODEL: &str = "openai:hf:zai-org/GLM-4.7";
 const OPENAI_BASE_URL: &str = "https://api.synthetic.new/openai/v1";
 
 fn get_openai_api_key() -> String {
-    std::env::var("OPENAI_API_KEY").unwrap_or_else(|_| OPENAI_API_KEY.to_string())
+    std::env::var("OPENAI_API_KEY")
+        .or_else(|_| {
+            if !OPENAI_API_KEY.is_empty() {
+                Ok(OPENAI_API_KEY.to_string())
+            } else {
+                Err(std::env::VarError::NotPresent)
+            }
+        })
+        .expect(
+            "OPENAI_API_KEY not set: please provide OPENAI_API_KEY env var or set OPENAI_API_KEY constant",
+        )
 }
 
 // Embedded subagent config (loaded via include_str!)
