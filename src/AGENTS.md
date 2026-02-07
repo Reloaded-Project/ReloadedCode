@@ -1,4 +1,6 @@
-Basic coding oriented tools for LLM agents
+Basic coding oriented tools for LLM agents.
+
+This is a headless library, there is no TUI interaction model here, so interactive `ask` approval flows and autocomplete-style agent UX are out of scope.
 
 # Feature Flags (llm-coding-tools-core)
 
@@ -11,16 +13,9 @@ The `async` and `blocking` features are mutually exclusive - enabling both cause
 # Project Structure
 
 - `llm-coding-tools-core/` - Framework-agnostic core library
-  - `src/operations/` - Core operation implementations (read, write, edit, glob, grep, bash, etc.)
-  - `src/path/` - Path resolution (absolute and allowed)
-  - `src/error.rs` - Unified error types
-  - `src/output.rs` - Tool output formatting
-  - `src/util.rs` - Shared utilities
+- `llm-coding-tools-agents/` - Agent config loading and permission model
+- `llm-coding-tools-models-dev/` - models.dev catalog integration and snapshot tooling
 - `llm-coding-tools-serdesai/` - serdesAI framework Tool implementations
-  - `src/absolute/` - Unrestricted file system tools
-  - `src/allowed/` - Sandboxed file system tools
-  - `src/schema.rs` - Schema building utilities
-  - `src/convert.rs` - Type conversions between core and serdesAI
 
 # Code & Performance Guidelines
 
