@@ -1084,8 +1084,8 @@ mod tests {
     #[test]
     fn system_prompt_no_trailing_newline_gets_separator() {
         // System prompt without trailing newline should get "\n\n" separator
-        let mut pb = SystemPromptBuilder::new().system_prompt(indoc! {"
-            # System
+        let mut pb = SystemPromptBuilder::new().system_prompt(indoc! {
+            "# System
 
             No trailing newline"
         });

@@ -45,7 +45,7 @@ impl Default for PermissionRule {
 }
 
 /// Raw frontmatter data (intermediate deserialization target).
-#[derive(Debug, Clone, Default, Deserialize)]
+#[derive(Debug, Clone, Deserialize)]
 pub(crate) struct RawFrontmatter {
     #[serde(default)]
     pub name: Option<String>,

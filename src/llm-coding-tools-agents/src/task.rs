@@ -6,10 +6,11 @@
 //!
 //! Framework-specific Task tools use registry-driven AgentCatalog for agent lookup.
 
+use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 /// Input for task execution.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TaskInput {
     /// Short description (3-5 words) of the task.
     pub description: String,
@@ -24,7 +25,7 @@ pub struct TaskInput {
 }
 
 /// Output from task execution.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TaskOutput {
     /// The text summary/response from the agent.
     pub summary: String,
