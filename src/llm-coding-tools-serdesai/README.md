@@ -28,13 +28,27 @@ llm-coding-tools-serdesai = "0.1"
 
 ## Quick Start
 
-Minimal runnable agent (requires `OPENAI_API_KEY`):
+Minimal runnable agent (requires `OPENAI_API_KEY` for synthetic API):
 
 ```rust,no_run
 use llm_coding_tools_serdesai::absolute::{GlobTool, GrepTool, ReadTool};
 use llm_coding_tools_serdesai::agent_ext::AgentBuilderExt;
 use llm_coding_tools_serdesai::{BashTool, SystemPromptBuilder, create_todo_tools};
+use serdes_ai::models::openai::OpenAIChatModel;
 use serdes_ai::prelude::*;
+
+const OPENAI_API_KEY: &str = "";
+const OPENAI_MODEL: &str = "hf:zai-org/GLM-4.7";
+const OPENAI_BASE_URL: &str = "https://api.synthetic.new/openai/v1";
+
+fn get_openai_api_key() -> String {
+    std::env::var("OPENAI_API_KEY").unwrap_or_else(|_| {
+        if OPENAI_API_KEY.is_empty() {
+            panic!("OPENAI_API_KEY environment variable must be set");
+        }
+        OPENAI_API_KEY.to_string()
+    })
+}
 
 #[tokio::main]
 async fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
@@ -42,7 +56,9 @@ async fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
     let mut pb = SystemPromptBuilder::new();
 
     // Build agent with tools - call .system_prompt() last
-    let agent = AgentBuilder::<(), String>::from_model("openai:gpt-4o")?
+    let model = OpenAIChatModel::new(OPENAI_MODEL, get_openai_api_key())
+        .with_base_url(OPENAI_BASE_URL);
+    let agent = AgentBuilder::<(), String>::new(model)
         .tool(pb.track(ReadTool::<true>::new()))
         .tool(pb.track(GlobTool::new()))
         .tool(pb.track(GrepTool::<true>::new()))
@@ -96,27 +112,70 @@ Setup requires three steps:
 2. **Build a serdesAI registry** with `AgentRegistryBuilder` and tools
 3. **Create `TaskTool`** with registry, permissions, and deps
 
-```rust,ignore
-use llm_coding_tools_agents::AgentCatalog;
-use llm_coding_tools_serdesai::{AgentDefaults, AgentRegistryBuilder, TaskTool};
+```rust,no_run
+use llm_coding_tools_agents::{AgentCatalog, AgentLoader, Ruleset};
+use llm_coding_tools_serdesai::{
+    AgentDefaults, AgentRegistryBuilder, TaskTool, TaskDefinitionSnapshot,
+    TaskTargetSummary, default_tools, ProviderOverrides, TodoState, TaskRegistryHandle,
+};
+use std::sync::Arc;
 
-// 1. Load agent configs
-let catalog = AgentCatalog::from_file("agents.toml")?;
+const OPENAI_API_KEY: &str = "";
+const OPENAI_BASE_URL: &str = "https://api.synthetic.new/openai/v1";
 
-// 2. Build registry with defaults and tools
-let defaults = AgentDefaults::with_model("openai:gpt-4o");
-let registry = AgentRegistryBuilder::new(defaults, default_tools())
-    .with_catalog(catalog)
-    .build()?;
+fn get_openai_api_key() -> String {
+    std::env::var("OPENAI_API_KEY").unwrap_or_else(|_| {
+        if OPENAI_API_KEY.is_empty() {
+            panic!("OPENAI_API_KEY environment variable must be set");
+        }
+        OPENAI_API_KEY.to_string()
+    })
+}
 
-// 3. Create TaskTool with registry, permissions, and deps
-let task_tool = TaskTool::for_registry_caller(
-    registry_handle,
-    "primary-agent",
-    permissions,
-    snapshot,
-    deps,
-);
+fn main() -> Result<(), Box<dyn std::error::Error>> {
+    // 1. Load agent configs
+    let loader = AgentLoader::new();
+    let mut catalog = AgentCatalog::new();
+    loader.add_file(&mut catalog, "agents.toml")?;
+
+    // 2. Build registry with defaults and tools
+    let defaults = AgentDefaults {
+        model: "openai:hf:zai-org/GLM-4.7".to_string(),
+        model_resolver: None,
+        provider_overrides: ProviderOverrides::new(),
+        api_key: Some(get_openai_api_key()),
+        base_url: Some(OPENAI_BASE_URL.to_string()),
+        temperature: None,
+        top_p: None,
+        options: Default::default(),
+    };
+
+    let tools = default_tools(true, None, TodoState::new());
+    let registry = Arc::new(AgentRegistryBuilder::new(defaults, tools)
+        .build(&catalog)?);
+
+    // 3. Create TaskTool with registry handle, permissions, and deps
+    let registry_handle = Arc::new(TaskRegistryHandle::from_registry(Arc::clone(&registry)));
+    let snapshot = TaskDefinitionSnapshot {
+        targets: registry.iter().map(|(name, entry)| TaskTargetSummary {
+            name: name.clone(),
+            mode: entry.config.mode,
+            tool_names: entry.tool_names.clone(),
+        }).collect(),
+    };
+    let rules = Ruleset::new(); // Configure permissions as needed
+    let deps = Arc::new(());
+
+    let task_tool = TaskTool::for_registry_caller(
+        registry_handle,
+        "primary-agent",
+        rules,
+        snapshot,
+        deps,
+    );
+
+    Ok(())
+}
 ```
 
 **Note**: The `default_tools` function (defined in `examples/serdesai-agents.rs`) returns cloneable `ToolCatalogEntry` items that can be reused for building multiple agents. The `AgentRegistryBuilder` uses these to construct tool descriptions and filter based on agent permissions. The `deps` parameter is passed to registry agents at invocation time.
@@ -165,12 +224,16 @@ Use the models.dev catalog to resolve per-provider API keys/base URLs:
 let catalog = ModelsDevCatalog::load_shared_cache_or_bundled()?.catalog;
 let overrides = ProviderOverrides::new().insert_override(
     "openai",
-    ProviderOverride { api_key: Some(env::var("OPENAI_API_KEY")?), base_url: None, endpoint_env: None },
+    ProviderOverride {
+        api_key: Some(env::var("OPENAI_API_KEY")?),
+        base_url: Some("https://api.synthetic.new/openai/v1".into()),
+        endpoint_env: None
+    },
 );
 let resolver = ModelsDevResolver::new(Some(catalog), overrides.clone());
 
 let defaults = AgentDefaults {
-    model: "openai:gpt-4o".into(),
+    model: "openai:hf:zai-org/GLM-4.7".into(),
     model_resolver: Some(resolver),
     provider_overrides: overrides,
     api_key: None,
