@@ -75,7 +75,7 @@ These are areas where the implementer was uncertain — validate the approach or
 - Tests: basic → ensure basic tests exist for new functionality and run tests
 - Tests: no → do not run tests; flag any found tests as overengineering
 - Check the entire content of changed test files, not just the modified portions
-- WARNING IF [MEDIUM]: newly added tests duplicate existing test coverage without adding value (different context, edge case, or scenario)
+- WARNING IF [MEDIUM]: newly added tests duplicate existing test coverage without testing different contexts, edge cases, or scenarios
 - WARNING IF [MEDIUM]: tests have significant duplication that would benefit from parameterization without sacrificing readability
 - FAIL IF: tests are non-deterministic (real I/O, time, network without mocking/seeding)
 

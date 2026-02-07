@@ -170,7 +170,7 @@ async fn depth_2_allow_chain_succeeds() {
 }
 
 #[tokio::test]
-async fn depth_2_deny_chain_fails_at_hop_2() {
+async fn depth_2_b_denies_but_a_to_b_succeeds() {
     // Agent A -> Agent B (A allows B, but B denies everyone)
     let agent_a = make_entry("agent-a", AgentMode::Subagent, rules_allow(&["agent-b"]));
     let agent_b = make_entry("agent-b", AgentMode::Subagent, rules_deny("*"));

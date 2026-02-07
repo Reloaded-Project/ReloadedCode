@@ -115,6 +115,11 @@ fn block_scalar_parts(line: &str) -> Option<(&str, &str)> {
         return None;
     }
 
+    // Skip YAML anchors, aliases, and tags - transforming these could change semantics.
+    if matches!(first_value, Some(b'&') | Some(b'*') | Some(b'!')) {
+        return None;
+    }
+
     if !value.contains(':') {
         return None;
     }

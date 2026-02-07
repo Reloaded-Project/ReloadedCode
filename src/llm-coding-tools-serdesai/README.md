@@ -96,7 +96,28 @@ Setup requires three steps:
 2. **Build a serdesAI registry** with `AgentRegistryBuilder` and tools
 3. **Create `TaskTool`** with registry, permissions, and deps
 
-The example file shows the complete setup.
+```rust,ignore
+use llm_coding_tools_agents::AgentCatalog;
+use llm_coding_tools_serdesai::{AgentDefaults, AgentRegistryBuilder, TaskTool};
+
+// 1. Load agent configs
+let catalog = AgentCatalog::from_file("agents.toml")?;
+
+// 2. Build registry with defaults and tools
+let defaults = AgentDefaults::with_model("openai:gpt-4o");
+let registry = AgentRegistryBuilder::new(defaults, default_tools())
+    .with_catalog(catalog)
+    .build()?;
+
+// 3. Create TaskTool with registry, permissions, and deps
+let task_tool = TaskTool::for_registry_caller(
+    registry_handle,
+    "primary-agent",
+    permissions,
+    snapshot,
+    deps,
+);
+```
 
 **Note**: The `default_tools` function (defined in `examples/serdesai-agents.rs`) returns cloneable `ToolCatalogEntry` items that can be reused for building multiple agents. The `AgentRegistryBuilder` uses these to construct tool descriptions and filter based on agent permissions. The `deps` parameter is passed to registry agents at invocation time.
 
@@ -113,15 +134,21 @@ Use `SystemPromptBuilder` to track tools and populate the environment section:
 ```rust,ignore
 use llm_coding_tools_serdesai::SystemPromptBuilder;
 
-let pb = SystemPromptBuilder::new()
+let mut pb = SystemPromptBuilder::new()
     .working_directory(std::env::current_dir()?);
-agent_builder.system_prompt(pb.build());
+// ... track tools with pb.track() ...
+// Finally set the system prompt:
+let agent = AgentBuilder::from_model("openai:gpt-4o")?
+    .system_prompt(pb.build())
+    .build()?;
 ```
 
 Add tools to agents using `AgentBuilderExt::tool()`:
 
 ```rust,ignore
-agent_builder.tool(MyTool::new());
+let agent = AgentBuilder::from_model("openai:gpt-4o")?
+    .tool(MyTool::new())
+    .build()?;
 ```
 
 Context strings (e.g., `BASH`, `READ_ABSOLUTE`) are re-exported in `llm_coding_tools_serdesai::context`.
