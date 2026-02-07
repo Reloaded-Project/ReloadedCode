@@ -128,7 +128,7 @@ fn rules_deny(target: &str) -> Ruleset {
 
 #[tokio::test]
 async fn depth_2_allow_chain_succeeds() {
-    // Agent A -> Agent B (both allow each other)
+    // Agent A -> Agent B (A allows B, B has no allow entries - default-deny)
     let agent_a = make_entry("agent-a", AgentMode::Subagent, rules_allow(&["agent-b"]));
     let agent_b = make_entry("agent-b", AgentMode::Subagent, rules_allow(&[]));
 
