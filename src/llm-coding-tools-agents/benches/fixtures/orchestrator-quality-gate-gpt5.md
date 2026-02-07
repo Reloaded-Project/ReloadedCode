@@ -3,6 +3,7 @@ mode: subagent
 hidden: true
 description: Unified objective validation and code review with verification checks (GPT-5 reviewer)
 model: github-copilot/gpt-5.2-codex
+# NOTE: reasoningEffort is not yet supported by this library
 reasoningEffort: xhigh
 permission:
   bash: allow
