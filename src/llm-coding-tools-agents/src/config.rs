@@ -1,4 +1,32 @@
-//! Agent configuration schema.
+//! Agent configuration from markdown frontmatter.
+//!
+//! Parses agent definitions from markdown files with YAML frontmatter.
+//! The markdown body after the frontmatter becomes the agent's system prompt.
+//!
+//! Permission rules support simple actions (`bash: allow`) or pattern-based
+//! maps for the `task` tool (`task: {"*": deny, "orchestrator-*": allow}`).
+//! Patterns use `*` and `?` wildcards with last-match-wins semantics.
+//!
+//! ```markdown
+//! ---
+//! name: code-reviewer
+//! mode: subagent
+//! description: Reviews code for style and bugs
+//! model: synthetic/hf:moonshotai/Kimi-K2.5
+//! temperature: 1.0
+//! permission:
+//!   bash: deny
+//!   read: allow
+//!   write: allow
+//!   task:
+//!     "*": deny
+//!     orchestrator-*: allow
+//! options:
+//!   max_tokens: 4096
+//! ---
+//!
+//! You are a meticulous code reviewer...
+//! ```
 
 use indexmap::IndexMap;
 use llm_coding_tools_core::permissions::PermissionAction;
