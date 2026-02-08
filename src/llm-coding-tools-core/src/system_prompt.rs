@@ -381,58 +381,6 @@ impl SystemPromptBuilder {
     }
 }
 
-/// Extension trait for placeholder substitution on system prompt strings.
-///
-/// Provides simple `{key}` placeholder replacement after building a system prompt.
-/// Unmatched placeholders are left as-is.
-///
-/// # Example
-///
-/// ```rust
-/// use llm_coding_tools_core::Substitute;
-///
-/// let text = "Available agents: {agents}".to_string();
-/// let result = text
-///     .substitute("agents", "code-review, research")
-///     .substitute("missing", "ignored");
-///
-/// assert_eq!(result, "Available agents: code-review, research");
-/// ```
-pub trait Substitute {
-    /// Replaces `{key}` placeholder with the given value.
-    ///
-    /// Returns a new String with the substitution applied.
-    /// If the placeholder is not found, returns the string unchanged.
-    fn substitute(self, key: &str, value: &str) -> String;
-
-    /// Replaces multiple `{key}` placeholders with their values.
-    ///
-    /// Accepts an iterator of (key, value) pairs.
-    fn substitute_all<'a>(
-        self,
-        substitutions: impl IntoIterator<Item = (&'a str, &'a str)>,
-    ) -> String;
-}
-
-impl Substitute for String {
-    #[inline]
-    fn substitute(self, key: &str, value: &str) -> String {
-        let placeholder = format!("{{{}}}", key);
-        self.replace(&placeholder, value)
-    }
-
-    fn substitute_all<'a>(
-        mut self,
-        substitutions: impl IntoIterator<Item = (&'a str, &'a str)>,
-    ) -> String {
-        for (key, value) in substitutions {
-            let placeholder = format!("{{{}}}", key);
-            self = self.replace(&placeholder, value);
-        }
-        self
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -620,51 +568,6 @@ mod tests {
         let preamble = pb.build();
 
         assert!(preamble.contains("Working directory: /static/path"));
-    }
-
-    #[test]
-    fn substitute_replaces_single_placeholder() {
-        use super::Substitute;
-
-        let text = "Hello {name}!".to_string();
-        let result = text.substitute("name", "World");
-        assert_eq!(result, "Hello World!");
-    }
-
-    #[test]
-    fn substitute_leaves_unmatched_placeholders() {
-        use super::Substitute;
-
-        let text = "Hello {name}, welcome to {place}!".to_string();
-        let result = text.substitute("name", "Alice");
-        assert_eq!(result, "Hello Alice, welcome to {place}!");
-    }
-
-    #[test]
-    fn substitute_handles_empty_value() {
-        use super::Substitute;
-
-        let text = "Prefix{middle}Suffix".to_string();
-        let result = text.substitute("middle", "");
-        assert_eq!(result, "PrefixSuffix");
-    }
-
-    #[test]
-    fn substitute_all_replaces_multiple() {
-        use super::Substitute;
-
-        let text = "Hello {name}, welcome to {place}!".to_string();
-        let result = text.substitute_all([("name", "Alice"), ("place", "Wonderland")]);
-        assert_eq!(result, "Hello Alice, welcome to Wonderland!");
-    }
-
-    #[test]
-    fn substitute_no_placeholder_returns_unchanged() {
-        use super::Substitute;
-
-        let text = "No placeholders here".to_string();
-        let result = text.substitute("missing", "value");
-        assert_eq!(result, "No placeholders here");
     }
 
     #[test]

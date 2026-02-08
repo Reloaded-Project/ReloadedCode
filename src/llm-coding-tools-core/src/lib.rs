@@ -22,7 +22,7 @@ pub use context::ToolContext;
 pub use error::{ToolError, ToolResult};
 pub use output::ToolOutput;
 pub use path::{AbsolutePathResolver, AllowedPathResolver, PathResolver};
-pub use system_prompt::{Substitute, SystemPromptBuilder};
+pub use system_prompt::SystemPromptBuilder;
 
 // Re-export tools (always available, sync or async based on runtime feature)
 pub use tools::{

@@ -21,8 +21,8 @@ pub use llm_coding_tools_core::{ToolError, ToolOutput, ToolResult};
 pub use llm_coding_tools_core::ToolContext;
 pub use llm_coding_tools_core::context;
 
-/// Re-export [`SystemPromptBuilder`] and [`Substitute`] from core.
-pub use llm_coding_tools_core::{Substitute, SystemPromptBuilder};
+/// Re-export [`SystemPromptBuilder`] from core.
+pub use llm_coding_tools_core::SystemPromptBuilder;
 
 /// Re-export path resolvers from core.
 pub use llm_coding_tools_core::path::{AbsolutePathResolver, AllowedPathResolver, PathResolver};
