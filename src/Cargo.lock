@@ -1243,6 +1243,7 @@ dependencies = [
  "ignore",
  "indexmap",
  "indoc",
+ "llm-coding-tools-core",
  "serde",
  "serde_json",
  "serde_yaml",

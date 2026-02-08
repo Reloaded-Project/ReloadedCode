@@ -1,6 +1,7 @@
 use super::*;
 use async_trait::async_trait;
-use llm_coding_tools_agents::{AgentConfig, AgentMode, PermissionAction, Rule, Ruleset};
+use llm_coding_tools_agents::{AgentConfig, AgentMode};
+use llm_coding_tools_core::permissions::{PermissionAction, Rule, Ruleset};
 use serdes_ai::tools::RunContext;
 use std::sync::{Arc, Mutex};
 

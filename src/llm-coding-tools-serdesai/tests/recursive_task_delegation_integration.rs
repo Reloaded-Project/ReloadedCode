@@ -5,9 +5,7 @@
 
 use async_trait::async_trait;
 use indexmap::IndexMap;
-use llm_coding_tools_agents::{
-    AgentConfig, AgentMode, PermissionAction, PermissionRule, Rule, Ruleset,
-};
+use llm_coding_tools_agents::{AgentConfig, AgentMode, PermissionAction, PermissionRule, Rule, Ruleset};
 use llm_coding_tools_serdesai::{
     AgentRegistry, AgentRegistryEntry, RegistryAgent, RegistryAgentError, TaskDefinitionSnapshot,
     TaskRegistryHandle, TaskTargetSummary, TaskTool,

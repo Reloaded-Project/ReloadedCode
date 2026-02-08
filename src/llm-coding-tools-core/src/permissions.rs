@@ -1,9 +1,20 @@
 //! Permission evaluation with wildcard pattern matching.
 //!
-//! Implements a last-match-wins rule evaluation system for tool and subagent access control.
+//! Implements a last-match-wins ruleset evaluation system for tool and subagent access control.
+//! Supports wildcard patterns (`*`, `?`) for flexible matching against permission keys and subjects.
 
-use crate::config::{PermissionAction, PermissionRule};
-use indexmap::IndexMap;
+use serde::{Deserialize, Serialize};
+
+/// Permission level for tool access.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum PermissionAction {
+    /// Tool is allowed.
+    Allow,
+    /// Tool is denied.
+    #[default]
+    Deny,
+}
 
 /// A single permission rule with pattern-based matching.
 ///
@@ -101,34 +112,6 @@ impl Ruleset {
     #[inline]
     pub fn iter(&self) -> impl Iterator<Item = &Rule> {
         self.rules.iter()
-    }
-
-    /// Converts a frontmatter permission config into a [`Ruleset`].
-    ///
-    /// The config maps permission keys to either:
-    /// - A direct action (`"allow"` or `"deny"`) applying to pattern `"*"`
-    /// - A map of `{ pattern: action }` for per-pattern rules
-    ///
-    /// Rules are added in iteration order (preserved by [`IndexMap`]).
-    /// Permission keys and patterns are normalized to lowercase.
-    pub fn from_config(config: &IndexMap<String, PermissionRule>) -> Self {
-        // Estimate capacity: most entries have 1-2 rules
-        let mut ruleset = Self::with_capacity(config.len() * 2);
-
-        for (key, rule) in config {
-            match rule {
-                PermissionRule::Action(action) => {
-                    ruleset.push(Rule::new(key, "*", *action));
-                }
-                PermissionRule::Pattern(patterns) => {
-                    for (pattern, action) in patterns {
-                        ruleset.push(Rule::new(key, pattern, *action));
-                    }
-                }
-            }
-        }
-
-        ruleset
     }
 
     /// Evaluates the ruleset for a given permission and subject.
@@ -362,42 +345,6 @@ mod tests {
     }
 
     // ===== Ruleset tests =====
-
-    #[test]
-    fn ruleset_from_config_simple_action() {
-        let mut config = IndexMap::new();
-        config.insert(
-            "bash".to_string(),
-            PermissionRule::Action(PermissionAction::Allow),
-        );
-
-        let ruleset = Ruleset::from_config(&config);
-
-        assert_eq!(ruleset.len(), 1);
-        let rule = ruleset.iter().next().unwrap();
-        assert_eq!(rule.permission(), "bash");
-        assert_eq!(rule.pattern(), "*");
-        assert_eq!(rule.action(), PermissionAction::Allow);
-    }
-
-    #[test]
-    fn ruleset_from_config_pattern_map() {
-        let mut patterns = IndexMap::new();
-        patterns.insert("orchestrator-*".to_string(), PermissionAction::Allow);
-        patterns.insert("*".to_string(), PermissionAction::Deny);
-
-        let mut config = IndexMap::new();
-        config.insert("task".to_string(), PermissionRule::Pattern(patterns));
-
-        let ruleset = Ruleset::from_config(&config);
-
-        assert_eq!(ruleset.len(), 2);
-        let rules: Vec<_> = ruleset.iter().collect();
-        assert_eq!(rules[0].permission(), "task");
-        assert_eq!(rules[0].pattern(), "orchestrator-*");
-        assert_eq!(rules[1].permission(), "task");
-        assert_eq!(rules[1].pattern(), "*");
-    }
 
     #[test]
     fn ruleset_evaluate_default_deny() {

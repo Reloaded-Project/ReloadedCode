@@ -1,12 +1,11 @@
 use indexmap::IndexMap;
-use llm_coding_tools_agents::{
-    AgentCatalog, AgentConfig, AgentMode, PermissionAction, PermissionRule,
-};
+use llm_coding_tools_agents::{AgentCatalog, AgentConfig, AgentMode, PermissionRule};
+use llm_coding_tools_core::permissions::PermissionAction;
 use llm_coding_tools_core::tool_names;
 use llm_coding_tools_models_dev::ModelsDevCatalog;
 use llm_coding_tools_serdesai::{
-    AgentDefaults, AgentRegistryBuildError, AgentRegistryBuilder, ModelsDevResolver,
-    ProviderOverride, ProviderOverrides, TodoState, default_tools,
+    default_tools, AgentDefaults, AgentRegistryBuildError, AgentRegistryBuilder, ModelsDevResolver,
+    ProviderOverride, ProviderOverrides, TodoState,
 };
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};

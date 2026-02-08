@@ -1,6 +1,7 @@
 //! Agent configuration schema.
 
 use indexmap::IndexMap;
+use llm_coding_tools_core::permissions::PermissionAction;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
@@ -15,17 +16,6 @@ pub enum AgentMode {
     /// Available in both contexts.
     #[default]
     All,
-}
-
-/// Permission level for tool access.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
-#[serde(rename_all = "lowercase")]
-pub enum PermissionAction {
-    /// Tool is allowed.
-    Allow,
-    /// Tool is denied.
-    #[default]
-    Deny,
 }
 
 /// Permission rule: simple action or pattern-based map.

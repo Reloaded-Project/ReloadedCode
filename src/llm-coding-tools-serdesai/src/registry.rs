@@ -6,9 +6,8 @@ use crate::task::{TaskDefinitionSnapshot, TaskRegistryHandle, TaskTargetSummary,
 use crate::tool_catalog::ToolCatalogEntry;
 use async_trait::async_trait;
 use indexmap::IndexMap;
-use llm_coding_tools_agents::{
-    AgentCatalog, AgentConfig, AgentMode, PermissionAction, PermissionRule, Ruleset,
-};
+use llm_coding_tools_agents::{AgentCatalog, AgentConfig, AgentMode, PermissionRule, RulesetExt};
+use llm_coding_tools_core::permissions::{PermissionAction, Ruleset};
 use llm_coding_tools_core::SystemPromptBuilder;
 use llm_coding_tools_core::tool_names;
 use llm_coding_tools_models_dev::ModelsDevCatalog;
@@ -299,7 +298,7 @@ where
             }
         }
 
-        let ruleset = Ruleset::from_config(&config.permission);
+        let ruleset = Ruleset::from_permission_config(&config.permission);
         let mut allowed_tools = Vec::with_capacity(self.tools.len());
         let mut tool_names = Vec::with_capacity(self.tools.len());
         for tool in &self.tools {

@@ -27,6 +27,9 @@ crlf-to-lf-inplace = "0.1"
 # Directory scanning with gitignore support
 ignore = "0.4.25"
 
+# Core library for permissions and tool types
+llm-coding-tools-core = { path = "../llm-coding-tools-core" }
+
 [dev-dependencies]
 tempfile = "3.24"
 criterion = "0.8"
