@@ -1,7 +1,51 @@
-//! Permission evaluation with wildcard pattern matching.
+//! Permission evaluation for tool and delegation access control.
 //!
-//! Implements a last-match-wins ruleset evaluation system for tool and subagent access control.
-//! Supports wildcard patterns (`*`, `?`) for flexible matching against permission keys and subjects.
+//! This module provides a small, framework-agnostic policy model built from
+//! ordered [`Rule`] entries inside a [`Ruleset`].
+//!
+//! - A rule is `(permission_key, subject_pattern, action)`.
+//! - Evaluation is **last-match-wins**.
+//! - If nothing matches, the result is [`PermissionAction::Deny`].
+//!
+//! Matching behavior:
+//! - Permission key: exact match (case-insensitive), no wildcard expansion.
+//! - Subject pattern: wildcard matching with `*` (many chars) and `?` (one char).
+//!
+//! # Mapping config to rules
+//!
+//! Wrappers commonly map user-facing permission config (for example agent
+//! frontmatter) into this model:
+//!
+//! - `bash: allow` maps to `Rule::new("bash", "*", Allow)`.
+//! - Pattern maps like `task: { "*": deny, "orchestrator-*": allow }`
+//!   become one rule per pattern, in declaration order.
+//!
+//! Because matching is last-match-wins, rule order is part of policy.
+//!
+//! ```yaml
+//! permission:
+//!   bash: allow
+//!   task:
+//!     "*": deny
+//!     orchestrator-*: allow
+//! ```
+//!
+//! ```rust
+//! use llm_coding_tools_core::permissions::{PermissionAction, Rule, Ruleset};
+//!
+//! let mut rules = Ruleset::new();
+//! rules.push(Rule::new("bash", "*", PermissionAction::Allow));
+//! rules.push(Rule::new("task", "*", PermissionAction::Deny));
+//! rules.push(Rule::new("task", "orchestrator-*", PermissionAction::Allow));
+//!
+//! assert_eq!(rules.evaluate("bash", "any-agent"), PermissionAction::Allow);
+//! assert_eq!(
+//!     rules.evaluate("task", "orchestrator-review"),
+//!     PermissionAction::Allow
+//! );
+//! assert_eq!(rules.evaluate("task", "other-agent"), PermissionAction::Deny);
+//! assert_eq!(rules.evaluate("read", "any-agent"), PermissionAction::Deny);
+//! ```
 
 use serde::{Deserialize, Serialize};
 

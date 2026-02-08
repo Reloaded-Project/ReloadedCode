@@ -1,6 +1,4 @@
 //! Todo list management operation.
-//!
-//! This module is only available with the `async` feature.
 
 use crate::error::{ToolError, ToolResult};
 use parking_lot::RwLock;
