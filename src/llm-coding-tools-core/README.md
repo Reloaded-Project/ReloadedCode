@@ -20,13 +20,10 @@ The SerdesAI framework uses a unified flow: load agent configs into `AgentCatalo
 
 ## Features
 
-- `tokio` (default): Async mode with tokio runtime. Enables async function signatures.
-- `blocking`: Sync/blocking mode. Mutually exclusive with `tokio`/`async`.
-- `async`: Base async signatures (internal). Requires a runtime; use `tokio` instead.
+- `tokio` (default): Async mode with tokio runtime.
+- `blocking`: Sync/blocking mode. Mutually exclusive with `tokio`.
 
-The `async` and `blocking` features are mutually exclusive - enabling both causes a compile error.
-
-Future runtimes (smol, async-std) can be added following the same pattern as `tokio`.
+**Contributions welcome:** PRs for additional async runtimes (smol, async-std, etc.) welcome! Add a feature that enables `async` and implement runtime-specific code.
 
 ## Usage
 

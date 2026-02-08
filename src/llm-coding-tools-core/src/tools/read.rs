@@ -56,7 +56,7 @@ pub async fn read_file<R: PathResolver, const LINE_NUMBERS: bool>(
     // Conditional trait import for consume() method
     #[cfg(feature = "blocking")]
     use std::io::BufRead as _;
-    #[cfg(not(feature = "blocking"))]
+    #[cfg(feature = "tokio")]
     use tokio::io::AsyncBufReadExt as _;
 
     if offset == 0 {
@@ -177,7 +177,7 @@ mod tests {
         read_file::<_, LINE_NUMBERS>(&resolver, temp.path().to_str().unwrap(), offset, limit).await
     }
 
-    #[maybe_async::test(feature = "blocking", async(not(feature = "blocking"), tokio::test))]
+    #[maybe_async::test(feature = "blocking", async(feature = "tokio", tokio::test))]
     async fn reads_basic_file_with_line_numbers() {
         let result = read_temp_file::<true>(b"hello\nworld\n", 1, 2000)
             .await
@@ -185,7 +185,7 @@ mod tests {
         assert_eq!(result.content, "L1: hello\nL2: world");
     }
 
-    #[maybe_async::test(feature = "blocking", async(not(feature = "blocking"), tokio::test))]
+    #[maybe_async::test(feature = "blocking", async(feature = "tokio", tokio::test))]
     async fn reads_basic_file_without_line_numbers() {
         let result = read_temp_file::<false>(b"hello\nworld\n", 1, 2000)
             .await
@@ -193,7 +193,7 @@ mod tests {
         assert_eq!(result.content, "hello\nworld");
     }
 
-    #[maybe_async::test(feature = "blocking", async(not(feature = "blocking"), tokio::test))]
+    #[maybe_async::test(feature = "blocking", async(feature = "tokio", tokio::test))]
     async fn errors_on_offset_zero() {
         let err = read_temp_file::<true>(b"test\n", 0, 10).await.unwrap_err();
         assert!(matches!(err, ToolError::OutOfBounds(_)));

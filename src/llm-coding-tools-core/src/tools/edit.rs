@@ -89,7 +89,7 @@ mod tests {
         file
     }
 
-    #[maybe_async::test(feature = "blocking", async(not(feature = "blocking"), tokio::test))]
+    #[maybe_async::test(feature = "blocking", async(feature = "tokio", tokio::test))]
     async fn single_replacement_succeeds() {
         let file = create_temp_file("hello world");
         let resolver = AbsolutePathResolver;
@@ -109,7 +109,7 @@ mod tests {
         assert_eq!(content, "hello rust");
     }
 
-    #[maybe_async::test(feature = "blocking", async(not(feature = "blocking"), tokio::test))]
+    #[maybe_async::test(feature = "blocking", async(feature = "tokio", tokio::test))]
     async fn not_found_returns_error() {
         let file = create_temp_file("hello world");
         let resolver = AbsolutePathResolver;

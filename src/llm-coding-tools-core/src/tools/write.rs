@@ -38,7 +38,7 @@ mod tests {
     use crate::path::AbsolutePathResolver;
     use tempfile::TempDir;
 
-    #[maybe_async::test(feature = "blocking", async(not(feature = "blocking"), tokio::test))]
+    #[maybe_async::test(feature = "blocking", async(feature = "tokio", tokio::test))]
     async fn write_creates_new_file() {
         let temp = TempDir::new().unwrap();
         let file_path = temp.path().join("new_file.txt");
@@ -52,7 +52,7 @@ mod tests {
         assert_eq!(std::fs::read_to_string(&file_path).unwrap(), "hello world");
     }
 
-    #[maybe_async::test(feature = "blocking", async(not(feature = "blocking"), tokio::test))]
+    #[maybe_async::test(feature = "blocking", async(feature = "tokio", tokio::test))]
     async fn write_creates_parent_directories() {
         let temp = TempDir::new().unwrap();
         let file_path = temp.path().join("a/b/c/deep.txt");

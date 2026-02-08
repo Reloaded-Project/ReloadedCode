@@ -10,9 +10,9 @@ readme = "README.md"
 
 [features]
 default = ["tokio"]
-# Base async signatures - requires a runtime, do not enable directly
-async = ["dep:async-trait"]
-# Async with tokio runtime (default)
+# Base async support (enabled by runtimes like tokio). PRs for other runtimes (smol, async-std) are welcome!
+async = []
+# Async with tokio runtime (default). Enables async feature and tokio-specific implementations.
 tokio = ["async", "dep:tokio", "dep:reqwest", "process-wrap/tokio1", "process-wrap/job-object", "process-wrap/process-group", "process-wrap/kill-on-drop"]
 # Blocking/sync mode - mutually exclusive with async
 blocking = ["maybe-async/is_sync", "dep:reqwest", "reqwest?/blocking", "process-wrap/std", "process-wrap/job-object", "process-wrap/process-group"]
@@ -47,9 +47,6 @@ reqwest = { version = "0.13", default-features = false, features = [
 
 # Unifies async/sync code via procedural macros
 maybe-async = "0.2"
-
-# TaskExecutor trait requires async methods
-async-trait = { version = "0.1", optional = true }
 
 # Async file I/O, process execution, and timeouts
 tokio = { version = "1.49", features = ["fs", "io-util", "process", "time"], optional = true }

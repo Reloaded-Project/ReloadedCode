@@ -1,4 +1,4 @@
-//! Async web content fetching.
+//! Tokio-based async web content fetching.
 
 use super::{categorize_reqwest_error, check_size, process_content, WebFetchOutput};
 use crate::error::{ToolError, ToolResult};
@@ -34,7 +34,7 @@ pub async fn fetch_url(
         .to_string();
 
     // Check Content-Length header if available for early rejection and preallocation
-    let content_length = response.content_length().map(|len| len as usize);
+    let content_length = response.content_length().and_then(|len| usize::try_from(len).ok());
     if let Some(len) = content_length {
         check_size(len, url)?;
     }

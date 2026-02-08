@@ -1,4 +1,4 @@
-//! Async shell command execution.
+//! Tokio-based async shell command execution.
 
 use super::{BashOutput, PIPE_BUFFER_CAPACITY};
 use crate::error::{ToolError, ToolResult};

@@ -56,10 +56,10 @@ impl BashOutput {
     }
 }
 
-#[cfg(not(feature = "blocking"))]
-mod async_impl;
-#[cfg(not(feature = "blocking"))]
-pub use async_impl::execute_command;
+#[cfg(feature = "tokio")]
+mod tokio_impl;
+#[cfg(feature = "tokio")]
+pub use tokio_impl::execute_command;
 
 #[cfg(feature = "blocking")]
 mod blocking_impl;

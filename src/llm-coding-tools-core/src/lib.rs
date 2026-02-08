@@ -2,11 +2,11 @@
 #![warn(missing_docs)]
 
 // Validate feature combinations at compile time
-#[cfg(all(feature = "async", not(feature = "tokio")))]
-compile_error!("Feature `async` requires a runtime. Enable `tokio` feature instead.");
-
 #[cfg(all(feature = "async", feature = "blocking"))]
 compile_error!("Features `async` and `blocking` are mutually exclusive.");
+
+#[cfg(not(any(feature = "async", feature = "blocking")))]
+compile_error!("Either an async runtime (e.g., `tokio`) or `blocking` feature must be enabled.");
 
 pub mod context;
 pub mod error;

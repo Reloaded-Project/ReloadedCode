@@ -83,10 +83,10 @@ pub fn format_json(json_str: &str) -> String {
     }
 }
 
-#[cfg(not(feature = "blocking"))]
-mod async_impl;
-#[cfg(not(feature = "blocking"))]
-pub use async_impl::fetch_url;
+#[cfg(feature = "tokio")]
+mod tokio_impl;
+#[cfg(feature = "tokio")]
+pub use tokio_impl::fetch_url;
 
 #[cfg(feature = "blocking")]
 mod blocking_impl;
