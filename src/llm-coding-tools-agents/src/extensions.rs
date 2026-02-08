@@ -1,7 +1,8 @@
 //! Extension traits for core types.
 //!
-//! Provides additional constructors and helpers for types from the core crate
-//! that depend on agent-specific serialization formats.
+//! # Types
+//!
+//! - [`RulesetExt`] - Extension over [`Ruleset`] providing construction from agent permission configurations.
 
 use crate::config::PermissionRule;
 use indexmap::IndexMap;

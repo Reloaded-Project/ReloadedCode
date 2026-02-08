@@ -1,4 +1,31 @@
 //! Agent configuration loader with directory scanning.
+//!
+//! Provides [`AgentLoader`] for populating [`AgentCatalog`] from multiple sources:
+//! directories (`agent/**/*.md`, `agents/**/*.md`), individual files, strings, or
+//! in-memory configs. Later insertions override earlier entries with the same name.
+//!
+//! The loader is stateless and reusable—create once with [`AgentLoader::new()`]
+//! and populate multiple catalogs.
+//!
+//! # Example
+//!
+//! ```no_run
+//! use llm_coding_tools_agents::{AgentLoader, AgentCatalog};
+//! use std::path::Path;
+//!
+//! let loader = AgentLoader::new();
+//! let mut catalog = AgentCatalog::new();
+//!
+//! // Scan directories for agent definitions
+//! loader.add_directory(&mut catalog, Path::new("~/.opencode"))?;
+//!
+//! // Load specific files
+//! loader.add_file(&mut catalog, Path::new("custom.md"))?;
+//!
+//! // Parse from string (useful for embedded configs)
+//! loader.add_from_str(&mut catalog, "---\nmode: subagent\n---\nprompt", "agent-name")?;
+//! # Ok::<(), llm_coding_tools_agents::AgentLoadError>(())
+//! ```
 
 use crate::catalog::AgentCatalog;
 use crate::config::{AgentConfig, RawFrontmatter};
@@ -20,12 +47,12 @@ use std::path::{Path, PathBuf};
 /// # Example
 ///
 /// ```no_run
-/// use llm_coding_tools_agents::{AgentLoader, AgentCatalog, AgentLoadError};
+/// use llm_coding_tools_agents::{AgentLoader, AgentCatalog};
 /// use std::path::Path;
 ///
 /// let mut loader = AgentLoader::new();
 /// let mut catalog = AgentCatalog::new();
-/// loader.add_directory(&mut catalog, Path::new("~/.opencode"), None::<fn(&Path, &AgentLoadError)>)?;
+/// loader.add_directory(&mut catalog, Path::new("~/.opencode"))?;
 /// loader.add_file(&mut catalog, Path::new("/path/to/custom_agent.md"))?;
 /// # Ok::<(), llm_coding_tools_agents::AgentLoadError>(())
 /// ```
@@ -40,19 +67,43 @@ impl AgentLoader {
 
     /// Adds all agents from a directory to the catalog.
     ///
+    /// Scans for `agent/**/*.md` and `agents/**/*.md` patterns. Files that fail
+    /// to load are silently skipped. Use [`Self::add_directory_with_errors`] to
+    /// receive error callbacks.
+    ///
+    /// # Arguments
+    ///
+    /// * `catalog` - The catalog to insert agents into
+    /// * `directory` - Root directory to scan
+    ///
+    /// # Errors
+    ///
+    /// Returns an error only for directory-level failures (e.g., path is not a directory).
+    pub fn add_directory(
+        &self,
+        catalog: &mut AgentCatalog,
+        directory: impl Into<PathBuf>,
+    ) -> AgentLoadResult<()> {
+        self.add_directory_with_errors(catalog, directory, None::<fn(&Path, &AgentLoadError)>)
+    }
+
+    /// Adds all agents from a directory to the catalog with error handling.
+    ///
+    /// Like [`Self::add_directory`], but invokes the provided callback for each
+    /// file that fails to load.
+    ///
     /// # Arguments
     ///
     /// * `catalog` - The catalog to insert agents into
     /// * `directory` - Root directory to scan for `agent/**/*.md` and `agents/**/*.md`
-    /// * `on_error` - Optional callback invoked for each file that fails to load,
-    ///   receiving the file path and the error. Use this for logging or diagnostics.
+    /// * `on_error` - Callback invoked for each file that fails to load
     ///
     /// # Errors
     ///
     /// Returns an error only for directory-level failures (e.g., path is not a directory).
     /// Individual file load failures are reported via `on_error` and do not fail the overall
     /// operation.
-    pub fn add_directory(
+    pub fn add_directory_with_errors(
         &self,
         catalog: &mut AgentCatalog,
         directory: impl Into<PathBuf>,
@@ -411,9 +462,7 @@ mod tests {
 
         let loader = AgentLoader::new();
         let mut catalog = AgentCatalog::new();
-        loader
-            .add_directory(&mut catalog, dir.path(), None::<fn(&Path, &AgentLoadError)>)
-            .unwrap();
+        loader.add_directory(&mut catalog, dir.path()).unwrap();
 
         // Name should be "test-agent", not something derived from absolute path
         assert!(catalog.by_name("test-agent").is_some());
@@ -436,9 +485,7 @@ mod tests {
 
         let loader = AgentLoader::new();
         let mut catalog = AgentCatalog::new();
-        loader
-            .add_directory(&mut catalog, dir.path(), None::<fn(&Path, &AgentLoadError)>)
-            .unwrap();
+        loader.add_directory(&mut catalog, dir.path()).unwrap();
 
         assert!(catalog.by_name("test-agent").is_some());
         assert_eq!(catalog.by_name("test-agent").unwrap().description, "Test");
@@ -462,9 +509,7 @@ mod tests {
 
         let loader = AgentLoader::new();
         let mut catalog = AgentCatalog::new();
-        loader
-            .add_directory(&mut catalog, dir.path(), None::<fn(&Path, &AgentLoadError)>)
-            .unwrap();
+        loader.add_directory(&mut catalog, dir.path()).unwrap();
 
         assert!(catalog.by_name("nested/deep").is_some());
     }
@@ -487,9 +532,7 @@ mod tests {
 
         let loader = AgentLoader::new();
         let mut catalog = AgentCatalog::new();
-        loader
-            .add_directory(&mut catalog, dir.path(), None::<fn(&Path, &AgentLoadError)>)
-            .unwrap();
+        loader.add_directory(&mut catalog, dir.path()).unwrap();
 
         assert!(catalog.by_name("real").is_some());
     }
@@ -510,9 +553,7 @@ mod tests {
 
         let loader = AgentLoader::new();
         let mut catalog = AgentCatalog::new();
-        loader
-            .add_directory(&mut catalog, dir.path(), None::<fn(&Path, &AgentLoadError)>)
-            .unwrap();
+        loader.add_directory(&mut catalog, dir.path()).unwrap();
 
         assert!(catalog.iter().count() == 0);
     }
@@ -544,20 +585,8 @@ mod tests {
 
         let loader = AgentLoader::new();
         let mut catalog = AgentCatalog::new();
-        loader
-            .add_directory(
-                &mut catalog,
-                dir1.path(),
-                None::<fn(&Path, &AgentLoadError)>,
-            )
-            .unwrap();
-        loader
-            .add_directory(
-                &mut catalog,
-                dir2.path(),
-                None::<fn(&Path, &AgentLoadError)>,
-            )
-            .unwrap();
+        loader.add_directory(&mut catalog, dir1.path()).unwrap();
+        loader.add_directory(&mut catalog, dir2.path()).unwrap();
 
         assert!(catalog.by_name("first").is_some());
         assert!(catalog.by_name("second").is_some());
@@ -581,9 +610,7 @@ mod tests {
 
         let loader = AgentLoader::new();
         let mut catalog = AgentCatalog::new();
-        loader
-            .add_directory(&mut catalog, dir.path(), None::<fn(&Path, &AgentLoadError)>)
-            .unwrap();
+        loader.add_directory(&mut catalog, dir.path()).unwrap();
 
         assert_eq!(
             catalog.by_name("test").unwrap().model,
@@ -610,9 +637,7 @@ mod tests {
 
         let loader = AgentLoader::new();
         let mut catalog = AgentCatalog::new();
-        loader
-            .add_directory(&mut catalog, dir.path(), None::<fn(&Path, &AgentLoadError)>)
-            .unwrap();
+        loader.add_directory(&mut catalog, dir.path()).unwrap();
         let perms = &catalog.by_name("perms").unwrap().permission;
 
         assert_eq!(perms.len(), 2);
@@ -636,9 +661,7 @@ mod tests {
 
         let loader = AgentLoader::new();
         let mut catalog = AgentCatalog::new();
-        loader
-            .add_directory(&mut catalog, dir.path(), None::<fn(&Path, &AgentLoadError)>)
-            .unwrap();
+        loader.add_directory(&mut catalog, dir.path()).unwrap();
         // Should parse without error (flow syntax preserved)
         assert!(catalog.by_name("flow").is_some());
     }
@@ -815,9 +838,7 @@ mod tests {
 
         let loader = AgentLoader::new();
         let mut catalog = AgentCatalog::new();
-        loader
-            .add_directory(&mut catalog, dir.path(), None::<fn(&Path, &AgentLoadError)>)
-            .unwrap();
+        loader.add_directory(&mut catalog, dir.path()).unwrap();
 
         assert!(catalog.by_name("one").is_some());
         assert!(catalog.by_name("nested/two").is_some());
@@ -959,9 +980,7 @@ mod tests {
 
         let loader = AgentLoader::new();
         let mut catalog = AgentCatalog::new();
-        loader
-            .add_directory(&mut catalog, dir.path(), None::<fn(&Path, &AgentLoadError)>)
-            .unwrap();
+        loader.add_directory(&mut catalog, dir.path()).unwrap();
 
         // Invalid file should be skipped
         assert!(catalog.by_name("no-desc").is_none());
@@ -986,9 +1005,7 @@ mod tests {
 
         let loader = AgentLoader::new();
         let mut catalog = AgentCatalog::new();
-        loader
-            .add_directory(&mut catalog, dir.path(), None::<fn(&Path, &AgentLoadError)>)
-            .unwrap();
+        loader.add_directory(&mut catalog, dir.path()).unwrap();
 
         let agent = catalog.by_name("no-mode").unwrap();
         assert_eq!(agent.mode, AgentMode::All);
@@ -1025,9 +1042,7 @@ mod tests {
 
         let loader = AgentLoader::new();
         let mut catalog = AgentCatalog::new();
-        loader
-            .add_directory(&mut catalog, dir.path(), None::<fn(&Path, &AgentLoadError)>)
-            .unwrap();
+        loader.add_directory(&mut catalog, dir.path()).unwrap();
 
         // Invalid file should be skipped
         assert!(catalog.by_name("invalid-mode").is_none());

@@ -15,17 +15,12 @@ It is a drop-in replacement for OpenCode agent files: agents you create for Open
 ## Quick start
 
 ```rust,no_run
-use llm_coding_tools_agents::{AgentCatalog, AgentLoadError, AgentLoader};
-use std::path::Path;
+use llm_coding_tools_agents::{AgentCatalog, AgentLoader};
 
 let loader = AgentLoader::new();
 let mut catalog = AgentCatalog::new();
 
-loader.add_directory(
-    &mut catalog,
-    "/home/user/.opencode",
-    None::<fn(&Path, &AgentLoadError)>,
-)?;
+loader.add_directory(&mut catalog, "/home/user/.opencode")?;
 
 for agent in catalog.iter() {
     println!("{}: {}", agent.name, agent.description);
