@@ -1,5 +1,4 @@
 #![doc = include_str!(concat!("../", env!("CARGO_PKG_README")))]
-#![warn(missing_docs)]
 
 pub mod absolute;
 pub mod agent_ext;

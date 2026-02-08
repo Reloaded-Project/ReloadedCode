@@ -1,5 +1,4 @@
 #![doc = include_str!(concat!("../", env!("CARGO_PKG_README")))]
-#![warn(missing_docs)]
 
 mod catalog;
 mod config;

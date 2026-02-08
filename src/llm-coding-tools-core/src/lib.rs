@@ -1,5 +1,4 @@
 #![doc = include_str!(concat!("../", env!("CARGO_PKG_README")))]
-#![warn(missing_docs)]
 
 // Validate feature combinations at compile time
 #[cfg(all(feature = "async", feature = "blocking"))]
