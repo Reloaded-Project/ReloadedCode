@@ -62,3 +62,5 @@ To avoid false expectations, settings that require interaction are rejected, whi
 
 This crate only loads and validates agent configs.
 Pass [`AgentCatalog`] to your runtime adapter (for example, `llm-coding-tools-serdesai`) to build registries and Task tooling.
+
+[`Ruleset`]: llm_coding_tools_core::permissions::Ruleset

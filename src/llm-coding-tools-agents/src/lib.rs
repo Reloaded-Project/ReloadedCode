@@ -12,6 +12,5 @@ pub use config::{AgentConfig, AgentMode, PermissionRule};
 pub use error::AgentLoadError;
 pub use error::AgentLoadResult;
 pub use extensions::RulesetExt;
-pub use llm_coding_tools_core::permissions::{PermissionAction, Rule, Ruleset};
 pub use loader::AgentLoader;
 pub use parser::AgentParseError;

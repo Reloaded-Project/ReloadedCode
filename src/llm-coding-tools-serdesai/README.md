@@ -113,7 +113,8 @@ Setup requires three steps:
 3. **Create `TaskTool`** with registry, permissions, and deps
 
 ```rust,no_run
-use llm_coding_tools_agents::{AgentCatalog, AgentLoader, Ruleset};
+use llm_coding_tools_agents::{AgentCatalog, AgentLoader};
+use llm_coding_tools_core::permissions::Ruleset;
 use llm_coding_tools_serdesai::{
     AgentDefaults, AgentRegistryBuilder, TaskTool, TaskDefinitionSnapshot,
     TaskTargetSummary, default_tools, ProviderOverrides, TodoState, TaskRegistryHandle,

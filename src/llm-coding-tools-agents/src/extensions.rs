@@ -20,8 +20,8 @@ pub trait RulesetExt {
     /// # Example
     ///
     /// ```
-    /// use llm_coding_tools_agents::{Ruleset, RulesetExt, PermissionRule};
-    /// use llm_coding_tools_core::permissions::PermissionAction;
+    /// use llm_coding_tools_agents::{RulesetExt, PermissionRule};
+    /// use llm_coding_tools_core::permissions::{PermissionAction, Ruleset};
     /// use indexmap::IndexMap;
     ///
     /// let mut config = IndexMap::new();
