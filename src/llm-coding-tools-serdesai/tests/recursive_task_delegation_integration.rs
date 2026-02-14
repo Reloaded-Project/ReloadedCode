@@ -30,11 +30,11 @@ fn permission_from_ruleset(ruleset: &Ruleset) -> IndexMap<String, PermissionRule
 
     let mut permission = IndexMap::new();
     for (perm, patterns) in grouped {
-        if patterns.len() == 1 {
-            if let Some(action) = patterns.get("*") {
-                permission.insert(perm, PermissionRule::Action(*action));
-                continue;
-            }
+        if patterns.len() == 1
+            && let Some(action) = patterns.get("*")
+        {
+            permission.insert(perm, PermissionRule::Action(*action));
+            continue;
         }
         permission.insert(perm, PermissionRule::Pattern(patterns));
     }
