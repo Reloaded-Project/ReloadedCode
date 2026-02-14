@@ -34,7 +34,9 @@ pub async fn fetch_url(
         .to_string();
 
     // Check Content-Length header if available for early rejection and preallocation
-    let content_length = response.content_length().and_then(|len| usize::try_from(len).ok());
+    let content_length = response
+        .content_length()
+        .and_then(|len| usize::try_from(len).ok());
     if let Some(len) = content_length {
         check_size(len, url)?;
     }
