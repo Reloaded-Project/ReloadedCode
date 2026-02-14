@@ -42,7 +42,7 @@ fn get_openai_api_key() -> String {
 }
 
 // Embedded subagent config (loaded via include_str!)
-const SUBAGENT_CONFIG: &str = include_str!("agents/serdesai-agents.md");
+const SUBAGENT_CONFIG: &str = include_str!("agents/file-reader.md");
 
 #[tokio::main]
 async fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
@@ -53,26 +53,17 @@ async fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
     let mut catalog = AgentCatalog::new();
     loader.add_from_str(&mut catalog, SUBAGENT_CONFIG, "file-reader")?;
 
-    // === Choose absolute vs allowed tool flow ===
+    // === Setup allowed paths for sandboxed tools ===
     //
-    // Set OPENCODE_USE_ALLOWED environment variable to enable sandboxed (allowed) tools.
-    // Without the env var, tools use absolute paths with no restrictions.
-    let use_allowed = std::env::var("OPENCODE_USE_ALLOWED").is_ok();
-    let allowed_path_resolver = if use_allowed {
-        Some(AllowedPathResolver::new([
-            std::env::current_dir()?,
-            std::env::temp_dir(),
-        ])?)
-    } else {
-        None
-    };
+    // Tools are sandboxed to the current directory and temp directory.
+    let allowed_path_resolver =
+        AllowedPathResolver::new([std::env::current_dir()?, std::env::temp_dir()])?;
 
     // === Build tool catalog ===
     //
     // Use default_tools to create a catalog of cloneable tools.
-    // When use_allowed is true, tools are sandboxed to allowed directories.
-    // When false, tools can access any path.
-    let tools = default_tools(true, allowed_path_resolver.clone(), TodoState::new());
+    // Tools are sandboxed to allowed directories.
+    let tools = default_tools(true, Some(allowed_path_resolver), TodoState::new());
 
     // === Load models.dev catalog and build model resolver ===
     //
