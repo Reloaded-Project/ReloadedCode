@@ -32,11 +32,21 @@ struct FullProvider {
     #[serde(default)]
     env: Vec<String>,
     #[serde(default)]
-    models: std::collections::HashMap<String, ModelStub>,
+    models: std::collections::HashMap<String, FullModel>,
 }
 
 #[derive(Debug, Deserialize)]
-struct ModelStub {}
+struct FullModel {
+    #[serde(default)]
+    limit: Option<FullModelLimit>,
+}
+
+#[derive(Debug, Deserialize)]
+struct FullModelLimit {
+    context: u32,
+    #[serde(default)]
+    output: Option<u32>,
+}
 
 #[derive(Debug, serde::Serialize)]
 struct Snapshot {
@@ -49,7 +59,20 @@ struct ProviderSnapshot {
     npm: Option<String>,
     api: Option<String>,
     env: Vec<String>,
-    models: Vec<String>,
+    models: BTreeMap<String, ModelSnapshot>,
+}
+
+#[derive(Debug, serde::Serialize)]
+struct ModelSnapshot {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    limit: Option<ModelLimitSnapshot>,
+}
+
+#[derive(Debug, serde::Serialize)]
+struct ModelLimitSnapshot {
+    context: u32,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    output: Option<u32>,
 }
 
 #[tokio::main(flavor = "current_thread")]
@@ -72,8 +95,18 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let full_providers = full.into_providers();
     let mut providers = BTreeMap::new();
     for (provider_id, provider) in full_providers {
-        let mut models = provider.models.into_keys().collect::<Vec<_>>();
-        models.sort();
+        let mut models = BTreeMap::new();
+        for (model_id, model) in provider.models {
+            models.insert(
+                model_id,
+                ModelSnapshot {
+                    limit: model.limit.map(|limit| ModelLimitSnapshot {
+                        context: limit.context,
+                        output: limit.output,
+                    }),
+                },
+            );
+        }
         providers.insert(
             provider_id,
             ProviderSnapshot {

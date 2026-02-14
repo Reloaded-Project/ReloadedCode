@@ -19,6 +19,20 @@ const MODELS_DEV_API_URL_ENV: &str = "MODELS_DEV_API_URL";
 const CACHE_PATH_ENV: &str = "OPENCODE_MODELS_DEV_CACHE_PATH";
 static BUNDLED_ZST: &[u8] = include_bytes!(concat!(env!("OUT_DIR"), "/models.dev.min.json.zst"));
 
+mod model_limits {
+    use serde::{Deserialize, Serialize};
+
+    /// Compact model token limits extracted from models.dev.
+    #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+    pub struct ModelLimits {
+        pub context: u32,
+        #[serde(default)]
+        pub output: Option<u32>,
+    }
+}
+
+pub use model_limits::ModelLimits;
+
 /// Metadata for a models.dev provider.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ProviderMetadata {
@@ -63,6 +77,8 @@ pub struct CacheLoadResult {
 pub struct ModelsDevCatalog {
     providers: HashMap<String, ProviderMetadata>,
     models_to_providers: HashMap<String, Vec<String>>,
+    model_limits_by_provider: HashMap<String, HashMap<String, ModelLimits>>,
+    model_limits_by_model: HashMap<String, ModelLimits>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -80,7 +96,33 @@ struct ProviderSnapshot {
     #[serde(default)]
     env: Vec<String>,
     #[serde(default)]
-    models: Vec<String>,
+    models: ProviderModelsSnapshot,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(untagged)]
+enum ProviderModelsSnapshot {
+    Legacy(Vec<String>),
+    Detailed(HashMap<String, SnapshotModel>),
+}
+
+impl Default for ProviderModelsSnapshot {
+    fn default() -> Self {
+        Self::Legacy(Vec::new())
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+struct SnapshotModel {
+    #[serde(default)]
+    limit: Option<SnapshotModelLimit>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct SnapshotModelLimit {
+    context: u32,
+    #[serde(default)]
+    output: Option<u32>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -111,11 +153,21 @@ struct FullProvider {
     #[serde(default)]
     env: Vec<String>,
     #[serde(default)]
-    models: HashMap<String, ModelStub>,
+    models: HashMap<String, FullModel>,
 }
 
 #[derive(Debug, Deserialize)]
-struct ModelStub {}
+struct FullModel {
+    #[serde(default)]
+    limit: Option<FullModelLimit>,
+}
+
+#[derive(Debug, Deserialize)]
+struct FullModelLimit {
+    context: u32,
+    #[serde(default)]
+    output: Option<u32>,
+}
 
 /// Resolve the shared cache path for models.dev snapshots.
 ///
@@ -416,6 +468,22 @@ impl ModelsDevCatalog {
         self.providers.get(provider_id)
     }
 
+    /// Look up model limits by model ID when limits are unambiguous across providers.
+    #[inline]
+    pub fn get_model_limits(&self, model_id: &str) -> Option<&ModelLimits> {
+        self.model_limits_by_model.get(model_id)
+    }
+
+    /// Look up model limits for a model constrained to a provider.
+    #[inline]
+    pub fn get_model_limits_for_provider(
+        &self,
+        provider_id: &str,
+        model_id: &str,
+    ) -> Option<&ModelLimits> {
+        self.model_limits_by_provider.get(provider_id)?.get(model_id)
+    }
+
     fn from_snapshot_bytes(
         json: &[u8],
         model_filter: Option<&HashSet<String>>,
@@ -450,9 +518,14 @@ impl ModelsDevCatalog {
         Self::from_compressed_bytes(compressed, model_filter)
     }
 
+    #[allow(clippy::unnecessary_map_or, clippy::unwrap_or_default)]
     fn from_snapshot(snapshot: Snapshot, model_filter: Option<&HashSet<String>>) -> Self {
         let mut providers = HashMap::with_capacity(snapshot.providers.len());
         let mut models_to_providers = HashMap::new();
+        let mut model_limits_by_provider: HashMap<String, HashMap<String, ModelLimits>> =
+            HashMap::new();
+        let mut model_limits_by_model: HashMap<String, ModelLimits> = HashMap::new();
+        let mut conflicting_model_limits: HashSet<String> = HashSet::new();
 
         for (provider_id, provider) in snapshot.providers {
             let metadata = ProviderMetadata {
@@ -463,22 +536,62 @@ impl ModelsDevCatalog {
             };
             providers.insert(provider_id.clone(), metadata);
 
-            for model_id in provider.models {
-                if let Some(filter) = model_filter {
-                    if !filter.contains(&model_id) {
-                        continue;
+            match provider.models {
+                ProviderModelsSnapshot::Legacy(model_ids) => {
+                    for model_id in model_ids {
+                        if model_filter.map_or(false, |filter| !filter.contains(&model_id)) {
+                            continue;
+                        }
+                        models_to_providers
+                            .entry(model_id)
+                            .or_insert_with(Vec::new)
+                            .push(provider_id.clone());
                     }
                 }
-                models_to_providers
-                    .entry(model_id)
-                    .or_insert_with(Vec::new)
-                    .push(provider_id.clone());
+                ProviderModelsSnapshot::Detailed(models) => {
+                    for (model_id, model) in models {
+                        if model_filter.map_or(false, |filter| !filter.contains(&model_id)) {
+                            continue;
+                        }
+                        models_to_providers
+                            .entry(model_id.clone())
+                            .or_insert_with(Vec::new)
+                            .push(provider_id.clone());
+
+                        if let Some(limit) = model.limit {
+                            let limits = ModelLimits {
+                                context: limit.context,
+                                output: limit.output,
+                            };
+
+                            model_limits_by_provider
+                                .entry(provider_id.clone())
+                                .or_default()
+                                .insert(model_id.clone(), limits.clone());
+
+                            if !conflicting_model_limits.contains(&model_id) {
+                                match model_limits_by_model.get(&model_id) {
+                                    None => {
+                                        model_limits_by_model.insert(model_id.clone(), limits);
+                                    }
+                                    Some(existing) if existing == &limits => {}
+                                    Some(_) => {
+                                        model_limits_by_model.remove(&model_id);
+                                        conflicting_model_limits.insert(model_id.clone());
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
             }
         }
 
         Self {
             providers,
             models_to_providers,
+            model_limits_by_provider,
+            model_limits_by_model,
         }
     }
 }
@@ -488,8 +601,18 @@ fn snapshot_from_full_reader<R: Read>(reader: R) -> Result<Snapshot, CatalogErro
     let full_providers = full.into_providers();
     let mut providers = HashMap::with_capacity(full_providers.len());
     for (provider_id, provider) in full_providers {
-        let mut models = provider.models.into_keys().collect::<Vec<_>>();
-        models.sort();
+        let mut models = HashMap::with_capacity(provider.models.len());
+        for (model_id, model) in provider.models {
+            models.insert(
+                model_id,
+                SnapshotModel {
+                    limit: model.limit.map(|limit| SnapshotModelLimit {
+                        context: limit.context,
+                        output: limit.output,
+                    }),
+                },
+            );
+        }
         providers.insert(
             provider_id,
             ProviderSnapshot {
@@ -497,7 +620,7 @@ fn snapshot_from_full_reader<R: Read>(reader: R) -> Result<Snapshot, CatalogErro
                 npm: provider.npm,
                 api: provider.api,
                 env: provider.env,
-                models,
+                models: ProviderModelsSnapshot::Detailed(models),
             },
         );
     }
@@ -585,11 +708,13 @@ mod tests {
         let (model_id, provider_id) = snapshot
             .providers
             .values()
-            .find_map(|provider| {
-                provider
-                    .models
-                    .first()
-                    .map(|id| (id.clone(), provider.id.clone()))
+            .find_map(|provider| match &provider.models {
+                ProviderModelsSnapshot::Detailed(models) => {
+                    models.keys().next().map(|id| (id.clone(), provider.id.clone()))
+                }
+                ProviderModelsSnapshot::Legacy(models) => {
+                    models.first().map(|id| (id.clone(), provider.id.clone()))
+                }
             })
             .expect("bundled has model");
         let mut filter = HashSet::new();
@@ -653,15 +778,28 @@ mod tests {
         let json = br#"{"alpha":{"id":"alpha","npm":null,"api":null,"env":[],"models":{"m1":{}}}}"#;
         let snapshot = snapshot_from_full_bytes(json).expect("parse flat full snapshot");
         let provider = snapshot.providers.get("alpha").expect("alpha provider");
-        assert_eq!(provider.models, vec!["m1".to_string()]);
+        match &provider.models {
+            ProviderModelsSnapshot::Detailed(models) => {
+                assert!(models.contains_key("m1"));
+            }
+            _ => panic!("expected Detailed variant"),
+        }
     }
 
     #[test]
     fn snapshot_from_full_bytes_accepts_nested_map() {
-        let json = br#"{"providers":{"alpha":{"id":"alpha","npm":null,"api":null,"env":[],"models":{"m1":{}}}}}"#;
+        let json = br#"{"providers":{"alpha":{"id":"alpha","npm":null,"api":null,"env":[],"models":{"m1":{"limit":{"context":128000}}}}}}"#;
         let snapshot = snapshot_from_full_bytes(json).expect("parse nested full snapshot");
-        let provider = snapshot.providers.get("alpha").expect("alpha provider");
-        assert_eq!(provider.models, vec!["m1".to_string()]);
+        let snapshot_json = serde_json::to_vec(&snapshot).expect("serialize snapshot");
+        let catalog = ModelsDevCatalog::from_snapshot_bytes(&snapshot_json, None)
+            .expect("parse snapshot bytes");
+        assert_eq!(
+            catalog
+                .get_model_limits_for_provider("alpha", "m1")
+                .expect("provider scoped limit")
+                .context,
+            128000
+        );
     }
 
     #[tokio::test]
@@ -780,11 +918,18 @@ mod tests {
     }
 
     #[test]
-    fn snapshot_strips_model_fields_to_string_list() {
-        let json = br#"{"providers":{"alpha":{"id":"alpha","npm":null,"api":null,"env":[],"models":{"m1":{"description":"desc"}}}}}"#;
+    fn snapshot_strips_model_fields_except_limits() {
+        let json = br#"{"providers":{"alpha":{"id":"alpha","npm":null,"api":null,"env":[],"models":{"m1":{"description":"desc","limit":{"context":4096}}}}}}"#;
         let snapshot = snapshot_from_full_bytes(json).expect("snapshot");
         let provider = snapshot.providers.get("alpha").expect("provider");
-        assert_eq!(provider.models, vec!["m1".to_string()]);
+        match &provider.models {
+            ProviderModelsSnapshot::Detailed(models) => {
+                let model = models.get("m1").expect("m1 model");
+                assert!(model.limit.is_some());
+                assert_eq!(model.limit.as_ref().unwrap().context, 4096);
+            }
+            _ => panic!("expected Detailed variant"),
+        }
     }
 
     #[tokio::test]
@@ -853,5 +998,68 @@ mod tests {
         let corrupt = temp.path().join("bad.zst");
         assert_shared_cache_fallback(&missing, None).await;
         assert_shared_cache_fallback(&corrupt, Some(b"not-zstd")).await;
+    }
+
+    #[test]
+    fn model_limits_lookup_from_detailed_snapshot() {
+        let json = br#"{"providers":{"alpha":{"id":"alpha","npm":null,"api":null,"env":[],"models":{"m1":{"limit":{"context":8192,"output":1024}}}}}}"#;
+        let catalog =
+            ModelsDevCatalog::from_snapshot_bytes(json, None).expect("parse detailed snapshot");
+
+        let limits = catalog.get_model_limits("m1").expect("model limits");
+        assert_eq!(limits.context, 8192);
+        assert_eq!(limits.output, Some(1024));
+        assert_eq!(
+            catalog
+                .get_model_limits_for_provider("alpha", "m1")
+                .expect("provider limits")
+                .context,
+            8192
+        );
+    }
+
+    #[test]
+    fn provider_scoped_lookup_returns_none_when_provider_missing_model() {
+        let json = br#"{"providers":{"alpha":{"id":"alpha","npm":null,"api":null,"env":[],"models":{"m1":{"limit":{"context":4096,"output":512}}}},"beta":{"id":"beta","npm":null,"api":null,"env":[],"models":{"m2":{"limit":{"context":4096,"output":256}}}}}}"#;
+        let catalog =
+            ModelsDevCatalog::from_snapshot_bytes(json, None).expect("parse detailed snapshot");
+
+        assert!(catalog.get_model_limits_for_provider("beta", "m1").is_none());
+        assert!(catalog.get_model_limits_for_provider("missing", "m1").is_none());
+    }
+
+    #[test]
+    fn conflicting_limits_for_same_model_stay_provider_scoped() {
+        let json = br#"{"providers":{"alpha":{"id":"alpha","npm":null,"api":null,"env":[],"models":{"m-shared":{"limit":{"context":8192,"output":1024}}}},"beta":{"id":"beta","npm":null,"api":null,"env":[],"models":{"m-shared":{"limit":{"context":16384}}}}}}"#;
+        let catalog =
+            ModelsDevCatalog::from_snapshot_bytes(json, None).expect("parse conflicting detailed snapshot");
+
+        assert_eq!(
+            catalog
+                .get_model_limits_for_provider("alpha", "m-shared")
+                .expect("alpha scoped")
+                .output,
+            Some(1024)
+        );
+        assert_eq!(
+            catalog
+                .get_model_limits_for_provider("beta", "m-shared")
+                .expect("beta scoped")
+                .output,
+            None
+        );
+        assert!(catalog.get_model_limits("m-shared").is_none());
+    }
+
+    #[test]
+    fn legacy_snapshot_without_limits_still_works() {
+        let json = br#"{"providers":{"alpha":{"id":"alpha","npm":null,"api":null,"env":[],"models":["m1","m2"]}}}"#;
+        let catalog =
+            ModelsDevCatalog::from_snapshot_bytes(json, None).expect("parse legacy snapshot");
+
+        let providers = catalog.resolve_provider_for_model("m1").expect("providers");
+        assert!(providers.iter().any(|id| id == "alpha"));
+        assert!(catalog.get_model_limits("m1").is_none());
+        assert!(catalog.get_model_limits_for_provider("alpha", "m1").is_none());
     }
 }

@@ -16,7 +16,7 @@ This crate provides a standalone catalog for models.dev provider and model data,
 
 ```rust
 # fn main() -> Result<(), Box<dyn std::error::Error>> {
-use llm_coding_tools_models_dev::{ModelsDevCatalog, CatalogSource};
+use llm_coding_tools_models_dev::{CatalogSource, ModelLimits, ModelsDevCatalog};
 use std::collections::HashSet;
 
 // Load bundled snapshot
@@ -31,6 +31,11 @@ if let Some(provider_ids) = providers {
             println!("Provider: {} - env: {:?}", metadata.id, metadata.env);
         }
     }
+}
+
+// Optional model-limit lookups
+if let Some(ModelLimits { context, output }) = catalog.get_model_limits("gpt-4o") {
+    println!("gpt-4o context={} output={:?}", context, output);
 }
 
 // Load with model filtering
