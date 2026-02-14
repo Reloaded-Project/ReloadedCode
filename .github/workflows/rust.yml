@@ -10,7 +10,8 @@ on:
   workflow_dispatch:
 
 jobs:
-  build-and-test:
+  build-and-test-async:
+    name: Build and Test (Async/Tokio)
     strategy:
       matrix:
         include:
@@ -29,7 +30,7 @@ jobs:
     steps:
       - uses: actions/checkout@v6
 
-      - name: Run Tests (async mode) and Upload Coverage
+      - name: Run Tests (Async Mode) and Upload Coverage
         uses: Reloaded-Project/devops-rust-test-and-coverage@v1
         with:
           rust-project-path: ./src
@@ -37,20 +38,6 @@ jobs:
           codecov-token: ${{ secrets.CODECOV_TOKEN }}
           target: ${{ matrix.target }}
           use-cross: ${{ matrix.use-cross }}
-
-      - name: Run Tests (blocking mode) and Upload Coverage
-        uses: Reloaded-Project/devops-rust-test-and-coverage@v1
-        with:
-          rust-project-path: ./src
-          upload-coverage: true
-          codecov-token: ${{ secrets.CODECOV_TOKEN }}
-          target: ${{ matrix.target }}
-          use-cross: ${{ matrix.use-cross }}
-          additional-test-args: "-p llm-coding-tools-core"
-          additional-tarpaulin-args: "--exclude llm-coding-tools-serdesai"
-          no-default-features: true
-          features: "blocking"
-          setup-rust-cache: false
 
       # Note: The GitHub Runner Images will contain an up to date Rust Stable Toolchain
       #       thus as per recommendation of cargo-semver-checks, we're using stable here.
@@ -108,11 +95,64 @@ jobs:
         with:
           manifest-path: src/Cargo.toml
 
+  build-and-test-blocking:
+    name: Build and Test (Blocking)
+    strategy:
+      matrix:
+        include:
+          - os: ubuntu-latest
+            target: x86_64-unknown-linux-gnu
+            use-cross: false
+          - os: windows-latest
+            target: x86_64-pc-windows-msvc
+            use-cross: false
+          - os: macos-latest
+            target: aarch64-apple-darwin
+            use-cross: false
+
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Run Tests (Blocking Mode) and Upload Coverage
+        uses: Reloaded-Project/devops-rust-test-and-coverage@v1
+        with:
+          rust-project-path: ./src
+          upload-coverage: true
+          codecov-token: ${{ secrets.CODECOV_TOKEN }}
+          target: ${{ matrix.target }}
+          use-cross: ${{ matrix.use-cross }}
+          packages: |
+            llm-coding-tools-core
+          no-default-features: true
+          features: "blocking"
+
+      - name: Check documentation is valid
+        if: github.event_name == 'pull_request' || startsWith(github.ref, 'refs/tags/')
+        working-directory: src
+        env:
+          RUSTDOCFLAGS: "-D warnings"
+        run: |
+          cargo doc -p llm-coding-tools-core --no-default-features --features blocking --document-private-items --no-deps --target ${{ matrix.target }}
+
+      - name: Run linter (Blocking)
+        if: github.event_name == 'pull_request' || startsWith(github.ref, 'refs/tags/')
+        working-directory: src
+        run: |
+          cargo clippy -p llm-coding-tools-core --no-default-features --features blocking --target ${{ matrix.target }} -- -D warnings
+
+      - name: Run formatter check
+        uses: actions-rust-lang/rustfmt@v1
+        if: github.event_name == 'pull_request' || startsWith(github.ref, 'refs/tags/')
+        with:
+          manifest-path: src/Cargo.toml
+
   publish-crate:
     permissions:
       contents: write
 
-    needs: [build-and-test]
+    needs: [build-and-test-async, build-and-test-blocking]
     # Publish only on tags
     if: startsWith(github.ref, 'refs/tags/')
     runs-on: ubuntu-latest
