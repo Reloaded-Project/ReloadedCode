@@ -234,7 +234,7 @@ let overrides = ProviderOverrides::new().insert_override(
 let resolver = ModelsDevResolver::new(Some(catalog), overrides.clone());
 
 let defaults = AgentDefaults {
-    model: "openai:hf:zai-org/GLM-4.7".into(),
+    model: "synthetic/hf:zai-org/GLM-4.7".into(),
     model_resolver: Some(resolver),
     provider_overrides: overrides,
     api_key: None,
@@ -247,7 +247,9 @@ let defaults = AgentDefaults {
 # }
 ```
 
-**OpenAI-compatible providers**: serdesAI does not infer providers from base URLs. Use an `openai:` model spec and set a provider-specific `base_url` via overrides.
+**OpenCode model specs**: use `<provider>/<model>` in agent/frontmatter configuration (for example `synthetic/hf:zai-org/GLM-4.7`). Resolver preserves the original spec and infers runtime provider family from models.dev `provider.npm`.
+
+**OpenAI-compatible providers**: keep provider identity in the user spec (for example `router/m1`); resolver derives openai-compatible runtime behavior from `@ai-sdk/openai-compatible` metadata and resolves provider-specific base URL settings.
 
 **Reasoning models**: If you need `OpenAIResponsesModel` for `o1`, `o3`, or `gpt-5`, construct it directly instead of using `ModelConfig`.
 

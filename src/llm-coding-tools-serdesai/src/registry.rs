@@ -277,15 +277,12 @@ where
                     message: err.to_string(),
                 })?;
 
-        let (spec_provider, resolved_model_id) = resolved
-            .spec
-            .split_once(':')
-            .unwrap_or(("", resolved.spec.as_str()));
-        let resolved_provider = if resolved.provider_id.is_empty() {
-            spec_provider
-        } else {
-            resolved.provider_id.as_str()
-        };
+        let resolved_provider = resolved.runtime_provider.as_str();
+        let resolved_model_id = resolved.runtime_model_id.as_str();
+
+        debug_assert!(!resolved.runtime_provider.is_empty());
+        debug_assert!(!resolved.runtime_model_id.is_empty());
+        debug_assert!(!resolved.runtime_spec.is_empty());
 
         if (resolved.provider_id.is_empty() || resolved.provider_id == "openai")
             && resolved_provider == "openai"
@@ -344,7 +341,7 @@ where
                 AgentBuilder::<Arc<Deps>, String>::new(model)
             }
             _ => {
-                let mut model_config = ModelConfig::new(&resolved.spec);
+                let mut model_config = ModelConfig::new(&resolved.runtime_spec);
                 if let Some(api_key) = resolved.api_key {
                     model_config = model_config.with_api_key(api_key);
                 }

@@ -9,8 +9,14 @@ use std::time::Duration;
 /// Resolved model settings computed by a [`ModelResolver`].
 #[derive(Clone)]
 pub struct ResolvedModel {
-    /// Model spec in `provider:model` format.
+    /// Original model spec as requested by agent/frontmatter.
     pub spec: String,
+    /// Runtime provider family used by registry model construction.
+    pub runtime_provider: String,
+    /// Runtime model identifier consumed by provider-specific builders.
+    pub runtime_model_id: String,
+    /// Runtime canonical `provider:model` spec used by `ModelConfig`.
+    pub runtime_spec: String,
     /// Resolved API key, if required by the provider.
     pub api_key: Option<String>,
     /// Resolved base URL, when supported and required.
@@ -27,6 +33,9 @@ impl fmt::Debug for ResolvedModel {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("ResolvedModel")
             .field("spec", &self.spec)
+            .field("runtime_provider", &self.runtime_provider)
+            .field("runtime_model_id", &self.runtime_model_id)
+            .field("runtime_spec", &self.runtime_spec)
             .field("api_key", &self.api_key.as_ref().map(|_| "[REDACTED]"))
             .field("base_url", &self.base_url)
             .field("timeout", &self.timeout)
@@ -259,11 +268,87 @@ impl ModelsDevResolver {
     }
 }
 
+struct ParsedModelSpec<'a> {
+    requested_spec: &'a str,
+    explicit_provider: Option<&'a str>,
+    model_id: &'a str,
+}
+
+fn parse_model_spec<'a>(model_spec: &'a str) -> ParsedModelSpec<'a> {
+    let colon_pos = model_spec.find(':');
+    let slash_pos = model_spec.find('/');
+
+    let use_colon = match (colon_pos, slash_pos) {
+        (Some(c), Some(s)) => c < s,
+        (Some(_), None) => true,
+        (None, Some(_)) => false,
+        (None, None) => false,
+    };
+
+    if use_colon {
+        if let Some((provider, model_id)) = model_spec.split_once(':')
+            && !provider.is_empty()
+            && !model_id.is_empty()
+        {
+            return ParsedModelSpec {
+                requested_spec: model_spec,
+                explicit_provider: Some(provider),
+                model_id,
+            };
+        }
+    } else if let Some((provider, model_id)) = model_spec.split_once('/')
+        && !provider.is_empty()
+        && !model_id.is_empty()
+    {
+        return ParsedModelSpec {
+            requested_spec: model_spec,
+            explicit_provider: Some(provider),
+            model_id,
+        };
+    }
+
+    ParsedModelSpec {
+        requested_spec: model_spec,
+        explicit_provider: None,
+        model_id: model_spec,
+    }
+}
+
+fn infer_runtime_from_raw_spec(model_spec: &str) -> (String, String, String) {
+    let parsed = parse_model_spec(model_spec);
+    let provider = parsed.explicit_provider.unwrap_or("openai");
+    let model_id = parsed.model_id;
+
+    let runtime_provider = match provider {
+        "anthropic" => "anthropic",
+        "google" => "google",
+        "groq" => "groq",
+        "mistral" => "mistral",
+        "cohere" => "cohere",
+        "ollama" => "ollama",
+        "openrouter" => "openrouter",
+        "huggingface" => "huggingface",
+        _ => "openai",
+    };
+
+    let runtime_spec = format!("{}:{}", runtime_provider, model_id);
+    (
+        runtime_provider.to_string(),
+        model_id.to_string(),
+        runtime_spec,
+    )
+}
+
 impl ModelResolver for ModelsDevResolver {
     fn resolve(&self, model_spec: &str) -> Result<ResolvedModel, ModelResolveError> {
         let Some(catalog) = &self.catalog else {
+            let (runtime_provider, runtime_model_id, runtime_spec) =
+                infer_runtime_from_raw_spec(model_spec);
             return Ok(ResolvedModel {
                 spec: model_spec.to_string(),
+                runtime_provider,
+                runtime_model_id,
+                runtime_spec,
                 api_key: None,
                 base_url: None,
                 timeout: None,
@@ -272,16 +357,9 @@ impl ModelResolver for ModelsDevResolver {
             });
         };
 
-        let (provider_prefix, model_id) = {
-            let mut parts = model_spec.splitn(2, ':');
-            let first = parts.next().unwrap_or("");
-            let second = parts.next();
-            if let Some(model_id) = second {
-                (Some(first), model_id)
-            } else {
-                (None, model_spec)
-            }
-        };
+        let parsed = parse_model_spec(model_spec);
+        let provider_prefix = parsed.explicit_provider;
+        let model_id = parsed.model_id;
 
         if let Some(provider_id) = provider_prefix {
             let provider = catalog
@@ -295,7 +373,13 @@ impl ModelResolver for ModelsDevResolver {
                 });
             }
 
-            return resolve_provider_model(provider, model_id, true, &self.overrides);
+            return resolve_provider_model(
+                provider,
+                parsed.requested_spec,
+                model_id,
+                true,
+                &self.overrides,
+            );
         }
 
         let providers = catalog.resolve_provider_for_model(model_id).unwrap_or(&[]);
@@ -329,12 +413,19 @@ impl ModelResolver for ModelsDevResolver {
         let provider = catalog
             .get_provider(provider_id)
             .ok_or_else(|| ModelResolveError::UnknownProvider(provider_id.to_string()))?;
-        resolve_provider_model(provider, model_id, false, &self.overrides)
+        resolve_provider_model(
+            provider,
+            parsed.requested_spec,
+            model_id,
+            false,
+            &self.overrides,
+        )
     }
 }
 
 fn resolve_provider_model(
     provider: &ProviderMetadata,
+    requested_spec: &str,
     model_id: &str,
     explicit_provider: bool,
     overrides: &ProviderOverrides,
@@ -464,7 +555,7 @@ fn resolve_provider_model(
         }
     };
 
-    let spec = format!("{}:{}", serdes_provider, model_id);
+    let runtime_spec = format!("{}:{}", serdes_provider, model_id);
     let source = if explicit_provider || used_api_override || used_base_override {
         ResolutionSource::ExplicitOverride
     } else {
@@ -472,7 +563,10 @@ fn resolve_provider_model(
     };
 
     Ok(ResolvedModel {
-        spec,
+        spec: requested_spec.to_string(),
+        runtime_provider: serdes_provider.to_string(),
+        runtime_model_id: model_id.to_string(),
+        runtime_spec,
         api_key,
         base_url,
         timeout: None,
@@ -503,7 +597,10 @@ mod tests {
         let resolver =
             ModelsDevResolver::new(Some(catalog_from_json(json)), ProviderOverrides::new());
         let resolved = resolver.resolve("alpha:m1").expect("resolve");
-        assert_eq!(resolved.spec, "openai:m1");
+        assert_eq!(resolved.spec, "alpha:m1");
+        assert_eq!(resolved.runtime_spec, "openai:m1");
+        assert_eq!(resolved.runtime_provider, "openai");
+        assert_eq!(resolved.runtime_model_id, "m1");
         unsafe { std::env::remove_var("ALPHA_API_KEY") };
     }
 
@@ -527,7 +624,10 @@ mod tests {
         let resolver =
             ModelsDevResolver::new(Some(catalog_from_json(json)), ProviderOverrides::new());
         let resolved = resolver.resolve("m1").expect("resolve");
-        assert_eq!(resolved.spec, "openai:m1");
+        assert_eq!(resolved.spec, "m1");
+        assert_eq!(resolved.runtime_spec, "openai:m1");
+        assert_eq!(resolved.runtime_provider, "openai");
+        assert_eq!(resolved.runtime_model_id, "m1");
         unsafe { std::env::remove_var("ALPHA_API_KEY") };
     }
 
@@ -545,6 +645,9 @@ mod tests {
         let resolver = ModelsDevResolver::new(None, ProviderOverrides::new());
         let resolved = resolver.resolve("openai:gpt-4o").expect("fallback");
         assert_eq!(resolved.spec, "openai:gpt-4o");
+        assert_eq!(resolved.runtime_provider, "openai");
+        assert_eq!(resolved.runtime_model_id, "gpt-4o");
+        assert_eq!(resolved.runtime_spec, "openai:gpt-4o");
         assert!(matches!(resolved.source, ResolutionSource::Fallback));
     }
 
@@ -553,6 +656,8 @@ mod tests {
         let resolver = ModelsDevResolver::new(None, ProviderOverrides::new());
         let resolved = resolver.resolve("any:model").expect("fallback");
         assert_eq!(resolved.provider_id, "");
+        assert_eq!(resolved.runtime_provider, "openai");
+        assert_eq!(resolved.runtime_model_id, "model");
     }
 
     #[test]
@@ -628,6 +733,7 @@ mod tests {
             ModelsDevResolver::new(Some(catalog_from_json(json)), ProviderOverrides::new());
         let resolved = resolver.resolve("openai:gpt-4").expect("resolve");
         assert_eq!(resolved.spec, "openai:gpt-4");
+        assert_eq!(resolved.runtime_spec, "openai:gpt-4");
         assert_eq!(resolved.api_key.as_deref(), Some("key"));
         unsafe { std::env::remove_var("OPENAI_API_KEY") };
     }
@@ -814,7 +920,9 @@ mod tests {
             ModelsDevResolver::new(Some(catalog_from_json(json)), ProviderOverrides::new());
         let resolved = resolver.resolve("router:m1").expect("resolve");
         assert_eq!(resolved.provider_id, "router");
-        assert_eq!(resolved.spec, "openai:m1");
+        assert_eq!(resolved.spec, "router:m1");
+        assert_eq!(resolved.runtime_spec, "openai:m1");
+        assert_eq!(resolved.runtime_provider, "openai");
         unsafe { std::env::remove_var("ROUTER_API_KEY") };
     }
 
@@ -827,7 +935,9 @@ mod tests {
         let overrides = ProviderOverrides::new().with_default_provider("beta");
         let resolver = ModelsDevResolver::new(Some(catalog_from_json(json)), overrides);
         let resolved = resolver.resolve("m1").expect("resolve");
-        assert_eq!(resolved.spec, "mistral:m1");
+        assert_eq!(resolved.spec, "m1");
+        assert_eq!(resolved.runtime_spec, "mistral:m1");
+        assert_eq!(resolved.runtime_provider, "mistral");
         unsafe { std::env::remove_var("ALPHA_API_KEY") };
         unsafe { std::env::remove_var("BETA_API_KEY") };
     }
@@ -889,6 +999,8 @@ mod tests {
             ModelsDevResolver::new(Some(catalog_from_json(json)), ProviderOverrides::new());
         let resolved = resolver.resolve("google:gemini-pro").expect("resolve");
         assert_eq!(resolved.spec, "google:gemini-pro");
+        assert_eq!(resolved.runtime_spec, "google:gemini-pro");
+        assert_eq!(resolved.runtime_provider, "google");
         assert_eq!(resolved.api_key.as_deref(), Some("key"));
         unsafe { std::env::remove_var("GOOGLE_API_KEY") };
     }
@@ -924,7 +1036,92 @@ mod tests {
         let resolver =
             ModelsDevResolver::new(Some(catalog_from_json(json)), ProviderOverrides::new());
         let resolved = resolver.resolve("alpha:model:v1").expect("resolve");
-        assert_eq!(resolved.spec, "openai:model:v1");
+        assert_eq!(resolved.spec, "alpha:model:v1");
+        assert_eq!(resolved.runtime_provider, "openai");
+        assert_eq!(resolved.runtime_model_id, "model:v1");
+        assert_eq!(resolved.runtime_spec, "openai:model:v1");
         unsafe { std::env::remove_var("ALPHA_API_KEY") };
+    }
+
+    #[test]
+    fn fallback_populates_runtime_fields() {
+        let resolver = ModelsDevResolver::new(None, ProviderOverrides::new());
+        let resolved = resolver
+            .resolve("synthetic/hf:zai-org/GLM-4.7")
+            .expect("fallback");
+        assert_eq!(resolved.spec, "synthetic/hf:zai-org/GLM-4.7");
+        assert_eq!(resolved.runtime_provider, "openai");
+        assert_eq!(resolved.runtime_model_id, "hf:zai-org/GLM-4.7");
+        assert_eq!(resolved.runtime_spec, "openai:hf:zai-org/GLM-4.7");
+        assert!(matches!(resolved.source, ResolutionSource::Fallback));
+    }
+
+    #[test]
+    fn fallback_colon_form_with_slash_model_id_populates_runtime_fields() {
+        let resolver = ModelsDevResolver::new(None, ProviderOverrides::new());
+        let resolved = resolver
+            .resolve("huggingface:tiiuae/falcon-7b")
+            .expect("fallback");
+        assert_eq!(resolved.spec, "huggingface:tiiuae/falcon-7b");
+        assert_eq!(resolved.runtime_provider, "huggingface");
+        assert_eq!(resolved.runtime_model_id, "tiiuae/falcon-7b");
+        assert_eq!(resolved.runtime_spec, "huggingface:tiiuae/falcon-7b");
+        assert!(matches!(resolved.source, ResolutionSource::Fallback));
+    }
+
+    #[test]
+    fn slash_form_unknown_provider_errors() {
+        let _guard = ENV_LOCK.lock().unwrap();
+        unsafe { std::env::set_var("ALPHA_API_KEY", "key") };
+        let resolver = ModelsDevResolver::new(
+            Some(catalog_from_json(
+                r#"{"providers":{"alpha":{"id":"alpha","npm":"@ai-sdk/openai","api":null,"env":["ALPHA_API_KEY"],"models":{"m1":{}}}}}"#,
+            )),
+            ProviderOverrides::new(),
+        );
+        let err = resolver
+            .resolve("unknown/m1")
+            .expect_err("unknown slash provider");
+        assert!(
+            matches!(err, ModelResolveError::UnknownProvider(provider) if provider == "unknown")
+        );
+        unsafe { std::env::remove_var("ALPHA_API_KEY") };
+    }
+
+    #[test]
+    fn slash_form_with_colon_model_id_resolves() {
+        let _guard = ENV_LOCK.lock().unwrap();
+        unsafe { std::env::set_var("SYNTH_API_KEY", "key") };
+        let resolver = ModelsDevResolver::new(
+            Some(catalog_from_json(
+                r#"{"providers":{"synthetic":{"id":"synthetic","npm":"@ai-sdk/openai-compatible","api":"https://api.synthetic/v1","env":["SYNTH_API_KEY"],"models":{"hf:zai-org/GLM-4.7":{}}}}}"#,
+            )),
+            ProviderOverrides::new(),
+        );
+        let resolved = resolver
+            .resolve("synthetic/hf:zai-org/GLM-4.7")
+            .expect("resolve");
+        assert_eq!(resolved.spec, "synthetic/hf:zai-org/GLM-4.7");
+        assert_eq!(resolved.runtime_provider, "openai");
+        assert_eq!(resolved.runtime_model_id, "hf:zai-org/GLM-4.7");
+        unsafe { std::env::remove_var("SYNTH_API_KEY") };
+    }
+
+    #[test]
+    fn colon_form_with_slash_model_id_still_resolves() {
+        let _guard = ENV_LOCK.lock().unwrap();
+        unsafe { std::env::set_var("HF_API_KEY", "key") };
+        let resolver = ModelsDevResolver::new(
+            Some(catalog_from_json(
+                r#"{"providers":{"huggingface":{"id":"huggingface","npm":"@ai-sdk/openai-compatible","api":"https://api.hf/v1","env":["HF_API_KEY"],"models":{"tiiuae/falcon-7b":{}}}}}"#,
+            )),
+            ProviderOverrides::new(),
+        );
+        let resolved = resolver
+            .resolve("huggingface:tiiuae/falcon-7b")
+            .expect("resolve");
+        assert_eq!(resolved.spec, "huggingface:tiiuae/falcon-7b");
+        assert_eq!(resolved.runtime_model_id, "tiiuae/falcon-7b");
+        unsafe { std::env::remove_var("HF_API_KEY") };
     }
 }

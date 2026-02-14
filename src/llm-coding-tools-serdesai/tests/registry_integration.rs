@@ -4,8 +4,8 @@ use llm_coding_tools_core::permissions::PermissionAction;
 use llm_coding_tools_core::tool_names;
 use llm_coding_tools_models_dev::ModelsDevCatalog;
 use llm_coding_tools_serdesai::{
-    AgentDefaults, AgentRegistryBuildError, AgentRegistryBuilder, ModelsDevResolver,
-    ProviderOverride, ProviderOverrides, TodoState, default_tools,
+    default_tools, AgentDefaults, AgentRegistryBuildError, AgentRegistryBuilder, ModelsDevResolver,
+    ProviderOverride, ProviderOverrides, TodoState,
 };
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
@@ -59,7 +59,7 @@ fn registry_builds_mixed_openai_and_openai_compatible() {
         name: "router".to_string(),
         mode: AgentMode::Subagent,
         description: "router agent".to_string(),
-        model: Some("router:m1".to_string()),
+        model: Some("router/m1".to_string()),
         hidden: false,
         temperature: None,
         top_p: None,
@@ -210,6 +210,41 @@ fn registry_builds_openrouter_directly() {
 
     unsafe {
         std::env::remove_var("OPENROUTER_API_KEY");
+    }
+}
+
+#[test]
+fn registry_builds_slash_spec_with_colon_model_id() {
+    let _guard = ENV_LOCK.lock().unwrap();
+    unsafe {
+        std::env::set_var("SYNTH_API_KEY", "key");
+    }
+    let json = r#"{"providers":{"synthetic":{"id":"synthetic","npm":"@ai-sdk/openai-compatible","api":"https://api.synthetic/v1","env":["SYNTH_API_KEY"],"models":{"hf:zai-org/GLM-4.7":{}}}}}"#;
+    let resolver = ModelsDevResolver::new(Some(catalog_from_json(json)), ProviderOverrides::new());
+    let defaults = AgentDefaults {
+        model: "synthetic/hf:zai-org/GLM-4.7".to_string(),
+        ..base_defaults(resolver)
+    };
+
+    let config = AgentConfig {
+        name: "synthetic-agent".to_string(),
+        mode: AgentMode::Primary,
+        description: "synthetic provider".to_string(),
+        model: None,
+        hidden: false,
+        temperature: None,
+        top_p: None,
+        permission: IndexMap::new(),
+        options: HashMap::new(),
+        prompt: String::new(),
+    };
+
+    let catalog = AgentCatalog::from_entries(vec![config]);
+    let result = AgentRegistryBuilder::<()>::new(defaults, vec![]).build(&catalog);
+    assert!(result.is_ok());
+
+    unsafe {
+        std::env::remove_var("SYNTH_API_KEY");
     }
 }
 
