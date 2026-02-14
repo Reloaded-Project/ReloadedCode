@@ -85,7 +85,7 @@ async fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
     // for agents that don't override them in their config.
     let defaults = AgentDefaults {
         model: OPENAI_MODEL.to_string(),
-        model_resolver: Some(model_resolver.clone()),
+        model_resolver: Some(Arc::new(model_resolver.clone())),
         provider_overrides,
         api_key: None,
         base_url: None,

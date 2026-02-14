@@ -4,6 +4,7 @@ use llm_coding_tools_models_dev::{ModelsDevCatalog, ProviderMetadata};
 use std::collections::HashMap;
 use std::env;
 use std::fmt;
+use std::sync::Arc;
 use std::time::Duration;
 
 /// Resolved model settings computed by a [`ModelResolver`].
@@ -245,6 +246,9 @@ pub trait ModelResolver: Send + Sync {
     /// Returns: resolved model settings or a [`ModelResolveError`].
     fn resolve(&self, model_spec: &str) -> Result<ResolvedModel, ModelResolveError>;
 }
+
+/// Shared, cloneable resolver handle for registry defaults and builder wiring.
+pub type SharedModelResolver = Arc<dyn ModelResolver + Send + Sync>;
 
 /// models.dev-backed resolver implementation.
 #[derive(Debug, Clone)]

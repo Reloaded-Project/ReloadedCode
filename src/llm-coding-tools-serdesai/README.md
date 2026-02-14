@@ -219,6 +219,7 @@ Use the models.dev catalog to resolve per-provider API keys/base URLs:
 
 ```rust,no_run
 # use std::env;
+# use std::sync::Arc;
 # use llm_coding_tools_models_dev::ModelsDevCatalog;
 # use llm_coding_tools_serdesai::{AgentDefaults, ModelsDevResolver, ProviderOverride, ProviderOverrides};
 # fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -235,7 +236,7 @@ let resolver = ModelsDevResolver::new(Some(catalog), overrides.clone());
 
 let defaults = AgentDefaults {
     model: "synthetic/hf:zai-org/GLM-4.7".into(),
-    model_resolver: Some(resolver),
+    model_resolver: Some(Arc::new(resolver)),
     provider_overrides: overrides,
     api_key: None,
     base_url: None,
@@ -257,6 +258,8 @@ let defaults = AgentDefaults {
 OpenRouter does not support base URL overrides; resolver should not surface `base_url` for this provider.
 
 **Resolver fallback behavior**: When no resolver is provided, the registry attempts to load the models.dev catalog from the shared cache or bundled snapshot. If that fails, it falls back to an empty catalog (meaning only explicit specs are usable and no provider mapping occurs).
+
+**Custom resolver injection**: Pass any `Arc<dyn ModelResolver + Send + Sync>` in `AgentDefaults.model_resolver` to bypass models.dev-specific resolution while preserving the same registry build flow.
 
 
 ### Migration from Legacy Task APIs

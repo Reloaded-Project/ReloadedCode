@@ -52,7 +52,7 @@ pub use llm_coding_tools_core::{
 pub use bash::BashTool;
 pub use model_resolver::{
     ModelResolveError, ModelResolver, ModelsDevResolver, ProviderOverride, ProviderOverrides,
-    ResolutionSource, ResolvedModel,
+    ResolutionSource, ResolvedModel, SharedModelResolver,
 };
 pub use registry::{
     AgentDefaults, AgentRegistry, AgentRegistryBuildError, AgentRegistryBuilder,

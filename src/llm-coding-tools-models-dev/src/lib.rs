@@ -481,7 +481,9 @@ impl ModelsDevCatalog {
         provider_id: &str,
         model_id: &str,
     ) -> Option<&ModelLimits> {
-        self.model_limits_by_provider.get(provider_id)?.get(model_id)
+        self.model_limits_by_provider
+            .get(provider_id)?
+            .get(model_id)
     }
 
     fn from_snapshot_bytes(
@@ -709,9 +711,10 @@ mod tests {
             .providers
             .values()
             .find_map(|provider| match &provider.models {
-                ProviderModelsSnapshot::Detailed(models) => {
-                    models.keys().next().map(|id| (id.clone(), provider.id.clone()))
-                }
+                ProviderModelsSnapshot::Detailed(models) => models
+                    .keys()
+                    .next()
+                    .map(|id| (id.clone(), provider.id.clone())),
                 ProviderModelsSnapshot::Legacy(models) => {
                     models.first().map(|id| (id.clone(), provider.id.clone()))
                 }
@@ -1024,15 +1027,19 @@ mod tests {
         let catalog =
             ModelsDevCatalog::from_snapshot_bytes(json, None).expect("parse detailed snapshot");
 
-        assert!(catalog.get_model_limits_for_provider("beta", "m1").is_none());
-        assert!(catalog.get_model_limits_for_provider("missing", "m1").is_none());
+        assert!(catalog
+            .get_model_limits_for_provider("beta", "m1")
+            .is_none());
+        assert!(catalog
+            .get_model_limits_for_provider("missing", "m1")
+            .is_none());
     }
 
     #[test]
     fn conflicting_limits_for_same_model_stay_provider_scoped() {
         let json = br#"{"providers":{"alpha":{"id":"alpha","npm":null,"api":null,"env":[],"models":{"m-shared":{"limit":{"context":8192,"output":1024}}}},"beta":{"id":"beta","npm":null,"api":null,"env":[],"models":{"m-shared":{"limit":{"context":16384}}}}}}"#;
-        let catalog =
-            ModelsDevCatalog::from_snapshot_bytes(json, None).expect("parse conflicting detailed snapshot");
+        let catalog = ModelsDevCatalog::from_snapshot_bytes(json, None)
+            .expect("parse conflicting detailed snapshot");
 
         assert_eq!(
             catalog
@@ -1060,6 +1067,8 @@ mod tests {
         let providers = catalog.resolve_provider_for_model("m1").expect("providers");
         assert!(providers.iter().any(|id| id == "alpha"));
         assert!(catalog.get_model_limits("m1").is_none());
-        assert!(catalog.get_model_limits_for_provider("alpha", "m1").is_none());
+        assert!(catalog
+            .get_model_limits_for_provider("alpha", "m1")
+            .is_none());
     }
 }

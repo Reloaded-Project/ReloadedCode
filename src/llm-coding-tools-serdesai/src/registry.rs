@@ -1,7 +1,9 @@
 //! SerdesAI agent registry with precomputed tool context and system prompts.
 
 use crate::agent_ext::AgentBuilderExt;
-use crate::model_resolver::{ModelResolver, ModelsDevResolver, ProviderOverrides};
+use crate::model_resolver::{
+    ModelResolver, ModelsDevResolver, ProviderOverrides, SharedModelResolver,
+};
 use crate::task::{TaskDefinitionSnapshot, TaskRegistryHandle, TaskTargetSummary, TaskTool};
 use crate::tool_catalog::ToolCatalogEntry;
 use async_trait::async_trait;
@@ -20,12 +22,12 @@ use std::collections::HashMap;
 use std::sync::Arc;
 
 /// Default model + sampling settings for serdesAI agents.
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct AgentDefaults {
     /// Default model ID (e.g., "provider:model-id").
     pub model: String,
-    /// Optional resolver used to resolve per-agent model specs.
-    pub model_resolver: Option<ModelsDevResolver>,
+    /// Optional injected resolver used to resolve per-agent model specs.
+    pub model_resolver: Option<SharedModelResolver>,
     /// Per-provider overrides applied by the resolver.
     pub provider_overrides: ProviderOverrides,
     /// Legacy OpenAI API key override (applied only when provider is `openai`).
@@ -38,6 +40,24 @@ pub struct AgentDefaults {
     pub top_p: Option<f64>,
     /// Default additional model params merged into per-agent options.
     pub options: HashMap<String, Value>,
+}
+
+impl std::fmt::Debug for AgentDefaults {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("AgentDefaults")
+            .field("model", &self.model)
+            .field(
+                "model_resolver",
+                &self.model_resolver.as_ref().map(|_| "[INJECTED]"),
+            )
+            .field("provider_overrides", &self.provider_overrides)
+            .field("api_key", &self.api_key.as_ref().map(|_| "[REDACTED]"))
+            .field("base_url", &self.base_url)
+            .field("temperature", &self.temperature)
+            .field("top_p", &self.top_p)
+            .field("options", &self.options)
+            .finish()
+    }
 }
 
 /// Errors returned when building a serdesAI agent registry.
@@ -241,21 +261,27 @@ where
         }
     }
 
-    fn create_resolver_from_defaults(&self) -> ModelsDevResolver {
-        if let Some(resolver) = self.defaults.model_resolver.clone() {
-            resolver
-        } else {
-            let catalog = ModelsDevCatalog::load_shared_cache_or_bundled()
-                .map(|result| result.catalog)
-                .ok();
-            ModelsDevResolver::new(catalog, self.defaults.provider_overrides.clone())
-        }
+    fn default_models_dev_resolver(&self) -> SharedModelResolver {
+        let catalog = ModelsDevCatalog::load_shared_cache_or_bundled()
+            .map(|result| result.catalog)
+            .ok();
+        Arc::new(ModelsDevResolver::new(
+            catalog,
+            self.defaults.provider_overrides.clone(),
+        ))
+    }
+
+    fn create_resolver_from_defaults(&self) -> SharedModelResolver {
+        self.defaults
+            .model_resolver
+            .clone()
+            .unwrap_or_else(|| self.default_models_dev_resolver())
     }
 
     fn resolve_model_and_builder(
         &self,
         config: &AgentConfig,
-        resolver: &ModelsDevResolver,
+        resolver: &dyn ModelResolver,
     ) -> Result<SharedBuildSetup<Deps>, AgentRegistryBuildError> {
         let model = config
             .model
@@ -434,7 +460,7 @@ where
                 tool_names,
                 temperature,
                 top_p,
-            } = self.resolve_model_and_builder(config, &resolver)?;
+            } = self.resolve_model_and_builder(config, resolver.as_ref())?;
 
             let mut builder =
                 self.register_allowed_tools(builder, &mut prompt_builder, allowed_tools);
@@ -489,7 +515,7 @@ where
         let mut planned_targets = Vec::with_capacity(catalog.iter().count());
         let mut shared_setups = Vec::with_capacity(catalog.iter().count());
         for config in catalog.iter() {
-            let setup = self.resolve_model_and_builder(config, &resolver)?;
+            let setup = self.resolve_model_and_builder(config, resolver.as_ref())?;
             let mut tool_names = Vec::with_capacity(setup.tool_names.len() + 1);
             tool_names.extend(setup.tool_names.iter().cloned());
             if task_has_any_allow(&config.permission)
@@ -580,7 +606,10 @@ mod tests {
 
         let defaults = AgentDefaults {
             model: "test-model".to_string(),
-            model_resolver: Some(ModelsDevResolver::new(None, ProviderOverrides::new())),
+            model_resolver: Some(Arc::new(ModelsDevResolver::new(
+                None,
+                ProviderOverrides::new(),
+            ))),
             provider_overrides: ProviderOverrides::new(),
             api_key: Some("test-key".to_string()),
             base_url: Some("https://example.com".to_string()),
@@ -596,6 +625,12 @@ mod tests {
         assert_eq!(defaults.top_p, Some(0.9));
         assert_eq!(defaults.options.len(), 1);
         assert!(defaults.model_resolver.is_some());
+    }
+
+    #[test]
+    fn agent_registry_builder_is_send() {
+        fn assert_send<T: Send>() {}
+        assert_send::<AgentRegistryBuilder<()>>();
     }
 
     #[test]
