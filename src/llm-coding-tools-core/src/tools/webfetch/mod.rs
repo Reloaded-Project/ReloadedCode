@@ -88,9 +88,9 @@ mod tokio_impl;
 #[cfg(feature = "tokio")]
 pub use tokio_impl::fetch_url;
 
-#[cfg(feature = "blocking")]
+#[cfg(all(feature = "blocking", not(feature = "tokio")))]
 mod blocking_impl;
-#[cfg(feature = "blocking")]
+#[cfg(all(feature = "blocking", not(feature = "tokio")))]
 pub use blocking_impl::fetch_url;
 
 #[cfg(test)]
