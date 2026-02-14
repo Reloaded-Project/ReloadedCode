@@ -50,7 +50,7 @@ use std::path::{Path, PathBuf};
 /// use llm_coding_tools_agents::{AgentLoader, AgentCatalog};
 /// use std::path::Path;
 ///
-/// let mut loader = AgentLoader::new();
+/// let loader = AgentLoader::new();
 /// let mut catalog = AgentCatalog::new();
 /// loader.add_directory(&mut catalog, Path::new("~/.opencode"))?;
 /// loader.add_file(&mut catalog, Path::new("/path/to/custom_agent.md"))?;
