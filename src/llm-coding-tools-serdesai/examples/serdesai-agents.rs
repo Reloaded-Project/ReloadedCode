@@ -9,36 +9,50 @@
 //! - Running a task that requires the primary agent to invoke a subagent
 //! - Streaming output with XML-style logging
 //!
-//! Run: cargo run --example serdesai-agents -p llm-coding-tools-serdesai
+//! Run: SYNTHETIC_API_KEY=... cargo run --example serdesai-agents -p llm-coding-tools-serdesai
+//! Or set SYNTHETIC_API_KEY in the const below.
 
 use futures::StreamExt;
 use llm_coding_tools_agents::{AgentCatalog, AgentLoader};
-use llm_coding_tools_models_dev::ModelsDevCatalog;
 use llm_coding_tools_serdesai::{
-    AgentDefaults, AgentRegistryBuilder, AllowedPathResolver, ModelsDevResolver, ProviderOverride,
-    ProviderOverrides, TodoState, default_tools,
+    AgentDefaults, AgentRegistryBuilder, AllowedPathResolver, ProviderOverride, ProviderOverrides,
+    TodoState, default_tools,
 };
 use serdes_ai::prelude::*;
 use std::fmt::Write;
 use std::sync::Arc;
 
-// Set your OpenAI API key here or via OPENAI_API_KEY environment variable.
-const OPENAI_API_KEY: &str = "";
-const OPENAI_MODEL: &str = "openai:hf:zai-org/GLM-4.7";
-const OPENAI_BASE_URL: &str = "https://api.synthetic.new/openai/v1";
+// Model and provider are inherited from MODEL_SPEC (parsed from models.dev format).
+const MODEL_SPEC: &str = "synthetic/hf:zai-org/GLM-4.7";
 
-fn get_openai_api_key() -> String {
-    std::env::var("OPENAI_API_KEY")
-        .or_else(|_| {
-            if !OPENAI_API_KEY.is_empty() {
-                Ok(OPENAI_API_KEY.to_string())
-            } else {
-                Err(std::env::VarError::NotPresent)
-            }
-        })
-        .expect(
-            "OPENAI_API_KEY not set: please provide OPENAI_API_KEY env var or set OPENAI_API_KEY constant",
-        )
+// Set your Synthetic API key here or via SYNTHETIC_API_KEY environment variable.
+/// Fallback API key if env var is not set. Leave empty to require env var.
+const SYNTHETIC_API_KEY: &str = "";
+
+fn get_synthetic_api_key() -> String {
+    std::env::var("SYNTHETIC_API_KEY").unwrap_or_else(|_| {
+        if SYNTHETIC_API_KEY.is_empty() {
+            panic!("SYNTHETIC_API_KEY environment variable must be set");
+        }
+        SYNTHETIC_API_KEY.to_string()
+    })
+}
+
+fn provider_overrides_from_env() -> ProviderOverrides {
+    let endpoint_override = std::env::var("SYNTHETIC_BASE_URL")
+        .ok()
+        .filter(|value| !value.trim().is_empty());
+
+    let api_key = get_synthetic_api_key();
+
+    ProviderOverrides::new().insert_override(
+        "synthetic",
+        ProviderOverride {
+            api_key: Some(api_key),
+            base_url: endpoint_override,
+            endpoint_env: None,
+        },
+    )
 }
 
 // Embedded subagent config (loaded via include_str!)
@@ -65,27 +79,16 @@ async fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
     // Tools are sandboxed to allowed directories.
     let tools = default_tools(true, Some(allowed_path_resolver), TodoState::new());
 
-    // === Load models.dev catalog and build model resolver ===
-    //
-    let models_dev_catalog = ModelsDevCatalog::load_shared_cache_or_bundled()?.catalog;
-    let provider_overrides = ProviderOverrides::new().insert_override(
-        "openai",
-        ProviderOverride {
-            api_key: Some(get_openai_api_key()),
-            base_url: Some(OPENAI_BASE_URL.to_string()),
-            endpoint_env: None,
-        },
-    );
-    let model_resolver =
-        ModelsDevResolver::new(Some(models_dev_catalog), provider_overrides.clone());
+    let provider_overrides = provider_overrides_from_env();
 
     // === Build registry ===
     //
-    // AgentDefaults specifies the default model and sampling parameters
-    // for agents that don't override them in their config.
+    // AgentDefaults specifies model resolution + sampling parameters.
+    // model_resolver: None uses the default resolver abstraction (models.dev-backed).
+    // api_key is set via ProviderOverrides above (required for non-OpenAI providers).
     let defaults = AgentDefaults {
-        model: OPENAI_MODEL.to_string(),
-        model_resolver: Some(Arc::new(model_resolver.clone())),
+        model: MODEL_SPEC.to_string(),
+        model_resolver: None,
         provider_overrides,
         api_key: None,
         base_url: None,
