@@ -75,17 +75,15 @@ mod tests {
         let ruleset = Ruleset::from_permission_config(&config);
 
         assert_eq!(ruleset.len(), 1);
-        let rule = ruleset.iter().next().unwrap();
-        assert_eq!(rule.permission(), "bash");
-        assert_eq!(rule.pattern(), "*");
-        assert_eq!(rule.action(), PermissionAction::Allow);
+        assert!(ruleset.is_allowed("bash", "*"));
+        assert!(!ruleset.is_allowed("task", "*"));
     }
 
     #[test]
     fn from_permission_config_pattern_map() {
         let mut patterns = IndexMap::new();
-        patterns.insert("orchestrator-*".to_string(), PermissionAction::Allow);
         patterns.insert("*".to_string(), PermissionAction::Deny);
+        patterns.insert("orchestrator-*".to_string(), PermissionAction::Allow);
 
         let mut config = IndexMap::new();
         config.insert("task".to_string(), PermissionRule::Pattern(patterns));
@@ -93,10 +91,13 @@ mod tests {
         let ruleset = Ruleset::from_permission_config(&config);
 
         assert_eq!(ruleset.len(), 2);
-        let rules: Vec<_> = ruleset.iter().collect();
-        assert_eq!(rules[0].permission(), "task");
-        assert_eq!(rules[0].pattern(), "orchestrator-*");
-        assert_eq!(rules[1].permission(), "task");
-        assert_eq!(rules[1].pattern(), "*");
+        assert_eq!(
+            ruleset.evaluate("task", "orchestrator-builder"),
+            PermissionAction::Allow
+        );
+        assert_eq!(
+            ruleset.evaluate("task", "other-agent"),
+            PermissionAction::Deny
+        );
     }
 }

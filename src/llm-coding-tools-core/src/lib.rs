@@ -18,6 +18,8 @@ pub mod tool_names;
 pub mod tools;
 pub mod util;
 
+mod internal;
+
 pub use context::ToolContext;
 pub use error::{ToolError, ToolResult};
 pub use output::ToolOutput;

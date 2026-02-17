@@ -238,17 +238,3 @@ assert_eq!(rules.evaluate("task", "orchestrator-review"), PermissionAction::Deny
 [`Rule`]: crate::permissions::Rule
 [`Ruleset`]: crate::permissions::Ruleset
 [`PermissionAction::Deny`]: crate::permissions::PermissionAction::Deny
-[`ToolOutput`]: crate::ToolOutput
-[`BashOutput`]: crate::BashOutput
-[`GlobOutput`]: crate::GlobOutput
-[`GrepOutput`]: crate::GrepOutput
-[`WebFetchOutput`]: crate::WebFetchOutput
-[`EditError`]: crate::EditError
-[`ToolError`]: crate::ToolError
-[`ToolResult`]: crate::ToolResult
-[`Todo`]: crate::Todo
-[`TodoPriority`]: crate::TodoPriority
-[`TodoStatus`]: crate::TodoStatus
-[`TodoState`]: crate::TodoState
-[`format_json`]: crate::format_json
-[`html_to_markdown`]: crate::html_to_markdown

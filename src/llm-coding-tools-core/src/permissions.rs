@@ -48,6 +48,11 @@
 //! ```
 
 use serde::{Deserialize, Serialize};
+use tinyvec_string::TinyString;
+
+use crate::internal::hash63::Hash63;
+use crate::internal::hash64::hash_u64;
+use crate::internal::packed_permission::PackedPermission;
 
 /// Permission level for tool access.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
@@ -62,49 +67,56 @@ pub enum PermissionAction {
 
 /// A single permission rule with pattern-based matching.
 ///
-/// Fields are private to enforce the lowercasing invariant. Use [`Rule::new`] to create
-/// rules, which normalizes permission and pattern to lowercase.
+/// Fields are private to enforce normalization and packing invariants.
+/// Use [`Rule::new`] to create rules.
+///
+/// # Memory Optimizations
+///
+/// See: https://github.com/Sewer56/llm-coding-tools/pull/32
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Rule {
-    /// Permission key (tool name), normalized to lowercase.
-    permission: String,
+    /// Packed permission hash and action.
+    permission: PackedPermission,
     /// Pattern to match against (e.g., "*", "orchestrator-*"), normalized to lowercase.
-    pattern: String,
-    /// Action to take when matched.
-    action: PermissionAction,
+    pattern: TinyString<[u8; 14]>,
 }
 
 impl Rule {
-    /// Creates a new rule with normalized (lowercase) permission and pattern.
+    /// Creates a new rule with normalized (ascii-lowercase) permission and pattern.
     #[inline]
     pub fn new(
         permission: impl Into<String>,
         pattern: impl Into<String>,
         action: PermissionAction,
     ) -> Self {
+        let mut permission = permission.into();
+        permission.make_ascii_lowercase();
+
+        let mut pattern = pattern.into();
+        pattern.make_ascii_lowercase();
+
         Self {
-            permission: permission.into().to_ascii_lowercase(),
-            pattern: pattern.into().to_ascii_lowercase(),
-            action,
+            permission: PackedPermission::new(hash_u64(&permission), action),
+            pattern: TinyString::<[u8; 14]>::from(pattern.as_str()),
         }
     }
 
-    /// Returns the permission key (tool name), already normalized to lowercase.
+    /// Returns the stored 63-bit permission hash.
     #[inline]
-    pub fn permission(&self) -> &str {
-        &self.permission
+    pub fn permission_hash(&self) -> u64 {
+        self.permission.hash().as_u64()
     }
 
     /// Returns the pattern, already normalized to lowercase.
     #[inline]
     pub fn pattern(&self) -> &str {
-        &self.pattern
+        self.pattern.as_str()
     }
 
     /// Returns the action for this rule.
     #[inline]
     pub fn action(&self) -> PermissionAction {
-        self.action
+        self.permission.action()
     }
 }
 
@@ -172,6 +184,7 @@ impl Ruleset {
     /// * `subject` - The subject to match against rule patterns (e.g., agent name, path)
     pub fn evaluate(&self, permission: &str, subject: &str) -> PermissionAction {
         let permission_lower = permission.to_ascii_lowercase();
+        let permission_hash = Hash63::from_hash64(hash_u64(&permission_lower));
         let subject_lower = subject.to_ascii_lowercase();
 
         // Last-match-wins: iterate forward, keep overwriting result
@@ -180,9 +193,10 @@ impl Ruleset {
         for rule in &self.rules {
             // Permission key: exact match only (no wildcards)
             // Pattern: wildcard match against subject
-            if rule.permission == permission_lower && wildcard_match(&subject_lower, &rule.pattern)
+            if rule.permission.hash() == permission_hash
+                && wildcard_match(&subject_lower, rule.pattern.as_str())
             {
-                result = rule.action;
+                result = rule.permission.action();
             }
         }
 
@@ -374,18 +388,28 @@ mod tests {
     // ===== Rule tests =====
 
     #[test]
-    fn rule_normalizes_to_lowercase() {
+    fn rule_normalizes_pattern_to_lowercase() {
         let rule = Rule::new("BASH", "PATTERN", PermissionAction::Allow);
-        assert_eq!(rule.permission(), "bash");
         assert_eq!(rule.pattern(), "pattern");
+    }
+
+    #[test]
+    fn rule_permission_hash_is_case_insensitive() {
+        let upper = Rule::new("BASH", "*", PermissionAction::Allow);
+        let lower = Rule::new("bash", "*", PermissionAction::Allow);
+        assert_eq!(upper.permission_hash(), lower.permission_hash());
     }
 
     #[test]
     fn rule_getters_return_correct_values() {
         let rule = Rule::new("task", "orchestrator-*", PermissionAction::Allow);
-        assert_eq!(rule.permission(), "task");
         assert_eq!(rule.pattern(), "orchestrator-*");
         assert_eq!(rule.action(), PermissionAction::Allow);
+    }
+
+    #[test]
+    fn rule_size_is_32_bytes() {
+        assert_eq!(std::mem::size_of::<Rule>(), 32);
     }
 
     // ===== Ruleset tests =====

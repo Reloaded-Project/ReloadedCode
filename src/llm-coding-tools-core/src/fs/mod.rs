@@ -1,8 +1,9 @@
 //! Filesystem abstraction layer.
 //!
 //! Provides unified APIs that work with both sync and async runtimes.
-//! When the `blocking` feature is disabled (default), async operations use tokio.
-//! When `blocking` is enabled, all operations are synchronous.
+//! Exactly one of the `tokio` or `blocking` features must be enabled:
+//! - `tokio`: Async operations using the tokio runtime
+//! - `blocking`: Synchronous operations
 
 #[cfg(all(feature = "tokio", feature = "blocking"))]
 compile_error!("Features tokio and blocking are mutually exclusive");

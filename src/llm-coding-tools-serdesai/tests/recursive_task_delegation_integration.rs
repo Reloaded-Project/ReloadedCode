@@ -1,11 +1,6 @@
-//! Integration tests for recursive Task delegation (depth >= 2).
-//!
-//! Tests verify that nested subagent delegation chains work correctly
-//! with allow/deny permission evaluation at each hop.
-
 use async_trait::async_trait;
 use indexmap::IndexMap;
-use llm_coding_tools_agents::{AgentConfig, AgentMode, PermissionRule};
+use llm_coding_tools_agents::{AgentConfig, AgentMode};
 use llm_coding_tools_core::permissions::{PermissionAction, Rule, Ruleset};
 use llm_coding_tools_serdesai::{
     AgentRegistry, AgentRegistryEntry, RegistryAgent, RegistryAgentError, TaskDefinitionSnapshot,
@@ -14,32 +9,6 @@ use llm_coding_tools_serdesai::{
 use serdes_ai::tools::{RunContext, Tool};
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
-
-/// Converts a Ruleset back to PermissionRule config format.
-///
-/// This ensures test fixtures have realistic config.permission populated
-/// from the same rules used for runtime evaluation.
-fn permission_from_ruleset(ruleset: &Ruleset) -> IndexMap<String, PermissionRule> {
-    let mut grouped: IndexMap<String, IndexMap<String, PermissionAction>> = IndexMap::new();
-    for rule in ruleset.iter() {
-        grouped
-            .entry(rule.permission().to_string())
-            .or_default()
-            .insert(rule.pattern().to_string(), rule.action());
-    }
-
-    let mut permission = IndexMap::new();
-    for (perm, patterns) in grouped {
-        if patterns.len() == 1
-            && let Some(action) = patterns.get("*")
-        {
-            permission.insert(perm, PermissionRule::Action(*action));
-            continue;
-        }
-        permission.insert(perm, PermissionRule::Pattern(patterns));
-    }
-    permission
-}
 
 /// Creates a TaskDefinitionSnapshot from a registry.
 fn snapshot_from_registry<A>(registry: &AgentRegistry<A>) -> TaskDefinitionSnapshot {
@@ -91,7 +60,7 @@ fn make_entry(name: &str, mode: AgentMode, ruleset: Ruleset) -> AgentRegistryEnt
             hidden: false,
             temperature: None,
             top_p: None,
-            permission: permission_from_ruleset(&ruleset),
+            permission: IndexMap::new(),
             options: HashMap::new(),
             prompt: String::new(),
         },
