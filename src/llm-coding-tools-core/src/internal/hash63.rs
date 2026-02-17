@@ -18,14 +18,14 @@ impl Hash63 {
     ///
     /// The caller is responsible for ensuring bit 63 is 0.
     #[inline]
-    #[allow(dead_code)] // public API
+    #[allow(dead_code)] // internal public API
     pub(crate) const fn from_u64(value: u64) -> Self {
         Self(value)
     }
 
     /// Returns the underlying u64 value.
     #[inline]
-    #[allow(dead_code)] // public API
+    #[allow(dead_code)] // internal public API
     pub(crate) const fn as_u64(&self) -> u64 {
         self.0
     }

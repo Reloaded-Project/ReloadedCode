@@ -11,14 +11,14 @@ pub(crate) struct Hash64(u64);
 impl Hash64 {
     /// Creates a new Hash64 from a raw u64 value.
     #[inline]
-    #[allow(dead_code)] // public API
+    #[allow(dead_code)] // internal public API
     pub(crate) fn from_u64(value: u64) -> Self {
         Self(value)
     }
 
     /// Returns the underlying u64 value.
     #[inline]
-    #[allow(dead_code)] // public API
+    #[allow(dead_code)] // internal public API
     pub(crate) fn as_u64(&self) -> u64 {
         self.0
     }
@@ -26,14 +26,14 @@ impl Hash64 {
 
 /// Hashes a string to Hash64 using ahash64.
 #[inline(always)]
-#[allow(dead_code)] // public API
+#[allow(dead_code)] // internal public API
 pub(crate) fn hash_u64(s: &str) -> Hash64 {
     hash_u64_bytes(s.as_bytes())
 }
 
 /// Hashes raw bytes to Hash64 using ahash64.
 #[inline(always)]
-#[allow(dead_code)] // public API
+#[allow(dead_code)] // internal public API
 pub(crate) fn hash_u64_bytes(bytes: &[u8]) -> Hash64 {
     Hash64(ahash::RandomState::with_seed(0xDEAD_CAFE).hash_one(bytes))
 }
