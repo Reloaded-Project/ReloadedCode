@@ -86,6 +86,8 @@ fn convert_block_scalars(input: &str) -> Option<String> {
     out.push_str(": |-\n  ");
     out.push_str(first.value);
 
+    // NOTE: `split_terminator('\n')` drops trailing empties, so rewrites may omit
+    // a final `\n`; this is harmless because YAML deserialization is unaffected.
     for line in input[first.rest_start..].split_terminator('\n') {
         out.push('\n');
         if let Some((key, value)) = extract_if_needs_block_scalar(line) {
