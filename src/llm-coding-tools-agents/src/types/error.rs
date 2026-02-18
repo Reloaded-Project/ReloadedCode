@@ -1,4 +1,15 @@
-//! Error types for agent configuration operations.
+//! # Agent Loading Errors
+//!
+//! Errors returned while reading, parsing, or validating agent definitions.
+//!
+//! ## Variants
+//! - [`AgentLoadError::Io`] for file and directory I/O failures.
+//! - [`AgentLoadError::Parse`] for frontmatter parsing failures.
+//! - [`AgentLoadError::SchemaValidation`] for unsupported/invalid schema data.
+//!
+//! ## Path Semantics
+//! - `path: Some(...)` for file-based sources.
+//! - `path: None` for in-memory sources (rendered as `<memory>`).
 
 use crate::parser::AgentParseError;
 use std::fmt;

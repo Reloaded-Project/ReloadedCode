@@ -1,32 +1,38 @@
-//! Agent configuration from markdown frontmatter.
+//! # Agent Frontmatter Types
 //!
-//! Parses agent definitions from markdown files with YAML frontmatter.
-//! The markdown body after the frontmatter becomes the agent's system prompt.
+//! Rust data types used to parse agent markdown files.
 //!
-//! Permission rules support simple actions (`bash: allow`) or pattern-based
-//! maps for the `task` tool (`task: {"*": deny, "orchestrator-*": allow}`).
-//! Patterns use `*` and `?` wildcards with last-match-wins semantics.
+//! ## File Shape
+//! - YAML frontmatter between `---` delimiters
+//! - Markdown prompt body after frontmatter
 //!
+//! ## Example Agent File
 //! ```markdown
 //! ---
 //! name: code-reviewer
 //! mode: subagent
-//! description: Reviews code for style and bugs
+//! description: Reviews code and flags high-risk issues
 //! model: synthetic/hf:moonshotai/Kimi-K2.5
-//! temperature: 1.0
+//! temperature: 0.2
+//! top_p: 0.9
 //! permission:
-//!   bash: deny
 //!   read: allow
-//!   write: allow
+//!   bash: deny
 //!   task:
 //!     "*": deny
 //!     orchestrator-*: allow
 //! options:
 //!   max_tokens: 4096
+//! hidden: false
 //! ---
-//!
-//! You are a meticulous code reviewer...
+//! You are a careful code reviewer.
 //! ```
+//!
+//! ## Behavior Notes
+//! - `name` uses frontmatter when present; otherwise loader-provided default.
+//! - [`AgentConfig::prompt`] stores LF newlines and trims outer ASCII whitespace.
+//! - `permission` supports scalar (`allow`/`deny`) or pattern-map rules.
+//! - `hidden` is accepted for compatibility but ignored in headless runtime.
 
 use ahash::AHashMap;
 use indexmap::IndexMap;
@@ -90,7 +96,10 @@ pub(crate) struct RawFrontmatter {
 /// Agent configuration loaded from a markdown file.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AgentConfig {
-    /// Agent name (derived from file path).
+    /// Resolved agent name.
+    ///
+    /// This comes from frontmatter `name` when present; otherwise a loader-
+    /// provided default (for example, derived from a file path) is used.
     pub name: String,
     /// Execution mode.
     #[serde(default)]
@@ -118,16 +127,19 @@ pub struct AgentConfig {
     /// Arbitrary extra options.
     #[serde(default)]
     pub options: AHashMap<String, serde_json::Value>,
-    /// Prompt body (markdown content after frontmatter, preserved exactly).
+    /// Prompt body after frontmatter parsing.
+    ///
+    /// The parser stores this with LF line endings and trims surrounding ASCII
+    /// whitespace.
     #[serde(skip)]
     pub prompt: String,
 }
 
 impl AgentConfig {
-    /// Creates an [`AgentConfig`] from raw frontmatter and derived values.
-    pub(crate) fn from_raw(name: String, raw: RawFrontmatter, prompt: String) -> Self {
+    /// Creates an [`AgentConfig`] from raw frontmatter and parsed prompt body.
+    pub(crate) fn from_raw(default_name: String, raw: RawFrontmatter, prompt: String) -> Self {
         Self {
-            name: raw.name.unwrap_or(name),
+            name: raw.name.unwrap_or(default_name),
             mode: raw.mode,
             description: raw.description,
             model: raw.model,

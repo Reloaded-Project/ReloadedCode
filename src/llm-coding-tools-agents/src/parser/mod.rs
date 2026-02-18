@@ -1,17 +1,21 @@
-//! Markdown + YAML frontmatter parser.
+//! # Frontmatter Parser
 //!
-//! Given a file like:
+//! Parses markdown documents into:
+//! - typed frontmatter (`T`)
+//! - prompt body text
 //!
+//! ## Expected Input
 //! ```text
 //! ---
-//! description: Example agent (this is frontmatter)
+//! description: Example agent
 //! ---
-//!
-//! Body content here.
+//! Prompt body here.
 //! ```
 //!
-//! Returns `(frontmatter, body)` where body has LF line endings and trimmed
-//! whitespace. See [`preprocessor`] module for YAML preprocessing details.
+//! ## Normalization
+//! - Converts CRLF to LF for the full document.
+//! - Trims leading/trailing ASCII whitespace from the body.
+//! - Preprocesses YAML before deserialization (see [`preprocessor`]).
 
 mod preprocessor;
 
@@ -224,7 +228,7 @@ fn extract_body_inplace(mut content: String, body_start: usize) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::config::RawFrontmatter;
+    use crate::types::RawFrontmatter;
     use indoc::indoc;
 
     #[test]

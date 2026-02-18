@@ -1,6 +1,13 @@
-//! In-memory catalog of loaded agent configurations.
+//! # Agent Catalog
+//!
+//! In-memory store for loaded [`AgentConfig`] entries.
+//!
+//! ## Guarantees
+//! - Keys are resolved agent names.
+//! - Later inserts overwrite earlier entries with the same name.
+//! - Stores data only (no permission or mode enforcement).
 
-use crate::config::AgentConfig;
+use crate::types::AgentConfig;
 use ahash::AHashMap;
 
 /// In-memory catalog of [`AgentConfig`] values loaded by [`crate::AgentLoader`].
@@ -85,7 +92,7 @@ impl AgentCatalog {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::config::AgentMode;
+    use crate::types::AgentMode;
     use ahash::AHashMap;
     use indexmap::IndexMap;
 

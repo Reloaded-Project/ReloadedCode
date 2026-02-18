@@ -1,10 +1,13 @@
-//! Extension traits for core types.
+//! # Ruleset Extensions
 //!
-//! # Types
+//! Helpers for converting agent permission config into runtime [`Ruleset`] values.
 //!
-//! - [`RulesetExt`] - Extension over [`Ruleset`] providing construction from agent permission configurations.
+//! ## What This Module Provides
+//! - [`RulesetExt`] trait for building a [`Ruleset`] from frontmatter data.
+//! - Support for scalar (`allow`/`deny`) and pattern-map permission rules.
+//! - Iteration-order preservation via [`IndexMap`] (important for precedence).
 
-use crate::config::PermissionRule;
+use crate::types::PermissionRule;
 use indexmap::IndexMap;
 use llm_coding_tools_core::permissions::{Rule, Ruleset};
 
