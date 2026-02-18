@@ -43,13 +43,13 @@ use serde::{Deserialize, Serialize};
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum AgentMode {
+    /// Available in both contexts.
+    #[default]
+    All,
     /// Can be selected as primary agent for conversations.
     Primary,
     /// Only available as subagent via Task tool.
     Subagent,
-    /// Available in both contexts.
-    #[default]
-    All,
 }
 
 /// Permission rule: simple action or pattern-based map.
