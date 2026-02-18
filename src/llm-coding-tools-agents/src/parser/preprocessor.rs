@@ -88,7 +88,7 @@ fn convert_block_scalars(input: &str) -> Option<String> {
 
     for line in input[first.rest_start..].split_terminator('\n') {
         out.push('\n');
-        if let Some((key, value)) = block_scalar_parts(line) {
+        if let Some((key, value)) = extract_if_needs_block_scalar(line) {
             out.push_str(key);
             out.push_str(": |-\n  ");
             out.push_str(value);
@@ -113,7 +113,7 @@ fn find_first_block_scalar(input: &str) -> Option<FirstBlockScalar<'_>> {
     let mut line_start_offset = 0usize;
 
     for line in input.split_terminator('\n') {
-        if let Some((key, value)) = block_scalar_parts(line) {
+        if let Some((key, value)) = extract_if_needs_block_scalar(line) {
             let mut rest_start = line_start_offset + line.len();
             if rest_start < input_len {
                 rest_start += 1;
@@ -135,9 +135,9 @@ fn find_first_block_scalar(input: &str) -> Option<FirstBlockScalar<'_>> {
     None
 }
 
-/// Extracts key/value when a line should become a block scalar entry.
+/// Extracts key/value when a line needs transformation to block scalar format.
 #[inline]
-fn block_scalar_parts(line: &str) -> Option<(&str, &str)> {
+fn extract_if_needs_block_scalar(line: &str) -> Option<(&str, &str)> {
     // Ignore blank lines and YAML comments.
     let trimmed = line.trim();
     if trimmed.is_empty() || trimmed.starts_with('#') {
