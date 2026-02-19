@@ -1,11 +1,16 @@
-//! Agent configuration loader with directory scanning.
+//! # Agent Loader
 //!
-//! Provides [`AgentLoader`] for populating [`AgentCatalog`] from multiple sources:
-//! directories (`agent/**/*.md`, `agents/**/*.md`), individual files, strings, or
-//! in-memory configs. Later insertions override earlier entries with the same name.
+//! Utilities for loading agent markdown files into an [`AgentCatalog`].
 //!
-//! The loader is stateless and reusable—create once with [`AgentLoader::new()`]
-//! and populate multiple catalogs.
+//! ## Supported Sources
+//! - Directories (`agent/**/*.md`, `agents/**/*.md`)
+//! - Individual markdown files
+//! - In-memory markdown (`String`/bytes)
+//! - Pre-built [`AgentConfig`] values
+//!
+//! ## Merge Behavior
+//! - Loader instances are stateless and reusable.
+//! - Later inserts with the same name overwrite earlier entries.
 //!
 //! # Example
 //!
@@ -28,9 +33,8 @@
 //! ```
 
 use crate::catalog::AgentCatalog;
-use crate::config::{AgentConfig, RawFrontmatter};
-use crate::error::{AgentLoadError, AgentLoadResult};
 use crate::parser::{parse_agent, AgentParseError};
+use crate::types::{AgentConfig, AgentLoadError, AgentLoadResult, RawFrontmatter};
 use ignore::WalkBuilder;
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -394,10 +398,10 @@ fn derive_agent_name_from_rel(rel_path: &str) -> Option<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::config::AgentMode;
+    use crate::types::AgentMode;
+    use ahash::AHashMap;
     use indexmap::IndexMap;
     use indoc::indoc;
-    use std::collections::HashMap;
     use std::fs::{self, File};
     use std::io::Write;
     use tempfile::TempDir;
@@ -676,7 +680,7 @@ mod tests {
             temperature: None,
             top_p: None,
             permission: IndexMap::new(),
-            options: HashMap::new(),
+            options: AHashMap::new(),
             prompt: String::new(),
         }
     }

@@ -1,9 +1,21 @@
-//! Agent markdown parser for files with YAML frontmatter.
+//! # Frontmatter Parser
 //!
-//! Parses markdown that starts with `---` frontmatter and returns deserialized
-//! frontmatter data plus normalized body content (LF line endings, trimmed).
-//! YAML frontmatter is preprocessed by the `preprocessor` module before
-//! deserialization to handle unquoted colon-containing values safely.
+//! Parses markdown documents into:
+//! - typed frontmatter (`T`)
+//! - prompt body text
+//!
+//! ## Expected Input
+//! ```text
+//! ---
+//! description: Example agent
+//! ---
+//! Prompt body here.
+//! ```
+//!
+//! ## Normalization
+//! - Converts CRLF to LF for the full document.
+//! - Trims leading/trailing ASCII whitespace from the body.
+//! - Preprocesses YAML before deserialization (see [`preprocessor`]).
 
 mod preprocessor;
 
@@ -63,7 +75,7 @@ pub(crate) fn parse_agent<T: DeserializeOwned>(
             message: e.to_string(),
         }
     })?;
-    validate_headless_contract(&yaml_value)?;
+    validate_headless_compatibility(&yaml_value)?;
 
     let data: T = serde_yaml::from_value(yaml_value).map_err(|e| AgentParseError::InvalidYaml {
         message: e.to_string(),
@@ -78,19 +90,35 @@ pub(crate) fn parse_agent<T: DeserializeOwned>(
     })
 }
 
-/// Validates headless-only frontmatter contract.
+/// Validates frontmatter is compatible with headless operation.
 ///
-/// Parameters:
-/// - `frontmatter`: parsed YAML root value.
-///
-/// Returns: `Ok(())` when valid; `SchemaValidation` for unsupported constructs.
-fn validate_headless_contract(frontmatter: &Value) -> Result<(), AgentParseError> {
+/// Rejects features requiring user interaction (e.g., "ask" permissions)
+/// that are unsupported in non-interactive contexts.
+fn validate_headless_compatibility(frontmatter: &Value) -> Result<(), AgentParseError> {
+    // Skip if root isn't a mapping
     let Value::Mapping(root) = frontmatter else {
         return Ok(());
     };
+
     let permission_key = Value::String("permission".to_string());
     let task_key = Value::String("task".to_string());
 
+    // Extract permission.task for validation
+    //
+    // ```yaml
+    // permission:
+    //   task: <action>              # e.g., "allow", "deny", or "ask"
+    // ```
+    //
+    // or:
+    //
+    // ```yaml
+    // permission:
+    //   task:
+    //     <pattern>: <action>       # e.g., "*": "ask"
+    // ```
+    //
+    // See `PermissionRule` for the target type.
     let Some(Value::Mapping(permission_map)) = root.get(&permission_key) else {
         return Ok(());
     };
@@ -98,6 +126,7 @@ fn validate_headless_contract(frontmatter: &Value) -> Result<(), AgentParseError
         return Ok(());
     };
 
+    // Reject "ask" — requires interactive user confirmation
     if task_rule_contains_ask(task_rule) {
         return Err(AgentParseError::SchemaValidation {
             message: "permission.task: ask is unsupported; use allow or deny".to_string(),
@@ -108,7 +137,9 @@ fn validate_headless_contract(frontmatter: &Value) -> Result<(), AgentParseError
 
 fn task_rule_contains_ask(rule: &Value) -> bool {
     match rule {
+        // Scalar: `task: ask`
         Value::String(action) => action.eq_ignore_ascii_case("ask"),
+        // Mapping: `task: "*": ask`
         Value::Mapping(patterns) => patterns.values().any(
             |value| matches!(value, Value::String(action) if action.eq_ignore_ascii_case("ask")),
         ),
@@ -216,7 +247,7 @@ fn extract_body_inplace(mut content: String, body_start: usize) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::config::RawFrontmatter;
+    use crate::types::RawFrontmatter;
     use indoc::indoc;
 
     #[test]

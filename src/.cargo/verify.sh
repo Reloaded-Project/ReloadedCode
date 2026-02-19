@@ -45,7 +45,7 @@ echo "Formatting..."
 run_cmd cargo fmt --all --check --quiet
 
 echo "Publish dry-run..."
-run_cmd cargo publish --dry-run -p llm-coding-tools-core --quiet
+run_cmd cargo publish --dry-run --allow-dirty -p llm-coding-tools-core --quiet
 run_cmd cargo publish --dry-run --allow-dirty -p llm-coding-tools-agents --quiet
 run_cmd cargo publish --dry-run --allow-dirty -p llm-coding-tools-serdesai --quiet
 

@@ -1,35 +1,49 @@
-//! Config-only catalog of agent configurations.
+//! # Agent Catalog
+//!
+//! In-memory store for loaded [`AgentConfig`] entries.
+//!
+//! ## Guarantees
+//! - Keys are resolved agent names.
+//! - Later inserts overwrite earlier entries with the same name.
+//! - Stores data only (no permission or mode enforcement).
 
-use crate::config::AgentConfig;
-use std::collections::HashMap;
+use crate::types::AgentConfig;
+use ahash::AHashMap;
 
-/// Config-only storage for agent configurations loaded by [`crate::AgentLoader`].
+/// In-memory catalog of [`AgentConfig`] values loaded by [`crate::AgentLoader`].
 ///
-/// Stores [`AgentConfig`] entries by name and provides lightweight read access
-/// via iterators and name-based lookup. The catalog does not perform permission
+/// Upstream framework integrations (for example, serdesAI registry builders)
+/// consume this catalog to construct runtime agents.
+///
+/// This type stores configuration data only. It does not apply permission
 /// filtering or mode-based access control.
-///
-/// The catalog is intended for framework-specific `AgentRegistryBuilder` implementations
-/// (e.g., in serdesAI) to iterate and construct runtime agents.
 #[derive(Debug, Clone, Default)]
 pub struct AgentCatalog {
-    agents: HashMap<String, AgentConfig>,
+    agents: AHashMap<String, AgentConfig>,
 }
 
 impl AgentCatalog {
-    /// Creates an empty catalog of agent configs.
+    /// Creates an empty [`AgentCatalog`].
     ///
-    /// Returns: a new [`AgentCatalog`].
+    /// Parameters:
+    /// - None.
+    ///
+    /// Returns:
+    /// - A new empty [`AgentCatalog`].
     #[inline]
     pub fn new() -> Self {
         Self {
-            agents: HashMap::new(),
+            agents: AHashMap::new(),
         }
     }
 
-    /// Returns an iterator over all stored agent configs.
+    /// Returns an iterator over all stored [`AgentConfig`] values.
     ///
-    /// Returns: an iterator of borrowed [`AgentConfig`] entries.
+    /// Parameters:
+    /// - None.
+    ///
+    /// Returns:
+    /// - An iterator over borrowed [`AgentConfig`] values.
     #[inline]
     pub fn iter(&self) -> impl Iterator<Item = &AgentConfig> {
         self.agents.values()
@@ -38,9 +52,11 @@ impl AgentCatalog {
     /// Looks up an agent configuration by name.
     ///
     /// Parameters:
-    /// - `name`: the derived or frontmatter agent name.
+    /// - `name`: The resolved agent name.
     ///
-    /// Returns: `Some(&AgentConfig)` when found, otherwise `None`.
+    /// Returns:
+    /// - [`Option::Some`] with a borrowed [`AgentConfig`] when found.
+    /// - [`Option::None`] when no config exists with that name.
     #[inline]
     pub fn by_name(&self, name: &str) -> Option<&AgentConfig> {
         self.agents.get(name)
@@ -48,7 +64,12 @@ impl AgentCatalog {
 
     /// Inserts an agent configuration into the catalog.
     ///
-    /// Returns the previous configuration if the name was already present.
+    /// Parameters:
+    /// - `config`: The [`AgentConfig`] to insert.
+    ///
+    /// Returns:
+    /// - [`Option::Some`] with the previous [`AgentConfig`] if the name already existed.
+    /// - [`Option::None`] if the name was not present.
     pub(crate) fn insert(&mut self, config: AgentConfig) -> Option<AgentConfig> {
         self.agents.insert(config.name.clone(), config)
     }
@@ -56,10 +77,11 @@ impl AgentCatalog {
     /// Creates a catalog from an iterator of agent configurations.
     ///
     /// Parameters:
-    /// - `entries`: iterator of [`AgentConfig`] instances.
+    /// - `entries`: The [`AgentConfig`] values to insert.
     ///
-    /// Returns: a populated [`AgentCatalog`]. If duplicate names exist,
-    /// the last entry for each name is retained.
+    /// Returns:
+    /// - A populated [`AgentCatalog`].
+    /// - If duplicate names exist, the last entry for each name is retained.
     pub fn from_entries(entries: impl IntoIterator<Item = AgentConfig>) -> Self {
         Self {
             agents: entries.into_iter().map(|c| (c.name.clone(), c)).collect(),
@@ -70,9 +92,9 @@ impl AgentCatalog {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::config::AgentMode;
+    use crate::types::AgentMode;
+    use ahash::AHashMap;
     use indexmap::IndexMap;
-    use std::collections::HashMap;
 
     #[test]
     fn catalog_iter_and_by_name() {
@@ -86,7 +108,7 @@ mod tests {
             temperature: None,
             top_p: None,
             permission: IndexMap::new(),
-            options: HashMap::new(),
+            options: AHashMap::new(),
             prompt: String::new(),
         });
         catalog.insert(AgentConfig {
@@ -98,7 +120,7 @@ mod tests {
             temperature: None,
             top_p: None,
             permission: IndexMap::new(),
-            options: HashMap::new(),
+            options: AHashMap::new(),
             prompt: String::new(),
         });
 

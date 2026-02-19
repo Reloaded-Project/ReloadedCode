@@ -3,6 +3,7 @@ use async_trait::async_trait;
 use llm_coding_tools_agents::{AgentConfig, AgentMode};
 use llm_coding_tools_core::permissions::{PermissionAction, Rule, Ruleset};
 use serdes_ai::tools::RunContext;
+use ahash::AHashMap;
 use std::sync::{Arc, Mutex};
 
 use crate::registry::{AgentRegistry, AgentRegistryEntry, RegistryAgent, RegistryAgentError};
@@ -47,7 +48,7 @@ fn make_entry(name: &str, mode: AgentMode, hidden: bool) -> AgentRegistryEntry<M
             temperature: None,
             top_p: None,
             permission: indexmap::IndexMap::new(),
-            options: std::collections::HashMap::new(),
+            options: AHashMap::new(),
             prompt: String::new(),
         },
         ruleset: Ruleset::new(),

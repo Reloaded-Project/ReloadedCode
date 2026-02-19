@@ -18,7 +18,7 @@ use serdes_ai::agent::ModelConfig;
 use serdes_ai::{Agent, AgentBuilder, ModelSettings};
 use serdes_ai_models::huggingface::HuggingFaceModel;
 use serdes_ai_models::openrouter::OpenRouterModel;
-use std::collections::HashMap;
+use ahash::AHashMap;
 use std::sync::Arc;
 
 /// Default model + sampling settings for serdesAI agents.
@@ -39,7 +39,7 @@ pub struct AgentDefaults {
     /// Default top-p override (if any).
     pub top_p: Option<f64>,
     /// Default additional model params merged into per-agent options.
-    pub options: HashMap<String, Value>,
+    pub options: AHashMap<String, Value>,
 }
 
 impl std::fmt::Debug for AgentDefaults {
@@ -172,7 +172,7 @@ impl<A> AgentRegistryEntry<A> {
 
 /// SerdesAI registry mapping agent name to prebuilt entries.
 pub struct AgentRegistry<A> {
-    entries: HashMap<String, AgentRegistryEntry<A>>,
+    entries: AHashMap<String, AgentRegistryEntry<A>>,
 }
 
 impl<A> AgentRegistry<A> {
@@ -399,7 +399,7 @@ where
         mut builder: AgentBuilder<Arc<Deps>, String>,
         temperature: Option<f64>,
         top_p: Option<f64>,
-        options: &HashMap<String, Value>,
+        options: &AHashMap<String, Value>,
     ) -> AgentBuilder<Arc<Deps>, String> {
         let mut settings = ModelSettings::new();
         if let Some(value) = temperature {
@@ -449,7 +449,7 @@ where
     ) -> Result<AgentRegistry<Agent<Arc<Deps>, String>>, AgentRegistryBuildError> {
         let resolver = self.create_resolver_from_defaults();
 
-        let mut entries = HashMap::with_capacity(catalog.iter().count());
+        let mut entries = AHashMap::with_capacity(catalog.iter().count());
 
         for config in catalog.iter() {
             let SharedBuildSetup {
@@ -535,7 +535,7 @@ where
             targets: planned_targets,
         };
 
-        let mut entries = HashMap::with_capacity(shared_setups.len());
+        let mut entries = AHashMap::with_capacity(shared_setups.len());
         for (config, setup) in shared_setups {
             let SharedBuildSetup {
                 builder,
@@ -601,7 +601,7 @@ mod tests {
     fn agent_defaults_with_all_fields() {
         use crate::model_resolver::{ModelsDevResolver, ProviderOverrides};
 
-        let mut options = HashMap::new();
+        let mut options = AHashMap::new();
         options.insert("key1".to_string(), Value::Bool(true));
 
         let defaults = AgentDefaults {
@@ -644,7 +644,7 @@ mod tests {
             temperature: None,
             top_p: None,
             permission: IndexMap::new(),
-            options: HashMap::new(),
+            options: AHashMap::new(),
             prompt: String::new(),
         };
 
@@ -670,7 +670,7 @@ mod tests {
             temperature: None,
             top_p: None,
             permission: IndexMap::new(),
-            options: HashMap::new(),
+            options: AHashMap::new(),
             prompt: String::new(),
         };
 
@@ -696,7 +696,7 @@ mod tests {
             temperature: None,
             top_p: None,
             permission: IndexMap::new(),
-            options: HashMap::new(),
+            options: AHashMap::new(),
             prompt: String::new(),
         };
         let entry = AgentRegistryEntry {
@@ -720,7 +720,7 @@ mod tests {
             temperature: None,
             top_p: None,
             permission: IndexMap::new(),
-            options: HashMap::new(),
+            options: AHashMap::new(),
             prompt: String::new(),
         };
 
@@ -755,7 +755,7 @@ mod tests {
             temperature: None,
             top_p: None,
             permission: IndexMap::new(),
-            options: HashMap::new(),
+            options: AHashMap::new(),
             prompt: String::new(),
         };
 
@@ -767,7 +767,7 @@ mod tests {
             base_url: None,
             temperature: None,
             top_p: None,
-            options: HashMap::new(),
+            options: AHashMap::new(),
         };
 
         let catalog = AgentCatalog::from_entries(vec![config]);

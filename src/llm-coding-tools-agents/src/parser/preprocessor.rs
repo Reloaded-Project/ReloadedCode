@@ -63,23 +63,83 @@ pub(super) fn preprocess_frontmatter_yaml(input: &str) -> Cow<'_, str> {
     }
 }
 
-/// Returns true when a key matches the simple identifier format we accept.
-#[inline]
-fn is_valid_key(key: &str) -> bool {
-    let bytes = key.as_bytes();
-    let Some((&first, rest)) = bytes.split_first() else {
-        return false;
+/// Rewrites matching lines and returns `None` when no rewrite is needed.
+fn convert_block_scalars(input: &str) -> Option<String> {
+    let first = match find_first_block_scalar(input) {
+        Some(first) => first,
+        _ => return None,
     };
-    if !(first.is_ascii_alphabetic() || first == b'_') {
-        return false;
+
+    // Second pass: copy prefix once, then rewrite from the first changed line onward.
+    // Typical rewrite is:
+    //    `model: synthetic/hf:moonshotai/Kimi-K2.5`
+    // -> `model: |-\n  synthetic/hf:moonshotai/Kimi-K2.5`
+    // Another multi-colon example:
+    //    `api_url: http://localhost:8080`
+    // -> `api_url: |-\n  http://localhost:8080`
+    // This also represents a change of +5 characters.
+    let mut out = String::with_capacity(input.len() + 5);
+    if first.line_start > 0 {
+        out.push_str(&input[..first.line_start]);
     }
-    rest.iter()
-        .all(|byte| byte.is_ascii_alphanumeric() || *byte == b'_' || *byte == b'-')
+    out.push_str(first.key);
+    out.push_str(": |-\n  ");
+    out.push_str(first.value);
+
+    // NOTE: `split_terminator('\n')` drops trailing empties, so rewrites may omit
+    // a final `\n`; this is harmless because YAML deserialization is unaffected.
+    for line in input[first.rest_start..].split_terminator('\n') {
+        out.push('\n');
+        if let Some((key, value)) = extract_if_needs_block_scalar(line) {
+            out.push_str(key);
+            out.push_str(": |-\n  ");
+            out.push_str(value);
+        } else {
+            out.push_str(line);
+        }
+    }
+
+    Some(out)
 }
 
-/// Extracts key/value when a line should become a block scalar entry.
+struct FirstBlockScalar<'a> {
+    line_start: usize,
+    rest_start: usize,
+    key: &'a str,
+    value: &'a str,
+}
+
+/// Finds the first line that must be rewritten and returns its offsets.
+fn find_first_block_scalar(input: &str) -> Option<FirstBlockScalar<'_>> {
+    let input_len = input.len();
+    let mut line_start_offset = 0usize;
+
+    for line in input.split_terminator('\n') {
+        if let Some((key, value)) = extract_if_needs_block_scalar(line) {
+            let mut rest_start = line_start_offset + line.len();
+            if rest_start < input_len {
+                rest_start += 1;
+            }
+            return Some(FirstBlockScalar {
+                line_start: line_start_offset,
+                rest_start,
+                key,
+                value,
+            });
+        }
+
+        line_start_offset += line.len();
+        if line_start_offset < input_len {
+            line_start_offset += 1;
+        }
+    }
+
+    None
+}
+
+/// Extracts key/value when a line needs transformation to block scalar format.
 #[inline]
-fn block_scalar_parts(line: &str) -> Option<(&str, &str)> {
+fn extract_if_needs_block_scalar(line: &str) -> Option<(&str, &str)> {
     // Ignore blank lines and YAML comments.
     let trimmed = line.trim();
     if trimmed.is_empty() || trimmed.starts_with('#') {
@@ -120,84 +180,59 @@ fn block_scalar_parts(line: &str) -> Option<(&str, &str)> {
         return None;
     }
 
-    if !value.contains(':') {
-        return None;
+    let bytes = value.as_bytes();
+    let mut hash_idx = None;
+    let mut has_colon = false;
+
+    // Scan once up to the first inline comment marker.
+    // We only care about ':' that appears before '#'.
+    for (idx, byte) in bytes.iter().copied().enumerate() {
+        match byte {
+            b':' => has_colon = true,
+            b'#' => {
+                hash_idx = Some(idx);
+                break;
+            }
+            _ => {}
+        }
     }
+
+    let value = if let Some(hash_idx) = hash_idx {
+        // If the comment suffix has ':', we treat the line as ambiguous
+        // and leave it untouched to avoid false positives.
+        if bytes[hash_idx + 1..].contains(&b':') {
+            return None;
+        }
+
+        // Strip inline comment text from the transformed value.
+        let val_part = value[..hash_idx].trim();
+        if val_part.is_empty() || !has_colon {
+            return None;
+        }
+        val_part
+    } else {
+        if !has_colon {
+            return None;
+        }
+        value
+    };
 
     // This line is ambiguous and should become a block scalar.
     Some((key, value))
 }
 
-/// Rewrites matching lines and returns `None` when no rewrite is needed.
-fn convert_block_scalars(input: &str) -> Option<String> {
-    let first = match find_first_block_scalar(input) {
-        Some(first) => first,
-        _ => return None,
+/// Returns true when a key matches the simple identifier format we accept.
+#[inline]
+fn is_valid_key(key: &str) -> bool {
+    let bytes = key.as_bytes();
+    let Some((&first, rest)) = bytes.split_first() else {
+        return false;
     };
-
-    // Second pass: copy prefix once, then rewrite from the first changed line onward.
-    // Typical rewrite is:
-    //    `model: synthetic/hf:moonshotai/Kimi-K2.5`
-    // -> `model: |-\n  synthetic/hf:moonshotai/Kimi-K2.5`
-    // Another multi-colon example:
-    //    `api_url: http://localhost:8080`
-    // -> `api_url: |-\n  http://localhost:8080`
-    // This also represents a change of +5 characters.
-    let mut out = String::with_capacity(input.len() + 5);
-    if first.line_start > 0 {
-        out.push_str(&input[..first.line_start]);
+    if !(first.is_ascii_alphabetic() || first == b'_') {
+        return false;
     }
-    out.push_str(first.key);
-    out.push_str(": |-\n  ");
-    out.push_str(first.value);
-
-    for line in input[first.rest_start..].split_terminator('\n') {
-        out.push('\n');
-        if let Some((key, value)) = block_scalar_parts(line) {
-            out.push_str(key);
-            out.push_str(": |-\n  ");
-            out.push_str(value);
-        } else {
-            out.push_str(line);
-        }
-    }
-
-    Some(out)
-}
-
-struct FirstBlockScalar<'a> {
-    line_start: usize,
-    rest_start: usize,
-    key: &'a str,
-    value: &'a str,
-}
-
-/// Finds the first line that must be rewritten and returns its offsets.
-fn find_first_block_scalar(input: &str) -> Option<FirstBlockScalar<'_>> {
-    let input_len = input.len();
-    let mut line_start_offset = 0usize;
-
-    for line in input.split_terminator('\n') {
-        if let Some((key, value)) = block_scalar_parts(line) {
-            let mut rest_start = line_start_offset + line.len();
-            if rest_start < input_len {
-                rest_start += 1;
-            }
-            return Some(FirstBlockScalar {
-                line_start: line_start_offset,
-                rest_start,
-                key,
-                value,
-            });
-        }
-
-        line_start_offset += line.len();
-        if line_start_offset < input_len {
-            line_start_offset += 1;
-        }
-    }
-
-    None
+    rest.iter()
+        .all(|byte| byte.is_ascii_alphanumeric() || *byte == b'_' || *byte == b'-')
 }
 
 #[cfg(test)]
@@ -271,5 +306,21 @@ mod tests {
         let output = preprocess_frontmatter_yaml(input);
         assert!(output.as_ref().contains("  line:with:colons"));
         assert!(!output.as_ref().contains("  line: |-"));
+    }
+
+    #[test]
+    fn preprocess_strips_inline_comments_when_rewriting() {
+        let input = "model: provider/model:tag # inline comment";
+        let output = preprocess_frontmatter_yaml(input);
+        assert!(output.as_ref().contains("model: |-"));
+        assert!(output.as_ref().contains("  provider/model:tag"));
+        assert!(!output.as_ref().contains("# inline comment"));
+    }
+
+    #[test]
+    fn preprocess_skips_ambiguous_inline_comment_with_colon() {
+        let input = "model: provider/model # note: keep";
+        let output = preprocess_frontmatter_yaml(input);
+        assert_eq!(output.as_ref(), input);
     }
 }

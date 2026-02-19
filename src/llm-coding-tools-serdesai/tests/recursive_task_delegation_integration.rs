@@ -7,7 +7,7 @@ use llm_coding_tools_serdesai::{
     TaskRegistryHandle, TaskTargetSummary, TaskTool,
 };
 use serdes_ai::tools::{RunContext, Tool};
-use std::collections::HashMap;
+use ahash::AHashMap;
 use std::sync::{Arc, Mutex};
 
 /// Creates a TaskDefinitionSnapshot from a registry.
@@ -61,7 +61,7 @@ fn make_entry(name: &str, mode: AgentMode, ruleset: Ruleset) -> AgentRegistryEnt
             temperature: None,
             top_p: None,
             permission: IndexMap::new(),
-            options: HashMap::new(),
+            options: AHashMap::new(),
             prompt: String::new(),
         },
         ruleset,

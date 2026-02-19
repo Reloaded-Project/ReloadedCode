@@ -62,7 +62,7 @@ Write-Host "Formatting..."
 Invoke-LoggedCommand "cargo" @("fmt", "--all", "--check", "--quiet")
 
 Write-Host "Publish dry-run..."
-Invoke-LoggedCommand "cargo" @("publish", "--dry-run", "-p", "llm-coding-tools-core", "--quiet")
+Invoke-LoggedCommand "cargo" @("publish", "--dry-run", "--allow-dirty", "-p", "llm-coding-tools-core", "--quiet")
 Invoke-LoggedCommand "cargo" @("publish", "--dry-run", "--allow-dirty", "-p", "llm-coding-tools-agents", "--quiet")
 Invoke-LoggedCommand "cargo" @("publish", "--dry-run", "--allow-dirty", "-p", "llm-coding-tools-serdesai", "--quiet")
 

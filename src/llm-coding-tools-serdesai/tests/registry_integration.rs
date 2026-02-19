@@ -1,14 +1,14 @@
+use ahash::AHashMap;
 use indexmap::IndexMap;
 use llm_coding_tools_agents::{AgentCatalog, AgentConfig, AgentMode, PermissionRule};
 use llm_coding_tools_core::permissions::PermissionAction;
 use llm_coding_tools_core::tool_names;
 use llm_coding_tools_models_dev::ModelsDevCatalog;
 use llm_coding_tools_serdesai::{
-    AgentDefaults, AgentRegistryBuildError, AgentRegistryBuilder, ModelResolveError, ModelResolver,
-    ModelsDevResolver, ProviderOverride, ProviderOverrides, ResolutionSource, ResolvedModel,
-    TodoState, default_tools,
+    default_tools, AgentDefaults, AgentRegistryBuildError, AgentRegistryBuilder, ModelResolveError,
+    ModelResolver, ModelsDevResolver, ProviderOverride, ProviderOverrides, ResolutionSource,
+    ResolvedModel, TodoState,
 };
-use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
 static ENV_LOCK: Mutex<()> = Mutex::new(());
@@ -29,7 +29,7 @@ fn base_defaults(resolver: Arc<dyn ModelResolver + Send + Sync>) -> AgentDefault
         base_url: None,
         temperature: None,
         top_p: None,
-        options: HashMap::new(),
+        options: AHashMap::new(),
     }
 }
 
@@ -53,7 +53,7 @@ fn registry_builds_mixed_openai_and_openai_compatible() {
         temperature: None,
         top_p: None,
         permission: IndexMap::new(),
-        options: HashMap::new(),
+        options: AHashMap::new(),
         prompt: String::new(),
     };
     let config_router = AgentConfig {
@@ -65,7 +65,7 @@ fn registry_builds_mixed_openai_and_openai_compatible() {
         temperature: None,
         top_p: None,
         permission: IndexMap::new(),
-        options: HashMap::new(),
+        options: AHashMap::new(),
         prompt: String::new(),
     };
     let catalog = AgentCatalog::from_entries(vec![config_openai, config_router]);
@@ -113,7 +113,7 @@ fn subagents_do_not_inherit_openai_defaults() {
         temperature: None,
         top_p: None,
         permission: IndexMap::new(),
-        options: HashMap::new(),
+        options: AHashMap::new(),
         prompt: String::new(),
     };
     let catalog = AgentCatalog::from_entries(vec![config_subagent]);
@@ -145,7 +145,7 @@ fn unsupported_providers_error() {
         temperature: None,
         top_p: None,
         permission: IndexMap::new(),
-        options: HashMap::new(),
+        options: AHashMap::new(),
         prompt: String::new(),
     };
     let catalog = AgentCatalog::from_entries(vec![config]);
@@ -173,7 +173,7 @@ fn registry_builds_huggingface_directly() {
         temperature: None,
         top_p: None,
         permission: IndexMap::new(),
-        options: HashMap::new(),
+        options: AHashMap::new(),
         prompt: String::new(),
     };
     let catalog = AgentCatalog::from_entries(vec![config]);
@@ -202,7 +202,7 @@ fn registry_builds_openrouter_directly() {
         temperature: None,
         top_p: None,
         permission: IndexMap::new(),
-        options: HashMap::new(),
+        options: AHashMap::new(),
         prompt: String::new(),
     };
     let catalog = AgentCatalog::from_entries(vec![config]);
@@ -236,7 +236,7 @@ fn registry_builds_slash_spec_with_colon_model_id() {
         temperature: None,
         top_p: None,
         permission: IndexMap::new(),
-        options: HashMap::new(),
+        options: AHashMap::new(),
         prompt: String::new(),
     };
 
@@ -276,7 +276,7 @@ fn recursive_builder_injects_task_only_for_allow_configs_and_dedups() {
             tool_names::TASK.to_string(),
             PermissionRule::Pattern(allow_patterns),
         )]),
-        options: HashMap::new(),
+        options: AHashMap::new(),
         prompt: String::new(),
     };
 
@@ -292,7 +292,7 @@ fn recursive_builder_injects_task_only_for_allow_configs_and_dedups() {
             tool_names::TASK.to_string(),
             PermissionRule::Action(PermissionAction::Allow),
         )]),
-        options: HashMap::new(),
+        options: AHashMap::new(),
         prompt: String::new(),
     };
 
@@ -308,7 +308,7 @@ fn recursive_builder_injects_task_only_for_allow_configs_and_dedups() {
             tool_names::TASK.to_string(),
             PermissionRule::Pattern(deny_patterns),
         )]),
-        options: HashMap::new(),
+        options: AHashMap::new(),
         prompt: String::new(),
     };
 
@@ -365,7 +365,7 @@ fn registry_builds_with_default_models_dev_resolver_when_none_injected() {
         base_url: None,
         temperature: None,
         top_p: None,
-        options: HashMap::new(),
+        options: AHashMap::new(),
     };
 
     let config = AgentConfig {
@@ -377,7 +377,7 @@ fn registry_builds_with_default_models_dev_resolver_when_none_injected() {
         temperature: None,
         top_p: None,
         permission: IndexMap::new(),
-        options: HashMap::new(),
+        options: AHashMap::new(),
         prompt: String::new(),
     };
 
@@ -418,7 +418,7 @@ fn registry_builds_with_injected_custom_resolver() {
         base_url: None,
         temperature: None,
         top_p: None,
-        options: HashMap::new(),
+        options: AHashMap::new(),
     };
 
     let config = AgentConfig {
@@ -430,7 +430,7 @@ fn registry_builds_with_injected_custom_resolver() {
         temperature: None,
         top_p: None,
         permission: IndexMap::new(),
-        options: HashMap::new(),
+        options: AHashMap::new(),
         prompt: String::new(),
     };
 
