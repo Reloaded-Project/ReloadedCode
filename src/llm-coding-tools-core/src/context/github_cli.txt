@@ -1,4 +1,4 @@
-Use the gh command via the Bash tool for ALL GitHub-related tasks including working with issues, pull requests, checks, and releases. If given a GitHub URL use the gh command to get the information needed.
+Use the gh command via the `bash` tool for ALL GitHub-related tasks including working with issues, pull requests, checks, and releases. If given a GitHub URL use the gh command to get the information needed.
 
 ### Creating Pull Requests
 
@@ -7,7 +7,7 @@ IMPORTANT: When the user asks you to create a pull request, follow these steps c
 You can call multiple tools in a single response. When multiple independent pieces of information are requested and all commands are likely to succeed, run multiple tool calls in parallel for optimal performance.
 
 #### Step 1: Gather Branch Information
-Run the following bash commands in parallel using the Bash tool, in order to understand the current state of the branch since it diverged from the main branch:
+Run the following bash commands in parallel using the `bash` tool, in order to understand the current state of the branch since it diverged from the main branch:
 - Run git status to see all untracked files
 - Run git diff to see both staged and unstaged changes
 - Check if current branch tracks a remote and is up to date (to know if push is needed)
@@ -17,7 +17,7 @@ Run the following bash commands in parallel using the Bash tool, in order to und
 Analyze ALL changes that will be included in the pull request (NOT just the latest commit, but ALL commits). Draft a pull request summary.
 
 #### Step 3: Create PR
-Run the following commands in parallel using the Bash tool:
+Run the following commands in parallel using the `bash` tool:
 - Create new branch if needed
 - Push to remote with -u flag if needed
 - Create PR using gh pr create with the format below (use HEREDOC for body):
@@ -33,7 +33,7 @@ EOF
 </example>
 
 Important:
-- DO NOT use the TodoWrite or Task tools
+- DO NOT use the `todowrite` or `task` tools
 - Return the PR URL when you're done, so the user can see it
 
 ### Other Common Operations

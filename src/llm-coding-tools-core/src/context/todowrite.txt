@@ -80,7 +80,7 @@ The assistant did not use the todo list because this is a single, trivial task t
 <example>
 User: Can you add a comment to the calculateTotal function to explain what it does?
 Assistant: Sure, let me add a comment to the calculateTotal function.
-*Uses the Edit tool to add a comment*
+*Uses the `edit` tool to add a comment*
 
 <reasoning>
 The assistant did not use the todo list because this is a single, straightforward task confined to one location in the code.

@@ -31,7 +31,7 @@ Fetches content from a specified URL and processes it for analysis.
 
 ### When NOT to Use This Tool
 
-- For local file operations - use Read tool instead
+- For local file operations - use the `read` tool instead
 - For searching the web - this only fetches specific URLs
 - When another MCP tool offers better web capabilities
 

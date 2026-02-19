@@ -6,7 +6,7 @@ Fast file pattern matching tool that works with any codebase size.
 - Returns matching file paths sorted by modification time (newest first)
 - Respects .gitignore rules
 - Use this tool when you need to find files by name patterns
-- When you are doing an open-ended search that may require multiple rounds of globbing and grepping, use the Task tool instead
+- When you are doing an open-ended search that may require multiple rounds of globbing and grepping, use the `task` tool instead
 
 ### Parameters
 
@@ -27,9 +27,9 @@ Fast file pattern matching tool that works with any codebase size.
 
 ### When NOT to Use This Tool
 
-- Searching for content inside files - use Grep instead
-- Reading file contents - use Read instead
-- Complex multi-step searches - use Task tool instead
+- Searching for content inside files - use `grep` instead
+- Reading file contents - use `read` instead
+- Complex multi-step searches - use the `task` tool instead
 
 ### Examples
 
@@ -62,6 +62,6 @@ path: "."
 1. You can call multiple tools in a single response. It is always better to speculatively perform multiple searches as a batch that are potentially useful.
 2. Start with broader patterns and narrow down if needed
 3. Use `**` for recursive searches across all subdirectories
-4. Combine with Read tool to examine found files
+4. Combine with the `read` tool to examine found files
 5. Results are sorted by modification time - most recently changed files appear first
 6. Paths outside allowed directories will be rejected
