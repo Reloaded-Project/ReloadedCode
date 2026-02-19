@@ -5,9 +5,9 @@ Fast content search tool built on ripgrep. Works with any codebase size.
 - Filter files by pattern with the `include` parameter (e.g., "*.rs", "*.{ts,tsx}")
 - Returns file paths, line numbers, and matching content sorted by modification time (newest first)
 - Use this tool when you need to find files containing specific patterns
-- When you are doing an open-ended search that may require multiple rounds of globbing and grepping, use the Task tool instead
+- When you are doing an open-ended search that may require multiple rounds of globbing and grepping, use the `task` tool instead
 
-IMPORTANT: ALWAYS use Grep for search tasks. NEVER invoke `grep` or `rg` as a Bash command. The Grep tool has been optimized for correct permissions and access.
+IMPORTANT: ALWAYS use `grep` for search tasks. NEVER invoke `grep` or `rg` as a `bash` command. The `grep` tool has been optimized for correct permissions and access.
 
 ### Parameters
 
@@ -35,9 +35,9 @@ IMPORTANT: ALWAYS use Grep for search tasks. NEVER invoke `grep` or `rg` as a Ba
 
 ### When NOT to Use This Tool
 
-- Finding files by name - use Glob instead
-- Reading entire file contents - use Read instead
-- Complex multi-step research - use Task tool instead
+- Finding files by name - use `glob` instead
+- Reading entire file contents - use `read` instead
+- Complex multi-step research - use the `task` tool instead
 
 ### Examples
 

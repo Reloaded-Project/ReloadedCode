@@ -32,20 +32,20 @@ llm-coding-tools-core = { version = "0.2", default-features = false, features = 
 
 ## Tools, context, and integration
 
-Canonical tool names are defined in [`tool_names`] ([`Read`], [`Write`], [`Edit`], [`Glob`], [`Grep`], [`Bash`], [`WebFetch`], [`TodoRead`], [`TodoWrite`], [`Task`]).
+Canonical tool names are defined in [`tool_names`] ([`read`], [`write`], [`edit`], [`glob`], [`grep`], [`bash`], [`webfetch`], [`todoread`], [`todowrite`], [`task`]).
 
 ### Standard tools
 
-- [`Read`] ([`read_file`]) - Read a file window (`offset`/`limit`) with const-generic line numbers (`read_file::<_, true>` or `read_file::<_, false>`).
-- [`Write`] ([`write_file`]) - Create or overwrite a file at a resolved path.
-- [`Edit`] ([`edit_file`]) - Apply exact text replacements with structured edit errors.
-- [`Glob`] ([`glob_files`]) - Match filesystem paths by glob pattern.
-- [`Grep`] ([`grep_search`]) - Search file contents by regex with match metadata.
-- [`Bash`] ([`execute_command`]) - Execute shell commands with timeout and captured output.
-- [`WebFetch`] ([`fetch_url`]) - Fetch URL content as text, markdown, or html (requires `tokio` or `blocking`).
-- [`TodoRead`] ([`read_todos`]) - Read shared todo state.
-- [`TodoWrite`] ([`write_todos`]) - Write and validate shared todo state.
-- [`Task`] ([`TaskInput`], [`TaskOutput`]) - Standard task payload types used by delegation wrappers.
+- [`read`] ([`read_file`]) - Read a file window (`offset`/`limit`) with const-generic line numbers (`read_file::<_, true>` or `read_file::<_, false>`).
+- [`write`] ([`write_file`]) - Create or overwrite a file at a resolved path.
+- [`edit`] ([`edit_file`]) - Apply exact text replacements with structured edit errors.
+- [`glob`] ([`glob_files`]) - Match filesystem paths by glob pattern.
+- [`grep`] ([`grep_search`]) - Search file contents by regex with match metadata.
+- [`bash`] ([`execute_command`]) - Execute shell commands with timeout and captured output.
+- [`webfetch`] ([`fetch_url`]) - Fetch URL content as text, markdown, or html (requires `tokio` or `blocking`).
+- [`todoread`] ([`read_todos`]) - Read shared todo state.
+- [`todowrite`] ([`write_todos`]) - Write and validate shared todo state.
+- [`task`] ([`TaskInput`], [`TaskOutput`]) - Standard task payload types used by delegation wrappers.
 
 ### Path safety and sandboxing
 
@@ -131,7 +131,7 @@ let _tool = ReadTool::new(resolver);
 
 Core tool functions are generic over [`PathResolver`], but wrappers usually expose separate absolute/allowed tool types for simpler ergonomics (to avoid extra generic parameters).
 
-This keeps registration name (`Read`) and prompt guidance in sync.
+This keeps registration name (`read`) and prompt guidance in sync.
 
 ## System prompt builder
 
@@ -174,7 +174,7 @@ let agent = AgentBuilder::<(), String>::new(model)
 
 - [`Rule`] stores `(permission_key, subject_pattern, action)`.
 - [`Ruleset`] uses last-match-wins; no match defaults to [`PermissionAction::Deny`].
-- Permission keys are exact-match; wildcard matching (`*`, `?`) applies to subject patterns.
+- Permission keys are exact-match and case-sensitive; wildcard matching (`*`, `?`) applies to subject patterns.
 
 Frontmatter-style config is typically translated into this model:
 
@@ -201,16 +201,16 @@ assert_eq!(rules.evaluate("task", "orchestrator-review"), PermissionAction::Deny
 ```
 
 [`tool_names`]: crate::tool_names
-[`Read`]: crate::tool_names::READ
-[`Write`]: crate::tool_names::WRITE
-[`Edit`]: crate::tool_names::EDIT
-[`Glob`]: crate::tool_names::GLOB
-[`Grep`]: crate::tool_names::GREP
-[`Bash`]: crate::tool_names::BASH
-[`WebFetch`]: crate::tool_names::WEBFETCH
-[`TodoRead`]: crate::tool_names::TODO_READ
-[`TodoWrite`]: crate::tool_names::TODO_WRITE
-[`Task`]: crate::tool_names::TASK
+[`read`]: crate::tool_names::READ
+[`write`]: crate::tool_names::WRITE
+[`edit`]: crate::tool_names::EDIT
+[`glob`]: crate::tool_names::GLOB
+[`grep`]: crate::tool_names::GREP
+[`bash`]: crate::tool_names::BASH
+[`webfetch`]: crate::tool_names::WEBFETCH
+[`todoread`]: crate::tool_names::TODO_READ
+[`todowrite`]: crate::tool_names::TODO_WRITE
+[`task`]: crate::tool_names::TASK
 [`read_file`]: crate::read_file
 [`write_file`]: crate::write_file
 [`edit_file`]: crate::edit_file

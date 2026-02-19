@@ -8,7 +8,7 @@
 //! - If nothing matches, the result is [`PermissionAction::Deny`].
 //!
 //! Matching behavior:
-//! - Permission key: exact match (case-insensitive), no wildcard expansion.
+//! - Permission key: exact match (case-sensitive), no wildcard expansion.
 //! - Subject pattern: wildcard matching with `*` (many chars) and `?` (one char).
 //!
 //! # Mapping config to rules
@@ -67,7 +67,7 @@ pub enum PermissionAction {
 
 /// A single permission rule with pattern-based matching.
 ///
-/// Fields are private to enforce normalization and packing invariants.
+/// Fields are private to enforce packing invariants.
 /// Use [`Rule::new`] to create rules.
 ///
 /// # Memory Optimizations
@@ -77,23 +77,20 @@ pub enum PermissionAction {
 pub struct Rule {
     /// Packed permission hash and action.
     permission: PackedPermission,
-    /// Pattern to match against (e.g., "*", "orchestrator-*"), normalized to lowercase.
+    /// Pattern to match against (e.g., "*", "orchestrator-*").
     pattern: TinyString<[u8; 14]>,
 }
 
 impl Rule {
-    /// Creates a new rule with normalized (ascii-lowercase) permission and pattern.
+    /// Creates a new rule with the provided permission and pattern.
     #[inline]
     pub fn new(
         permission: impl Into<String>,
         pattern: impl Into<String>,
         action: PermissionAction,
     ) -> Self {
-        let mut permission = permission.into();
-        permission.make_ascii_lowercase();
-
-        let mut pattern = pattern.into();
-        pattern.make_ascii_lowercase();
+        let permission = permission.into();
+        let pattern = pattern.into();
 
         Self {
             permission: PackedPermission::new(hash_u64(&permission), action),
@@ -107,7 +104,7 @@ impl Rule {
         self.permission.hash().as_u64()
     }
 
-    /// Returns the pattern, already normalized to lowercase.
+    /// Returns the stored pattern.
     #[inline]
     pub fn pattern(&self) -> &str {
         self.pattern.as_str()
@@ -175,7 +172,7 @@ impl Ruleset {
     /// Returns the action from the last matching rule, or [`PermissionAction::Deny`]
     /// if no rule matches (default deny).
     ///
-    /// Permission keys are matched with **exact equality** (after lowercasing).
+    /// Permission keys are matched with **exact equality**.
     /// Patterns are matched against subjects using wildcard matching.
     ///
     /// # Arguments
@@ -183,9 +180,7 @@ impl Ruleset {
     /// * `permission` - The permission key (tool name) to check (exact match)
     /// * `subject` - The subject to match against rule patterns (e.g., agent name, path)
     pub fn evaluate(&self, permission: &str, subject: &str) -> PermissionAction {
-        let permission_lower = permission.to_ascii_lowercase();
-        let permission_hash = Hash63::from_hash64(hash_u64(&permission_lower));
-        let subject_lower = subject.to_ascii_lowercase();
+        let permission_hash = Hash63::from_hash64(hash_u64(permission));
 
         // Last-match-wins: iterate forward, keep overwriting result
         let mut result = PermissionAction::Deny;
@@ -194,7 +189,7 @@ impl Ruleset {
             // Permission key: exact match only (no wildcards)
             // Pattern: wildcard match against subject
             if rule.permission.hash() == permission_hash
-                && wildcard_match(&subject_lower, rule.pattern.as_str())
+                && wildcard_match(subject, rule.pattern.as_str())
             {
                 result = rule.permission.action();
             }
@@ -261,7 +256,6 @@ impl Ruleset {
 /// Matches a string against a wildcard pattern.
 ///
 /// Supports `*` (matches any sequence) and `?` (matches single char).
-/// Both inputs should be pre-normalized to lowercase for case-insensitive matching.
 ///
 /// # Examples
 ///
@@ -388,16 +382,16 @@ mod tests {
     // ===== Rule tests =====
 
     #[test]
-    fn rule_normalizes_pattern_to_lowercase() {
+    fn rule_preserves_pattern_casing() {
         let rule = Rule::new("BASH", "PATTERN", PermissionAction::Allow);
-        assert_eq!(rule.pattern(), "pattern");
+        assert_eq!(rule.pattern(), "PATTERN");
     }
 
     #[test]
-    fn rule_permission_hash_is_case_insensitive() {
+    fn rule_permission_hash_is_case_sensitive() {
         let upper = Rule::new("BASH", "*", PermissionAction::Allow);
         let lower = Rule::new("bash", "*", PermissionAction::Allow);
-        assert_eq!(upper.permission_hash(), lower.permission_hash());
+        assert_ne!(upper.permission_hash(), lower.permission_hash());
     }
 
     #[test]
@@ -451,27 +445,31 @@ mod tests {
     }
 
     #[test]
-    fn ruleset_evaluate_case_insensitive() {
+    fn ruleset_evaluate_case_sensitive() {
         let mut ruleset = Ruleset::new();
         ruleset.push(Rule::new("BASH", "*", PermissionAction::Allow));
 
-        assert_eq!(ruleset.evaluate("bash", "test"), PermissionAction::Allow);
-        assert_eq!(ruleset.evaluate("Bash", "test"), PermissionAction::Allow);
         assert_eq!(ruleset.evaluate("BASH", "test"), PermissionAction::Allow);
+        assert_eq!(ruleset.evaluate("bash", "test"), PermissionAction::Deny);
+        assert_eq!(ruleset.evaluate("Bash", "test"), PermissionAction::Deny);
     }
 
     #[test]
-    fn ruleset_evaluate_pattern_case_insensitive() {
+    fn ruleset_evaluate_pattern_case_sensitive() {
         let mut ruleset = Ruleset::new();
         ruleset.push(Rule::new("task", "AGENT-*", PermissionAction::Allow));
 
         assert_eq!(
-            ruleset.evaluate("task", "agent-foo"),
+            ruleset.evaluate("task", "AGENT-foo"),
             PermissionAction::Allow
         );
         assert_eq!(
+            ruleset.evaluate("task", "agent-foo"),
+            PermissionAction::Deny
+        );
+        assert_eq!(
             ruleset.evaluate("task", "Agent-Bar"),
-            PermissionAction::Allow
+            PermissionAction::Deny
         );
     }
 
@@ -565,8 +563,8 @@ mod tests {
     #[test]
     fn allowed_tools_preserves_original_casing() {
         let mut rules = Ruleset::new();
-        rules.push(Rule::new("bash", "*", PermissionAction::Allow));
-        rules.push(Rule::new("read", "*", PermissionAction::Allow));
+        rules.push(Rule::new("Bash", "*", PermissionAction::Allow));
+        rules.push(Rule::new("READ", "*", PermissionAction::Allow));
 
         // Input with mixed case
         let tools = ["Bash", "READ", "Write"];
@@ -574,8 +572,8 @@ mod tests {
 
         // Output should preserve original casing
         assert_eq!(allowed.len(), 2);
-        assert!(allowed.contains(&"Bash".to_string())); // Not "bash"
-        assert!(allowed.contains(&"READ".to_string())); // Not "read"
+        assert!(allowed.contains(&"Bash".to_string()));
+        assert!(allowed.contains(&"READ".to_string()));
     }
 
     #[test]

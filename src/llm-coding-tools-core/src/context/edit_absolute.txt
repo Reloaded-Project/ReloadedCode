@@ -1,8 +1,8 @@
 Performs exact string replacements in files.
 
 Usage:
-- You must use your Read tool at least once in the conversation before editing. This tool will error if you attempt an edit without reading the file.
-- When editing text from Read tool output, ensure you preserve the exact indentation (tabs/spaces) as it appears AFTER the line number prefix. The line number prefix format is "L{n}: ". Everything after that prefix is the actual file content to match. Never include any part of the line number prefix in `old_string` or `new_string`.
+- You must use your `read` tool at least once in the conversation before editing. This tool will error if you attempt an edit without reading the file.
+- When editing text from `read` tool output, ensure you preserve the exact indentation (tabs/spaces) as it appears AFTER the line number prefix. The line number prefix format is "L{n}: ". Everything after that prefix is the actual file content to match. Never include any part of the line number prefix in `old_string` or `new_string`.
 - ALWAYS prefer editing existing files in the codebase. NEVER write new files unless explicitly required.
 - Only use emojis if the user explicitly requests it. Avoid adding emojis to files unless asked.
 
@@ -28,8 +28,8 @@ Usage:
 
 ### When NOT to Use This Tool
 
-- Creating new files - use Write tool instead
-- When most of a file needs to change - use Write tool instead
+- Creating new files - use the `write` tool instead
+- When most of a file needs to change - use the `write` tool instead
 - When you haven't read the file yet - read it first!
 
 ### Examples
@@ -58,8 +58,8 @@ new_string: "use std::io;\nuse std::fs;"
 
 ### Best Practices
 
-1. Always read the file first using the Read tool
-2. Copy the exact text from the Read output, preserving whitespace and indentation
+1. Always read the file first using the `read` tool
+2. Copy the exact text from the `read` output, preserving whitespace and indentation
 3. Include enough context in `old_string` to make it unique
 4. When adding new code, include the line before/after in `old_string` for context
 5. Use `replace_all: true` when renaming variables or making consistent changes

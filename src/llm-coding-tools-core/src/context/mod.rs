@@ -15,7 +15,7 @@
 //! ```rust
 //! use llm_coding_tools_core::context::{BASH, READ_ABSOLUTE, READ_ALLOWED};
 //!
-//! // Use BASH context for bash tool
+//! // Use BASH context for the `bash` tool
 //! println!("Bash guidance: {}", BASH);
 //!
 //! // Use appropriate read context based on path resolver
@@ -23,58 +23,58 @@
 //! let read_context = if sandboxed { READ_ALLOWED } else { READ_ABSOLUTE };
 //! ```
 
-/// Bash tool context - shell command execution guidance.
+/// `bash` tool context - shell command execution guidance.
 pub const BASH: &str = include_str!("bash.txt");
 
 /// Git workflow context - commit creation guidance.
 ///
-/// Supplemental context for agents using git via the Bash tool.
+/// Supplemental context for agents using git via the `bash` tool.
 /// Include via [`SystemPromptBuilder::add_context`](crate::SystemPromptBuilder::add_context).
 pub const GIT_WORKFLOW: &str = include_str!("git_workflow.txt");
 
 /// GitHub CLI context - gh command usage guidance.
 ///
-/// Supplemental context for agents using the GitHub CLI via the Bash tool.
+/// Supplemental context for agents using the GitHub CLI via the `bash` tool.
 /// Include via [`SystemPromptBuilder::add_context`](crate::SystemPromptBuilder::add_context).
 pub const GITHUB_CLI: &str = include_str!("github_cli.txt");
 
-/// Todo read tool context - reading task lists.
+/// `todoread` tool context - reading task lists.
 pub const TODO_READ: &str = include_str!("todoread.txt");
 
-/// Todo write tool context - managing task lists.
+/// `todowrite` tool context - managing task lists.
 pub const TODO_WRITE: &str = include_str!("todowrite.txt");
 
-/// Webfetch tool context - URL content retrieval.
+/// `webfetch` tool context - URL content retrieval.
 pub const WEBFETCH: &str = include_str!("webfetch.txt");
 
-/// Read tool context for absolute path mode.
+/// `read` tool context for absolute path mode.
 pub const READ_ABSOLUTE: &str = include_str!("read_absolute.txt");
 
-/// Read tool context for allowed/sandboxed path mode.
+/// `read` tool context for allowed/sandboxed path mode.
 pub const READ_ALLOWED: &str = include_str!("read_allowed.txt");
 
-/// Write tool context for absolute path mode.
+/// `write` tool context for absolute path mode.
 pub const WRITE_ABSOLUTE: &str = include_str!("write_absolute.txt");
 
-/// Write tool context for allowed/sandboxed path mode.
+/// `write` tool context for allowed/sandboxed path mode.
 pub const WRITE_ALLOWED: &str = include_str!("write_allowed.txt");
 
-/// Edit tool context for absolute path mode.
+/// `edit` tool context for absolute path mode.
 pub const EDIT_ABSOLUTE: &str = include_str!("edit_absolute.txt");
 
-/// Edit tool context for allowed/sandboxed path mode.
+/// `edit` tool context for allowed/sandboxed path mode.
 pub const EDIT_ALLOWED: &str = include_str!("edit_allowed.txt");
 
-/// Glob tool context for absolute path mode.
+/// `glob` tool context for absolute path mode.
 pub const GLOB_ABSOLUTE: &str = include_str!("glob_absolute.txt");
 
-/// Glob tool context for allowed/sandboxed path mode.
+/// `glob` tool context for allowed/sandboxed path mode.
 pub const GLOB_ALLOWED: &str = include_str!("glob_allowed.txt");
 
-/// Grep tool context for absolute path mode.
+/// `grep` tool context for absolute path mode.
 pub const GREP_ABSOLUTE: &str = include_str!("grep_absolute.txt");
 
-/// Grep tool context for allowed/sandboxed path mode.
+/// `grep` tool context for allowed/sandboxed path mode.
 pub const GREP_ALLOWED: &str = include_str!("grep_allowed.txt");
 
 /// Trait for tools that provide usage context for LLM system prompts.

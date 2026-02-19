@@ -25,8 +25,8 @@ You can call multiple tools in a single response. It is always better to specula
 ### When NOT to Use This Tool
 
 - To list directory contents - use bash with `ls` instead
-- To search for patterns across files - use Grep instead
-- To find files by name - use Glob instead
+- To search for patterns across files - use `grep` instead
+- To find files by name - use `glob` instead
 
 ### Examples
 
@@ -44,7 +44,7 @@ limit: 100
 
 ### Best Practices
 
-1. Read files before editing them - the Edit tool requires you to have read the file first
+1. Read files before editing them - the `edit` tool requires you to have read the file first
 2. When exploring a codebase, read multiple related files in parallel to save time
 3. For large files, consider reading specific sections using offset/limit if you know what you're looking for
 4. Relative paths are resolved against allowed directories

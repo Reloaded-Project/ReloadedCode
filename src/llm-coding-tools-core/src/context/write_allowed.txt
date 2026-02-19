@@ -4,8 +4,8 @@ Usage:
 - This tool will overwrite the existing file if there is one at the provided path.
 - Paths can be relative to configured allowed directories, or absolute paths within allowed directories
 - Paths outside allowed directories will be rejected
-- If this is an existing file, you MUST use the Read tool first to read the file's contents. This tool will fail if you did not read the file first.
-- ALWAYS prefer editing existing files in the codebase using the Edit tool. NEVER write new files unless explicitly required.
+- If this is an existing file, you MUST use the `read` tool first to read the file's contents. This tool will fail if you did not read the file first.
+- ALWAYS prefer editing existing files in the codebase using the `edit` tool. NEVER write new files unless explicitly required.
 - NEVER proactively create documentation files (*.md) or README files. Only create documentation files if explicitly requested by the User.
 - Only use emojis if the user explicitly requests it. Avoid writing emojis to files unless asked.
 
@@ -23,7 +23,7 @@ Usage:
 
 ### When NOT to Use This Tool
 
-- Modifying existing files - use Edit tool instead (more precise, less error-prone)
+- Modifying existing files - use the `edit` tool instead (more precise, less error-prone)
 - Creating documentation unless explicitly requested
 - Writing files you haven't read first (if they exist)
 
@@ -37,8 +37,8 @@ content: "//! New module\n\npub fn hello() {\n    println!(\"Hello!\");\n}\n"
 
 ### Best Practices
 
-1. ALWAYS read existing files with Read tool before overwriting them
-2. Prefer Edit tool for making changes to existing files - it's safer and more precise
+1. ALWAYS read existing files with the `read` tool before overwriting them
+2. Prefer the `edit` tool for making changes to existing files - it's safer and more precise
 3. When creating new files, ensure the content is complete and correct
 4. Don't create files proactively - wait for explicit user requests
 5. Relative paths are resolved against allowed directories
