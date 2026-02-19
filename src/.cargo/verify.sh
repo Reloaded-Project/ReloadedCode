@@ -8,33 +8,45 @@
 
 set -e
 
+run_cmd() {
+  echo "$*"
+  "$@"
+}
+
+ORIGINAL_DIR="$(pwd)"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+cd "$PROJECT_ROOT"
+
+trap 'cd "$ORIGINAL_DIR"' EXIT
+
 echo "Building..."
-cargo build -p llm-coding-tools-core
-cargo build -p llm-coding-tools-agents --quiet
-cargo build -p llm-coding-tools-serdesai --quiet
+run_cmd cargo build -p llm-coding-tools-core --quiet
+run_cmd cargo build -p llm-coding-tools-agents --quiet
+run_cmd cargo build -p llm-coding-tools-serdesai --quiet
 
 echo "Testing..."
-cargo test -p llm-coding-tools-core
-cargo test -p llm-coding-tools-agents --quiet
-cargo test -p llm-coding-tools-serdesai --quiet
+run_cmd cargo test -p llm-coding-tools-core --quiet
+run_cmd cargo test -p llm-coding-tools-agents --quiet
+run_cmd cargo test -p llm-coding-tools-serdesai --quiet
 
 echo "Clippy..."
-cargo clippy -p llm-coding-tools-core -- -D warnings
-cargo clippy -p llm-coding-tools-agents --quiet -- -D warnings
-cargo clippy -p llm-coding-tools-serdesai --quiet -- -D warnings
+run_cmd cargo clippy -p llm-coding-tools-core --quiet -- -D warnings
+run_cmd cargo clippy -p llm-coding-tools-agents --quiet -- -D warnings
+run_cmd cargo clippy -p llm-coding-tools-serdesai --quiet -- -D warnings
 
 echo "Testing blocking feature..."
-cargo test -p llm-coding-tools-core --no-default-features --features blocking --quiet
+run_cmd cargo test -p llm-coding-tools-core --no-default-features --features blocking --quiet
 
 echo "Docs..."
-RUSTDOCFLAGS="-D warnings" cargo doc --workspace --no-deps --quiet
+run_cmd env RUSTDOCFLAGS="-D warnings" cargo doc --workspace --no-deps --quiet
 
 echo "Formatting..."
-cargo fmt --all
+run_cmd cargo fmt --all --check --quiet
 
 echo "Publish dry-run..."
-cargo publish --dry-run -p llm-coding-tools-core --quiet
-cargo publish --dry-run -p llm-coding-tools-agents --quiet
-cargo publish --dry-run -p llm-coding-tools-serdesai --quiet
+run_cmd cargo publish --dry-run --allow-dirty -p llm-coding-tools-core --quiet
+run_cmd cargo publish --dry-run --allow-dirty -p llm-coding-tools-agents --quiet
+run_cmd cargo publish --dry-run --allow-dirty -p llm-coding-tools-serdesai --quiet
 
 echo "All checks passed!"

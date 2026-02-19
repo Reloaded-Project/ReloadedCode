@@ -7,34 +7,67 @@
 
 $ErrorActionPreference = "Stop"
 
-Write-Host "Building..."
-cargo build -p llm-coding-tools-core
-cargo build -p llm-coding-tools-agents --quiet
-cargo build -p llm-coding-tools-serdesai --quiet
+function Invoke-LoggedCommand {
+    param(
+        [string]$Command,
+        [string[]]$Arguments
+    )
+
+    if ($Arguments.Count -gt 0) {
+        Write-Host ($Command + " " + ($Arguments -join " "))
+    } else {
+        Write-Host $Command
+    }
+
+    & $Command @Arguments
+    if ($LASTEXITCODE -ne 0) {
+        throw "Command '$Command' failed with exit code $LASTEXITCODE"
+    }
+}
+
+$originalDir = Get-Location
+$scriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
+$projectRoot = Join-Path $scriptDir ".."
+Set-Location $projectRoot
+
+try {
+    Write-Host "Building..."
+Invoke-LoggedCommand "cargo" @("build", "-p", "llm-coding-tools-core", "--quiet")
+Invoke-LoggedCommand "cargo" @("build", "-p", "llm-coding-tools-agents", "--quiet")
+Invoke-LoggedCommand "cargo" @("build", "-p", "llm-coding-tools-serdesai", "--quiet")
 
 Write-Host "Testing..."
-cargo test -p llm-coding-tools-core
-cargo test -p llm-coding-tools-agents --quiet
-cargo test -p llm-coding-tools-serdesai --quiet
+Invoke-LoggedCommand "cargo" @("test", "-p", "llm-coding-tools-core", "--quiet")
+Invoke-LoggedCommand "cargo" @("test", "-p", "llm-coding-tools-agents", "--quiet")
+Invoke-LoggedCommand "cargo" @("test", "-p", "llm-coding-tools-serdesai", "--quiet")
 
 Write-Host "Clippy..."
-cargo clippy -p llm-coding-tools-core -- -D warnings
-cargo clippy -p llm-coding-tools-agents --quiet -- -D warnings
-cargo clippy -p llm-coding-tools-serdesai --quiet -- -D warnings
+Invoke-LoggedCommand "cargo" @("clippy", "-p", "llm-coding-tools-core", "--quiet", "--", "-D", "warnings")
+Invoke-LoggedCommand "cargo" @("clippy", "-p", "llm-coding-tools-agents", "--quiet", "--", "-D", "warnings")
+Invoke-LoggedCommand "cargo" @("clippy", "-p", "llm-coding-tools-serdesai", "--quiet", "--", "-D", "warnings")
 
 Write-Host "Testing blocking feature..."
-cargo test -p llm-coding-tools-core --no-default-features --features blocking --quiet
+Invoke-LoggedCommand "cargo" @("test", "-p", "llm-coding-tools-core", "--no-default-features", "--features", "blocking", "--quiet")
 
 Write-Host "Docs..."
+$originalRustdocFlags = $env:RUSTDOCFLAGS
 $env:RUSTDOCFLAGS = "-D warnings"
-cargo doc --workspace --no-deps --quiet
+try {
+    Invoke-LoggedCommand "cargo" @("doc", "--workspace", "--no-deps", "--quiet")
+} finally {
+    $env:RUSTDOCFLAGS = $originalRustdocFlags
+}
 
 Write-Host "Formatting..."
-cargo fmt --all
+Invoke-LoggedCommand "cargo" @("fmt", "--all", "--check", "--quiet")
 
 Write-Host "Publish dry-run..."
-cargo publish --dry-run -p llm-coding-tools-core --quiet
-cargo publish --dry-run -p llm-coding-tools-agents --quiet
-cargo publish --dry-run -p llm-coding-tools-serdesai --quiet
+Invoke-LoggedCommand "cargo" @("publish", "--dry-run", "--allow-dirty", "-p", "llm-coding-tools-core", "--quiet")
+Invoke-LoggedCommand "cargo" @("publish", "--dry-run", "--allow-dirty", "-p", "llm-coding-tools-agents", "--quiet")
+Invoke-LoggedCommand "cargo" @("publish", "--dry-run", "--allow-dirty", "-p", "llm-coding-tools-serdesai", "--quiet")
 
 Write-Host "All checks passed!"
+}
+finally {
+    Set-Location $originalDir
+}
