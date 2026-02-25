@@ -439,9 +439,7 @@ impl ModelCatalog {
 mod tests {
     use super::*;
     use crate::models::catalog::internal::{Modality, TemperatureFixed4, TopPFixed4};
-    use crate::models::catalog::public::builder_types::{
-        LookupTableKind, ModelCatalogBuildError, ProviderInfo,
-    };
+    use crate::models::catalog::public::builder_types::ProviderInfo;
     use crate::models::catalog::public::model_types::{ModelConfig, ModelInfo};
     use crate::models::ProviderType;
 
@@ -596,92 +594,5 @@ mod tests {
         assert_eq!(provider.env_vars[0], "AZURE_KEY");
         assert_eq!(provider.env_vars[1], "AZURE_TOKEN");
         assert_eq!(provider.env_vars[2], "FALLBACK_KEY");
-    }
-
-    #[test]
-    fn collisions_report_table_kind_and_seed() {
-        let mut builder = ModelCatalog::builder();
-        builder
-            .insert_provider("alpha", &provider("", &[], ProviderType::OpenAiCompletions))
-            .expect("first insert succeeds");
-
-        let err = builder
-            .insert_provider("alpha", &provider("", &[], ProviderType::OpenAiCompletions))
-            .expect_err("duplicate hash should fail");
-        assert_eq!(
-            err,
-            ModelCatalogBuildError::HashCollision {
-                table: LookupTableKind::Provider,
-                seed: 0,
-            }
-        );
-    }
-
-    #[test]
-    fn reset_advances_seed_and_clears_tables() {
-        let mut builder = ModelCatalog::builder();
-        builder
-            .insert_model("m1", info(4096, 512), None)
-            .expect("insert model");
-        assert_eq!(builder.seed(), 0);
-
-        builder.reset().expect("reset should advance seed");
-        assert_eq!(builder.seed(), 1);
-        assert!(builder.is_empty());
-    }
-
-    #[test]
-    fn reset_exhaustion_returns_error_at_seed_limit() {
-        let mut builder = ModelCatalog::builder();
-
-        for _ in 0..u8::MAX {
-            builder.reset().expect("reset within seed range must work");
-        }
-
-        let err = builder
-            .reset()
-            .expect_err("reset should fail after all seeds are consumed");
-        assert_eq!(
-            err,
-            ModelCatalogBuildError::HashCollisionExhausted {
-                attempts: u8::MAX.into()
-            }
-        );
-    }
-
-    #[test]
-    fn max_output_tokens_out_of_range_returns_error() {
-        let mut builder = ModelCatalog::builder();
-        let max_output = internal::MAX_OUTPUT_TOKENS;
-
-        let err = builder
-            .insert_model("m1", info(4096, max_output.saturating_add(1)), None)
-            .expect_err("max output over packed limit should fail");
-
-        assert_eq!(
-            err,
-            ModelCatalogBuildError::MaxOutputTokensOutOfRange {
-                max_output: max_output.saturating_add(1),
-                max: max_output,
-            }
-        );
-    }
-
-    #[test]
-    fn max_input_tokens_out_of_range_returns_error() {
-        let mut builder = ModelCatalog::builder();
-        let max_input = internal::MAX_INPUT_TOKENS;
-
-        let err = builder
-            .insert_model("m1", info(max_input.saturating_add(1), 512), None)
-            .expect_err("max input over packed limit should fail");
-
-        assert_eq!(
-            err,
-            ModelCatalogBuildError::MaxInputTokensOutOfRange {
-                max_input: max_input.saturating_add(1),
-                max: max_input,
-            }
-        );
     }
 }
