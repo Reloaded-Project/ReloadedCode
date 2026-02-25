@@ -10,7 +10,8 @@ use crate::models::catalog::public::builder_types::{
 use crate::models::catalog::public::model_types::{ModelConfig, ModelInfo};
 use crate::models::catalog::public::ProviderIdx;
 use crate::models::catalog::ModelCatalog;
-use hashbrown::{HashMap, HashTable};
+use ahash::AHashMap;
+use hashbrown::HashTable;
 use lite_strtab::{Global, StringTable, StringTableBuilder};
 
 /// Maximum hash seed value.
@@ -35,7 +36,7 @@ pub struct ModelCatalogBuilder {
     provider_entries: Vec<PackedProviderEntry>,
     model_entries: Vec<PackedModelEntry>,
     model_config_entries: Vec<PackedModelConfigEntry>,
-    model_entry_intern: HashMap<(PackedModelEntry, PackedModelConfigEntry), u16>,
+    model_entry_intern: AHashMap<(PackedModelEntry, PackedModelConfigEntry), u16>,
     has_any_model_config: bool,
 }
 
@@ -60,7 +61,7 @@ impl ModelCatalogBuilder {
             provider_entries: Vec::with_capacity(provider_capacity),
             model_entries: Vec::with_capacity(model_capacity),
             model_config_entries: Vec::with_capacity(model_capacity),
-            model_entry_intern: HashMap::with_capacity(model_capacity),
+            model_entry_intern: AHashMap::with_capacity(model_capacity),
             has_any_model_config: false,
         }
     }
