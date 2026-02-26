@@ -3,9 +3,7 @@
 //! This module contains implementation details that are not part of the public API.
 //! Items here may change without notice.
 
-pub use builder::ModelCatalogBuilder;
 pub use fixed4::Fixed4;
-pub use modality::Modality;
 
 // Re-export hash utilities
 pub use hash_utils::{
@@ -14,6 +12,7 @@ pub use hash_utils::{
 };
 
 // Re-export constants needed by the main catalog
+pub use packed_env_range::MAX_ENV_RANGE_COUNT;
 pub use packed_model_entry::{MAX_INPUT_TOKENS, MAX_OUTPUT_TOKENS};
 pub use packed_model_table_entry::MAX_MODEL_CONFIG_COUNT;
 pub use packed_provider_table_entry::MAX_PROVIDER_COUNT;
@@ -23,13 +22,11 @@ pub mod hash {
     pub use super::provider_hash::ProviderHash;
 }
 
-mod builder;
 mod fixed4;
 mod hash_utils;
-mod modality;
+mod model_config_entry;
 mod model_hash;
 mod packed_env_range;
-mod model_config_entry;
 mod packed_model_entry;
 mod packed_model_table_entry;
 mod packed_provider_table_entry;

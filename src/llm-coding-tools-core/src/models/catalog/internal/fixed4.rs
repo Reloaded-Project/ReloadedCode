@@ -30,6 +30,7 @@ impl Fixed4 {
     }
 
     /// Creates from an encoded fixed4 value, returning `None` if sentinel.
+    #[cfg(test)]
     #[inline]
     pub const fn from_encoded_checked(encoded: u16) -> Option<Self> {
         if encoded == Self::NONE_SENTINEL {
@@ -40,6 +41,7 @@ impl Fixed4 {
     }
 
     /// Returns the raw encoded fixed4 representation (may be sentinel).
+    #[cfg(test)]
     #[inline]
     pub const fn encoded(self) -> u16 {
         self.0
@@ -52,12 +54,14 @@ impl Fixed4 {
     }
 
     /// Returns `true` if this instance represents a valid fixed4 value.
+    #[cfg(test)]
     #[inline]
     pub const fn is_valid(self) -> bool {
         self.0 != Self::NONE_SENTINEL
     }
 
     /// Converts to `Option<Fixed4>`, returning `None` if sentinel.
+    #[cfg(test)]
     #[inline]
     pub const fn to_option(self) -> Option<Self> {
         if self.0 == Self::NONE_SENTINEL {

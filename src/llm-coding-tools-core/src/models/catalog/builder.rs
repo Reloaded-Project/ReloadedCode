@@ -1,11 +1,11 @@
-use super::{
+use crate::models::catalog::internal::{
     hash_model_key, hash_provider_key, hash_state_for_seed, model_table_entry_hash,
     provider_table_entry_hash, ModelConfigEntry, PackedEnvRange, PackedModelEntry,
     PackedModelTableEntry, PackedProviderTableEntry, MAX_INPUT_TOKENS, MAX_MODEL_CONFIG_COUNT,
     MAX_OUTPUT_TOKENS, MAX_PROVIDER_COUNT,
 };
 use crate::models::catalog::public::builder_types::{
-    LookupTableKind, ModelCatalogBuildError, ModelConfig, ModelInfo, ProviderInfo,
+    LookupTableKind, ModelCatalogBuildError, ModelInfo, ProviderInfo,
 };
 use crate::models::catalog::public::ProviderIdx;
 use crate::models::catalog::ModelCatalog;
@@ -185,7 +185,7 @@ impl ModelCatalogBuilder {
         provider_key: &str,
         info: &ProviderInfo<'_>,
     ) -> Result<(), ModelCatalogBuildError> {
-        use super::packed_env_range::MAX_ENV_RANGE_COUNT;
+        use crate::models::catalog::internal::MAX_ENV_RANGE_COUNT;
 
         if self.provider_entries.len() >= MAX_PROVIDER_COUNT {
             return Err(ModelCatalogBuildError::TooManyProviders {
@@ -251,8 +251,7 @@ impl ModelCatalogBuilder {
     ///
     /// * `model_key` - The unique model identifier (e.g., `"gpt-4"`, `"moonshotai/Kimi-K2.5"`).
     ///   Note that model key format depends on the source registry.
-    /// * `info` - Model metadata including token limits and modalities.
-    /// * `config` - Optional default sampling configuration (temperature, top_p).
+    /// * `info` - Model metadata including token limits, modalities, and optional sampling defaults.
     ///
     /// # Returns
     ///
@@ -270,7 +269,6 @@ impl ModelCatalogBuilder {
         &mut self,
         model_key: &str,
         info: ModelInfo,
-        config: Option<ModelConfig>,
     ) -> Result<(), ModelCatalogBuildError> {
         if info.max_output > MAX_OUTPUT_TOKENS {
             return Err(ModelCatalogBuildError::MaxOutputTokensOutOfRange {
@@ -287,7 +285,7 @@ impl ModelCatalogBuilder {
         }
 
         let model_entry = PackedModelEntry::from_model_info(info);
-        let config_entry = ModelConfigEntry::from_model_config(config);
+        let config_entry = ModelConfigEntry::from_sampling(info.temperature, info.top_p);
         if !config_entry.is_none() {
             self.has_any_model_config = true;
         }
@@ -427,9 +425,8 @@ impl Default for ModelCatalogBuilder {
 #[cfg(test)]
 mod tests {
     use super::ModelCatalogBuilder;
-    use crate::models::catalog::internal::Modality;
-    use crate::models::catalog::public::builder_types::{
-        LookupTableKind, ModelCatalogBuildError, ModelInfo, ProviderInfo,
+    use crate::models::catalog::{
+        LookupTableKind, Modality, ModelCatalogBuildError, ModelInfo, ProviderInfo,
     };
     use crate::models::ProviderType;
 
@@ -450,6 +447,8 @@ mod tests {
             modalities: Modality::TEXT,
             max_input,
             max_output,
+            temperature: None,
+            top_p: None,
         }
     }
 
@@ -476,7 +475,7 @@ mod tests {
     fn reset_advances_seed_and_clears_tables() {
         let mut builder = ModelCatalogBuilder::new();
         builder
-            .insert_model("m1", info(4096, 512), None)
+            .insert_model("m1", info(4096, 512))
             .expect("insert model");
         assert_eq!(builder.seed(), 0);
 
@@ -510,7 +509,7 @@ mod tests {
         let max_output = super::MAX_OUTPUT_TOKENS;
 
         let err = builder
-            .insert_model("m1", info(4096, max_output.saturating_add(1)), None)
+            .insert_model("m1", info(4096, max_output.saturating_add(1)))
             .expect_err("max output over packed limit should fail");
 
         assert_eq!(
@@ -528,7 +527,7 @@ mod tests {
         let max_input = super::MAX_INPUT_TOKENS;
 
         let err = builder
-            .insert_model("m1", info(max_input.saturating_add(1), 512), None)
+            .insert_model("m1", info(max_input.saturating_add(1), 512))
             .expect_err("max input over packed limit should fail");
 
         assert_eq!(

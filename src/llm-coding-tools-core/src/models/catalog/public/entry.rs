@@ -1,11 +1,11 @@
 //! Lookup result types for provider and model queries.
 //!
 //! These are the flattened types returned by [`ModelCatalog`] lookup methods.
-//! For builder input types, see [`ProviderInfo`](super::ProviderInfo),
-//! [`ModelInfo`](super::ModelInfo), and [`ModelConfig`](super::ModelConfig).
+//! For builder input types, see [`ProviderInfo`](super::ProviderInfo) and
+//! [`ModelInfo`](super::ModelInfo).
 
-use super::{ModelIdx, ProviderIdx};
-use crate::models::catalog::internal::{Fixed4, Modality};
+use super::{Modality, ModelIdx, ProviderIdx};
+use crate::models::catalog::internal::Fixed4;
 use crate::models::ProviderType;
 
 /// Provider lookup result.
@@ -38,7 +38,8 @@ pub struct Model {
 
 impl Model {
     /// Creates a new Model with the given parameters.
-    pub(crate) const fn new(
+    #[inline]
+    pub(crate) fn new(
         model_config_idx: ModelIdx,
         modalities: Modality,
         max_input: u32,
@@ -66,18 +67,6 @@ impl Model {
     #[inline]
     pub fn top_p(&self) -> Option<f32> {
         self.top_p.value()
-    }
-
-    /// Returns the raw Fixed4 temperature value (for internal use).
-    #[inline]
-    pub(crate) const fn temperature_fixed4(&self) -> Fixed4 {
-        self.temperature
-    }
-
-    /// Returns the raw Fixed4 top_p value (for internal use).
-    #[inline]
-    pub(crate) const fn top_p_fixed4(&self) -> Fixed4 {
-        self.top_p
     }
 }
 

@@ -5,7 +5,6 @@
 //! - `16` bits: top_p fixed4 (with `u16::MAX` as `None` sentinel)
 
 use super::Fixed4;
-use crate::models::catalog::public::builder_types::ModelConfig;
 
 /// Model-configuration sidecar row.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -16,17 +15,17 @@ pub struct ModelConfigEntry {
 }
 
 impl ModelConfigEntry {
-    /// Creates a packed row from optional public model config.
+    /// Creates a packed row from optional sampling values.
     #[inline]
-    pub fn from_model_config(config: Option<ModelConfig>) -> Self {
-        match config {
-            Some(config) => Self {
-                temperature: config.temperature,
-                top_p: config.top_p,
+    pub fn from_sampling(temperature: Option<f32>, top_p: Option<f32>) -> Self {
+        Self {
+            temperature: match temperature.and_then(Fixed4::from_f32) {
+                Some(f) => f,
+                None => Fixed4::from_encoded(Fixed4::NONE_SENTINEL),
             },
-            None => Self {
-                temperature: Fixed4::from_encoded(Fixed4::NONE_SENTINEL),
-                top_p: Fixed4::from_encoded(Fixed4::NONE_SENTINEL),
+            top_p: match top_p.and_then(Fixed4::from_f32) {
+                Some(f) => f,
+                None => Fixed4::from_encoded(Fixed4::NONE_SENTINEL),
             },
         }
     }
@@ -37,17 +36,16 @@ impl ModelConfigEntry {
         self.temperature.is_sentinel() && self.top_p.is_sentinel()
     }
 
-    /// Converts a packed row into optional public model config.
+    /// Returns temperature as `Option<f32>`.
     #[inline]
-    pub fn into_model_config(self) -> Option<ModelConfig> {
-        if self.temperature.is_sentinel() && self.top_p.is_sentinel() {
-            None
-        } else {
-            Some(ModelConfig {
-                temperature: self.temperature,
-                top_p: self.top_p,
-            })
-        }
+    pub fn temperature(self) -> Option<f32> {
+        self.temperature.value()
+    }
+
+    /// Returns top_p as `Option<f32>`.
+    #[inline]
+    pub fn top_p(self) -> Option<f32> {
+        self.top_p.value()
     }
 }
 
@@ -62,22 +60,25 @@ mod tests {
 
     #[test]
     fn none_roundtrips() {
-        let packed = ModelConfigEntry::from_model_config(None);
+        let packed = ModelConfigEntry::from_sampling(None, None);
         assert!(packed.is_none());
-        assert_eq!(packed.into_model_config(), None);
+        assert_eq!(packed.temperature(), None);
+        assert_eq!(packed.top_p(), None);
     }
 
     #[test]
     fn values_roundtrip() {
-        let packed = ModelConfigEntry::from_model_config(Some(ModelConfig {
-            temperature: Fixed4::from_encoded(12_000),
-            top_p: Fixed4::from_encoded(5_000),
-        }));
+        let packed = ModelConfigEntry::from_sampling(Some(1.2), Some(0.5));
 
-        let unpacked = packed.into_model_config().expect("config must exist");
-        assert!(!unpacked.temperature.is_sentinel());
-        assert_eq!(unpacked.temperature.encoded(), 12_000);
-        assert!(!unpacked.top_p.is_sentinel());
-        assert_eq!(unpacked.top_p.encoded(), 5_000);
+        assert_eq!(packed.temperature(), Some(1.2));
+        assert_eq!(packed.top_p(), Some(0.5));
+    }
+
+    #[test]
+    fn partial_values() {
+        let packed = ModelConfigEntry::from_sampling(Some(1.0), None);
+        assert!(!packed.is_none());
+        assert_eq!(packed.temperature(), Some(1.0));
+        assert_eq!(packed.top_p(), None);
     }
 }

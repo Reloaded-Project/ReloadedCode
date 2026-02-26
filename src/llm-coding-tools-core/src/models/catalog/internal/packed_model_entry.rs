@@ -5,8 +5,7 @@
 //! - `27` bits: max output tokens
 //! - `29` bits: max input tokens
 
-use super::Modality;
-use crate::models::catalog::public::builder_types::ModelInfo;
+use crate::models::catalog::{Modality, ModelInfo};
 use bitfields::bitfield;
 
 /// Number of bits allocated to modality flags.
@@ -48,13 +47,15 @@ impl PackedModelEntry {
         packed
     }
 
-    /// Converts a packed row into public model metadata.
+    /// Converts a packed row into model metadata (without sampling config).
     #[inline]
     pub fn into_model_info(self) -> ModelInfo {
         ModelInfo {
             modalities: Modality::from_bits_retain(self.modalities()),
             max_input: self.max_input(),
             max_output: self.max_output(),
+            temperature: None,
+            top_p: None,
         }
     }
 }
@@ -70,11 +71,12 @@ mod tests {
 
     #[test]
     fn model_entry_roundtrip() {
-        use crate::models::catalog::internal::Modality;
         let packed = PackedModelEntry::from_model_info(ModelInfo {
             modalities: Modality::TEXT | Modality::IMAGE_INPUT,
             max_output: 123_456,
             max_input: 654_321,
+            temperature: None,
+            top_p: None,
         });
 
         assert_eq!(
