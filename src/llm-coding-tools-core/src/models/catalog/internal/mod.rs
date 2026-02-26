@@ -4,10 +4,8 @@
 //! Items here may change without notice.
 
 pub use builder::ModelCatalogBuilder;
+pub use fixed4::Fixed4;
 pub use modality::Modality;
-pub use sampling_fixed4::Fixed4;
-pub use temperature_fixed4::TemperatureFixed4;
-pub use top_p_fixed4::TopPFixed4;
 
 // Re-export hash utilities
 pub use hash_utils::{
@@ -26,6 +24,7 @@ pub mod hash {
 }
 
 mod builder;
+mod fixed4;
 mod hash_utils;
 mod modality;
 mod model_hash;
@@ -36,9 +35,6 @@ mod packed_model_table_entry;
 mod packed_provider_entry;
 mod packed_provider_table_entry;
 mod provider_hash;
-mod sampling_fixed4;
-mod temperature_fixed4;
-mod top_p_fixed4;
 
 // Re-export internal types for use by the main catalog module
 pub use packed_env_range::PackedEnvRange;

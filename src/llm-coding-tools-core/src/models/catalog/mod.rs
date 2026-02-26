@@ -189,8 +189,9 @@ mod public;
 use ahash::RandomState;
 use hashbrown::HashTable;
 use internal::{
-    hash_model_key, hash_provider_key, PackedEnvRange, PackedModelConfigEntry, PackedModelEntry,
-    PackedModelTableEntry, PackedProviderEntry, PackedProviderTableEntry, ProviderHash,
+    hash_model_key, hash_provider_key, Fixed4, PackedEnvRange, PackedModelConfigEntry,
+    PackedModelEntry, PackedModelTableEntry, PackedProviderEntry, PackedProviderTableEntry,
+    ProviderHash,
 };
 use lite_strtab::{StringId, StringTable};
 
@@ -368,18 +369,18 @@ impl ModelCatalog {
             self.lookup_provider_hash(hash_provider_key(&self.hash_state, provider_key))?;
         let model = self.lookup_model_hash(hash_model_key(&self.hash_state, model_key))?;
 
-        Some(CatalogEntry {
-            provider_idx: provider.provider_idx,
-            api_url: provider.api_url,
-            env_vars: provider.env_vars,
-            api_type: provider.api_type,
-            model_config_idx: model.model_config_idx,
-            modalities: model.modalities,
-            max_input: model.max_input,
-            max_output: model.max_output,
-            temperature: model.temperature,
-            top_p: model.top_p,
-        })
+        Some(CatalogEntry::new(
+            provider.provider_idx,
+            provider.api_url,
+            provider.env_vars,
+            provider.api_type,
+            model.model_config_idx,
+            model.modalities,
+            model.max_input,
+            model.max_output,
+            model.temperature_fixed4(),
+            model.top_p_fixed4(),
+        ))
     }
 
     /// Looks up a provider by its index.
@@ -440,21 +441,29 @@ impl ModelCatalog {
             .and_then(|entries| entries.get(idx))
             .and_then(|entry| entry.into_model_config());
 
-        Some(Model {
+        let (temperature, top_p) = match config {
+            Some(c) => (c.temperature, c.top_p),
+            None => (
+                Fixed4::from_encoded(Fixed4::NONE_SENTINEL),
+                Fixed4::from_encoded(Fixed4::NONE_SENTINEL),
+            ),
+        };
+
+        Some(Model::new(
             model_config_idx,
-            modalities: info.modalities,
-            max_input: info.max_input,
-            max_output: info.max_output,
-            temperature: config.as_ref().and_then(|c| c.temperature),
-            top_p: config.as_ref().and_then(|c| c.top_p),
-        })
+            info.modalities,
+            info.max_input,
+            info.max_output,
+            temperature,
+            top_p,
+        ))
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::models::catalog::internal::{Modality, TemperatureFixed4, TopPFixed4};
+    use crate::models::catalog::internal::{Fixed4, Modality};
     use crate::models::catalog::public::builder_types::{ModelConfig, ModelInfo, ProviderInfo};
     use crate::models::ProviderType;
 
@@ -503,8 +512,8 @@ mod tests {
                 "m1",
                 info(8192, 1024),
                 Some(ModelConfig {
-                    temperature: TemperatureFixed4::from_encoded(12_000),
-                    top_p: TopPFixed4::from_encoded(5_000),
+                    temperature: Fixed4::from_encoded(12_000),
+                    top_p: Fixed4::from_encoded(5_000),
                 }),
             )
             .expect("insert model m1");
@@ -522,11 +531,8 @@ mod tests {
         let m1 = catalog.lookup_model("m1").expect("model m1 exists");
         assert_eq!(m1.max_input, 8192);
         assert_eq!(m1.max_output, 1024);
-        assert_eq!(
-            m1.temperature.expect("temperature must exist").encoded(),
-            12_000
-        );
-        assert_eq!(m1.top_p.expect("top_p must exist").encoded(), 5_000);
+        assert_eq!(m1.temperature(), Some(1.2));
+        assert_eq!(m1.top_p(), Some(0.5));
 
         let joined = catalog.lookup("alpha", "m1").expect("joined lookup exists");
         assert_eq!(joined.api_url, "https://alpha.example");
@@ -562,8 +568,8 @@ mod tests {
                 "m1",
                 info(4096, 512),
                 Some(ModelConfig {
-                    temperature: TemperatureFixed4::from_encoded(10_000),
-                    top_p: TopPFixed4::from_encoded(9_000),
+                    temperature: Fixed4::from_encoded(10_000),
+                    top_p: Fixed4::from_encoded(9_000),
                 }),
             )
             .expect("insert m1");
@@ -572,8 +578,8 @@ mod tests {
                 "m2",
                 info(4096, 512),
                 Some(ModelConfig {
-                    temperature: TemperatureFixed4::from_encoded(10_000),
-                    top_p: TopPFixed4::from_encoded(9_000),
+                    temperature: Fixed4::from_encoded(10_000),
+                    top_p: Fixed4::from_encoded(9_000),
                 }),
             )
             .expect("insert m2");

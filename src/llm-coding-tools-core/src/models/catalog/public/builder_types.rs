@@ -1,6 +1,6 @@
 //! Types used when building a [`ModelCatalog`].
 
-use crate::models::catalog::internal::{Modality, TemperatureFixed4, TopPFixed4};
+use crate::models::catalog::internal::{Fixed4, Modality};
 use crate::models::ProviderType;
 use thiserror::Error;
 
@@ -18,10 +18,10 @@ pub struct ModelInfo {
 /// Optional model sampling defaults used when inserting models during catalog construction.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct ModelConfig {
-    /// Temperature encoded as fixed4, or `None` when unspecified.
-    pub temperature: Option<TemperatureFixed4>,
-    /// `top_p` encoded as fixed4, or `None` when unspecified.
-    pub top_p: Option<TopPFixed4>,
+    /// Temperature encoded as fixed4. Use [`Fixed4::is_sentinel`] to check for `None`.
+    pub temperature: Fixed4,
+    /// `top_p` encoded as fixed4. Use [`Fixed4::is_sentinel`] to check for `None`.
+    pub top_p: Fixed4,
 }
 
 /// Distilled provider metadata used when inserting providers during catalog construction.

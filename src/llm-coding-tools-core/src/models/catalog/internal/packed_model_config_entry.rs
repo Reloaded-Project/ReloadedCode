@@ -4,7 +4,7 @@
 //! - `16` bits: temperature fixed4 (with `u16::MAX` as `None` sentinel)
 //! - `16` bits: top_p fixed4 (with `u16::MAX` as `None` sentinel)
 
-use super::{Fixed4, TemperatureFixed4, TopPFixed4};
+use super::Fixed4;
 use crate::models::catalog::public::builder_types::ModelConfig;
 use bitfields::bitfield;
 
@@ -23,8 +23,8 @@ impl PackedModelConfigEntry {
         let mut packed = Self::new_without_defaults();
         match config {
             Some(config) => {
-                packed.set_temperature(TemperatureFixed4::encode_optional(config.temperature));
-                packed.set_top_p(TopPFixed4::encode_optional(config.top_p));
+                packed.set_temperature(config.temperature.encoded());
+                packed.set_top_p(config.top_p.encoded());
             }
             None => {
                 packed.set_temperature(Fixed4::NONE_SENTINEL);
@@ -37,15 +37,15 @@ impl PackedModelConfigEntry {
     /// Returns true when both fields are the `None` sentinel.
     #[inline]
     pub const fn is_none(self) -> bool {
-        Fixed4::is_sentinel(self.temperature()) && Fixed4::is_sentinel(self.top_p())
+        self.temperature() == Fixed4::NONE_SENTINEL && self.top_p() == Fixed4::NONE_SENTINEL
     }
 
     /// Converts a packed row into optional public model config.
     #[inline]
     pub fn into_model_config(self) -> Option<ModelConfig> {
-        let temperature = TemperatureFixed4::from_encoded(self.temperature());
-        let top_p = TopPFixed4::from_encoded(self.top_p());
-        if temperature.is_none() && top_p.is_none() {
+        let temperature = Fixed4::from_encoded(self.temperature());
+        let top_p = Fixed4::from_encoded(self.top_p());
+        if temperature.is_sentinel() && top_p.is_sentinel() {
             None
         } else {
             Some(ModelConfig { temperature, top_p })
@@ -72,18 +72,14 @@ mod tests {
     #[test]
     fn values_roundtrip() {
         let packed = PackedModelConfigEntry::from_model_config(Some(ModelConfig {
-            temperature: TemperatureFixed4::from_encoded(12_000),
-            top_p: TopPFixed4::from_encoded(5_000),
+            temperature: Fixed4::from_encoded(12_000),
+            top_p: Fixed4::from_encoded(5_000),
         }));
 
         let unpacked = packed.into_model_config().expect("config must exist");
-        assert_eq!(
-            unpacked
-                .temperature
-                .expect("temperature must exist")
-                .encoded(),
-            12_000
-        );
-        assert_eq!(unpacked.top_p.expect("top_p must exist").encoded(), 5_000);
+        assert!(!unpacked.temperature.is_sentinel());
+        assert_eq!(unpacked.temperature.encoded(), 12_000);
+        assert!(!unpacked.top_p.is_sentinel());
+        assert_eq!(unpacked.top_p.encoded(), 5_000);
     }
 }
