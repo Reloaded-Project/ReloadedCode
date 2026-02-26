@@ -130,11 +130,11 @@
 //!
 //! ## Packed Metadata Storage
 //!
-//! | Field                 | Type                                  | Size | Count |   Total |
-//! | --------------------- | ------------------------------------- | ---- | ----- | ------: |
+//! | Field                 | Type                                  | Size | Count |   Total  |
+//! | --------------------- | ------------------------------------- | ---- | ----- | -------: |
 //! | `provider_table`      | `HashTable<PackedProviderTableEntry>` | 8 B  |    96 |    768 B |
 //! | `model_table`         | `HashTable<PackedModelTableEntry>`    | 8 B  | 3,031 | 24,248 B |
-//! | `provider_entries`    | `Box<[PackedProviderEntry]>`          | 1 B  |    96 |     96 B |
+//! | `provider_entries`    | `Box<[ProviderType]>`                 | 1 B  |    96 |     96 B |
 //! | `model_entries`       | `Box<[PackedModelEntry]>`             | 8 B  |   585 |  4,680 B |
 //! | `provider_env_ranges` | `Box<[PackedEnvRange]>`               | 2 B  |    96 |    192 B |
 //!
@@ -143,12 +143,12 @@
 //! ## Optional Metadata
 //!
 //! The `model_config_entries` field stores preset sampling parameters (`temperature`,
-//! `top_p`) as [`PackedModelConfigEntry`] (4 bytes each). models.dev does not provide
+//! `top_p`) as [`ModelConfigEntry`] (4 bytes each). models.dev does not provide
 //! this so this is currently markes as `None`.
 //!
-//! | Field                  | Type                                    | Size | Count | Total |
-//! | ---------------------- | --------------------------------------- | ---- | ----- | ----: |
-//! | `model_config_entries` | `Option<Box<[PackedModelConfigEntry]>>` | 4 B  |     0 |    —  |
+//! | Field                  | Type                               | Size | Count | Total |
+//! | ---------------------- | ---------------------------------- | ---- | ----- | ----: |
+//! | `model_config_entries` | `Option<Box<[ModelConfigEntry]>>`  | 4 B  |     0 |    —  |
 //!
 //! ## String Table Storage
 //!
@@ -186,12 +186,12 @@ mod internal;
 // Public types and lookup results
 mod public;
 
+use crate::models::ProviderType;
 use ahash::RandomState;
 use hashbrown::HashTable;
 use internal::{
-    hash_model_key, hash_provider_key, Fixed4, PackedEnvRange, PackedModelConfigEntry,
-    PackedModelEntry, PackedModelTableEntry, PackedProviderEntry, PackedProviderTableEntry,
-    ProviderHash,
+    hash_model_key, hash_provider_key, Fixed4, ModelConfigEntry, PackedEnvRange, PackedModelEntry,
+    PackedModelTableEntry, PackedProviderTableEntry, ProviderHash,
 };
 use lite_strtab::{StringId, StringTable};
 
@@ -212,12 +212,12 @@ pub struct ModelCatalog {
     provider_env_keys: StringTable<u32, ProviderIdx>,
     /// Env key ranges (start, count) indexed by provider index.
     provider_env_ranges: Box<[PackedEnvRange]>,
-    /// Packed provider metadata indexed by provider index.
-    provider_entries: Box<[PackedProviderEntry]>,
+    /// Provider types indexed by provider index.
+    provider_entries: Box<[ProviderType]>,
     /// Packed deduplicated model metadata indexed by model-configuration index.
     model_entries: Box<[PackedModelEntry]>,
-    /// Optional packed model sampling sidecars indexed by model-configuration index.
-    model_config_entries: Option<Box<[PackedModelConfigEntry]>>,
+    /// Optional model sampling sidecars indexed by model-configuration index.
+    model_config_entries: Option<Box<[ModelConfigEntry]>>,
 }
 
 impl ModelCatalog {
@@ -395,7 +395,7 @@ impl ModelCatalog {
     #[inline]
     pub fn provider_from_index(&self, provider_idx: ProviderIdx) -> Option<Provider<'_>> {
         let provider_idx_usize = provider_idx.as_usize();
-        let packed = *self.provider_entries.get(provider_idx_usize)?;
+        let api_type = *self.provider_entries.get(provider_idx_usize)?;
         let api_url = self.provider_api_urls.get(StringId::new(provider_idx))?;
         let range = self.provider_env_ranges.get(provider_idx_usize)?;
         let start = range.start();
@@ -418,7 +418,7 @@ impl ModelCatalog {
             provider_idx,
             api_url,
             env_vars,
-            api_type: packed.api_type(),
+            api_type,
         })
     }
 

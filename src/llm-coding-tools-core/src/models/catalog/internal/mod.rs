@@ -29,18 +29,16 @@ mod hash_utils;
 mod modality;
 mod model_hash;
 mod packed_env_range;
-mod packed_model_config_entry;
+mod model_config_entry;
 mod packed_model_entry;
 mod packed_model_table_entry;
-mod packed_provider_entry;
 mod packed_provider_table_entry;
 mod provider_hash;
 
 // Re-export internal types for use by the main catalog module
+pub use model_config_entry::ModelConfigEntry;
 pub use packed_env_range::PackedEnvRange;
-pub use packed_model_config_entry::PackedModelConfigEntry;
 pub use packed_model_entry::PackedModelEntry;
 pub use packed_model_table_entry::PackedModelTableEntry;
-pub use packed_provider_entry::PackedProviderEntry;
 pub use packed_provider_table_entry::PackedProviderTableEntry;
 pub use provider_hash::ProviderHash;

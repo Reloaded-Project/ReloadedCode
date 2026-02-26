@@ -1,14 +1,15 @@
 use super::{
     hash_model_key, hash_provider_key, hash_state_for_seed, model_table_entry_hash,
-    provider_table_entry_hash, PackedEnvRange, PackedModelConfigEntry, PackedModelEntry,
-    PackedModelTableEntry, PackedProviderEntry, PackedProviderTableEntry, MAX_INPUT_TOKENS,
-    MAX_MODEL_CONFIG_COUNT, MAX_OUTPUT_TOKENS, MAX_PROVIDER_COUNT,
+    provider_table_entry_hash, ModelConfigEntry, PackedEnvRange, PackedModelEntry,
+    PackedModelTableEntry, PackedProviderTableEntry, MAX_INPUT_TOKENS, MAX_MODEL_CONFIG_COUNT,
+    MAX_OUTPUT_TOKENS, MAX_PROVIDER_COUNT,
 };
 use crate::models::catalog::public::builder_types::{
     LookupTableKind, ModelCatalogBuildError, ModelConfig, ModelInfo, ProviderInfo,
 };
 use crate::models::catalog::public::ProviderIdx;
 use crate::models::catalog::ModelCatalog;
+use crate::models::ProviderType;
 use ahash::AHashMap;
 use hashbrown::HashTable;
 use lite_strtab::{Global, StringTable, StringTableBuilder};
@@ -32,10 +33,10 @@ pub struct ModelCatalogBuilder {
     provider_api_urls: Vec<String>,
     provider_env_keys: Vec<String>,
     provider_env_ranges: Vec<PackedEnvRange>,
-    provider_entries: Vec<PackedProviderEntry>,
+    provider_entries: Vec<ProviderType>,
     model_entries: Vec<PackedModelEntry>,
-    model_config_entries: Vec<PackedModelConfigEntry>,
-    model_entry_intern: AHashMap<(PackedModelEntry, PackedModelConfigEntry), u16>,
+    model_config_entries: Vec<ModelConfigEntry>,
+    model_entry_intern: AHashMap<(PackedModelEntry, ModelConfigEntry), u16>,
     has_any_model_config: bool,
 }
 
@@ -231,8 +232,7 @@ impl ModelCatalogBuilder {
         self.provider_env_ranges
             .push(PackedEnvRange::from_parts(env_start, env_count));
 
-        self.provider_entries
-            .push(PackedProviderEntry::from_parts(info.api_type));
+        self.provider_entries.push(info.api_type);
         self.provider_table.insert_unique(
             hash48,
             PackedProviderTableEntry::from_parts(key.as_u64(), provider_idx),
@@ -287,7 +287,7 @@ impl ModelCatalogBuilder {
         }
 
         let model_entry = PackedModelEntry::from_model_info(info);
-        let config_entry = PackedModelConfigEntry::from_model_config(config);
+        let config_entry = ModelConfigEntry::from_model_config(config);
         if !config_entry.is_none() {
             self.has_any_model_config = true;
         }
