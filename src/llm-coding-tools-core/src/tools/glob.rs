@@ -17,6 +17,12 @@ pub struct GlobOutput {
     /// Whether results were truncated due to limit.
     #[serde(skip_serializing_if = "std::ops::Not::not")]
     pub truncated: bool,
+    /// Whether one or more paths could not be traversed or processed.
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub partial: bool,
+    /// Per-path traversal errors encountered while collecting matches.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub errors: Vec<String>,
 }
 
 /// Finds files matching a glob pattern in the given directory.
@@ -39,6 +45,7 @@ pub fn glob_files<R: PathResolver>(
     let matcher = Glob::new(pattern)?.compile_matcher();
 
     let mut files_with_mtime: Vec<(String, SystemTime)> = Vec::new();
+    let mut errors: Vec<String> = Vec::with_capacity(8);
 
     let walker = WalkBuilder::new(&path)
         .hidden(false)
@@ -50,7 +57,10 @@ pub fn glob_files<R: PathResolver>(
     for entry_result in walker {
         let entry = match entry_result {
             Ok(e) => e,
-            Err(_) => continue,
+            Err(err) => {
+                errors.push(format!("walk error: {err}"));
+                continue;
+            }
         };
 
         if let Some(ft) = entry.file_type() {
@@ -63,7 +73,14 @@ pub fn glob_files<R: PathResolver>(
 
         let rel_path = match entry.path().strip_prefix(&path) {
             Ok(p) => p.to_string_lossy().into_owned(),
-            Err(_) => continue,
+            Err(err) => {
+                errors.push(format!(
+                    "failed to make '{}' relative to '{}': {err}",
+                    entry.path().display(),
+                    path.display()
+                ));
+                continue;
+            }
         };
 
         // Normalize Windows backslashes to forward slashes for glob pattern matching
@@ -97,7 +114,12 @@ pub fn glob_files<R: PathResolver>(
         .map(|(path, _)| path)
         .collect();
 
-    Ok(GlobOutput { files, truncated })
+    Ok(GlobOutput {
+        files,
+        truncated,
+        partial: !errors.is_empty(),
+        errors,
+    })
 }
 
 #[cfg(test)]
@@ -195,5 +217,35 @@ mod tests {
             assert!(!path.contains('\\'), "expected forward slashes: {path}");
         }
         assert!(result.files.iter().any(|f| f.contains('/')));
+    }
+
+    #[test]
+    fn glob_output_serializes_partial_metadata() {
+        let output = GlobOutput {
+            files: vec!["src/lib.rs".to_string()],
+            truncated: false,
+            partial: true,
+            errors: vec!["walk error: denied".to_string()],
+        };
+
+        let json = serde_json::to_value(&output).unwrap();
+
+        assert_eq!(json["partial"], true);
+        assert_eq!(json["errors"][0], "walk error: denied");
+    }
+
+    #[test]
+    fn glob_output_omits_partial_metadata_when_not_partial() {
+        let output = GlobOutput {
+            files: vec!["src/lib.rs".to_string()],
+            truncated: false,
+            partial: false,
+            errors: Vec::new(),
+        };
+
+        let json = serde_json::to_value(&output).unwrap();
+
+        assert!(json.get("partial").is_none());
+        assert!(json.get("errors").is_none());
     }
 }
