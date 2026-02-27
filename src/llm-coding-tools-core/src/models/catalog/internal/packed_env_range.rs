@@ -8,6 +8,8 @@ use bitfields::bitfield;
 
 /// Maximum env-var count per provider representable by PackedEnvRange.
 pub const MAX_ENV_RANGE_COUNT: u8 = 3;
+/// Maximum start index representable by PackedEnvRange (14 bits).
+pub const MAX_ENV_START: u16 = (1u16 << 14) - 1; // 16383
 
 /// Packed env-var range entry.
 ///
@@ -23,6 +25,10 @@ pub struct PackedEnvRange {
 
 impl PackedEnvRange {
     /// Creates one packed env-var range entry.
+    ///
+    /// SAFETY: The `start` parameter is not validated here. The caller must ensure
+    /// `start` fits within 14 bits (max 16383). This invariant is enforced in
+    /// `analyze_provider_rows` before `populate_tables_once` calls this function.
     #[inline]
     pub fn from_parts(start: u16, count: u8) -> Self {
         let mut packed = Self::new_without_defaults();

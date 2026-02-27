@@ -13,7 +13,7 @@ pub use hash_utils::{
 };
 
 // Re-export constants needed by the main catalog
-pub use packed_env_range::MAX_ENV_RANGE_COUNT;
+pub use packed_env_range::{MAX_ENV_RANGE_COUNT, MAX_ENV_START};
 pub use packed_model_entry::{MAX_INPUT_TOKENS, MAX_OUTPUT_TOKENS};
 pub use packed_model_table_entry::MAX_MODEL_CONFIG_COUNT;
 pub use packed_provider_table_entry::MAX_PROVIDER_COUNT;

@@ -192,4 +192,12 @@ pub enum ModelCatalogBuildError {
         /// Number of seeds attempted.
         attempts: u16,
     },
+    /// Total env-var keys across all providers exceeds packed range capacity.
+    #[error("total env-var keys {count} exceeds packed range capacity {max}")]
+    TooManyEnvVarKeys {
+        /// Total number of env vars across all providers.
+        count: usize,
+        /// Maximum representable env var keys count.
+        max: usize,
+    },
 }
