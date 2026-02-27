@@ -422,9 +422,13 @@ impl ModelCatalog {
             model.modalities,
             model.max_input,
             model.max_output,
-            Fixed4::from_f32(model.temperature().unwrap_or(0.0))
+            model
+                .temperature()
+                .and_then(Fixed4::from_f32)
                 .unwrap_or_else(|| Fixed4::from_encoded(Fixed4::NONE_SENTINEL)),
-            Fixed4::from_f32(model.top_p().unwrap_or(0.0))
+            model
+                .top_p()
+                .and_then(Fixed4::from_f32)
                 .unwrap_or_else(|| Fixed4::from_encoded(Fixed4::NONE_SENTINEL)),
         ))
     }
@@ -488,9 +492,11 @@ impl ModelCatalog {
             .map(|entry| (entry.temperature(), entry.top_p()))
             .unwrap_or((None, None));
 
-        let temperature_fixed = Fixed4::from_f32(temperature.unwrap_or(0.0))
+        let temperature_fixed = temperature
+            .and_then(Fixed4::from_f32)
             .unwrap_or_else(|| Fixed4::from_encoded(Fixed4::NONE_SENTINEL));
-        let top_p_fixed = Fixed4::from_f32(top_p.unwrap_or(0.0))
+        let top_p_fixed = top_p
+            .and_then(Fixed4::from_f32)
             .unwrap_or_else(|| Fixed4::from_encoded(Fixed4::NONE_SENTINEL));
 
         Some(Model::new(
@@ -651,5 +657,28 @@ mod tests {
         assert_eq!(provider.env_vars[0], "AZURE_KEY");
         assert_eq!(provider.env_vars[1], "AZURE_TOKEN");
         assert_eq!(provider.env_vars[2], "FALLBACK_KEY");
+    }
+
+    #[test]
+    fn none_temperature_and_top_p_use_none_sentinel() {
+        let catalog = build_catalog(
+            vec![(
+                "alpha",
+                provider(
+                    "https://alpha.example",
+                    &["KEY"],
+                    ProviderType::OpenAiCompletions,
+                ),
+            )],
+            vec![("m1", info(4096, 512))],
+        );
+
+        let m1 = catalog.lookup_model("m1").expect("model m1 exists");
+        assert_eq!(m1.temperature(), None);
+        assert_eq!(m1.top_p(), None);
+
+        let joined = catalog.lookup("alpha", "m1").expect("joined lookup exists");
+        assert_eq!(joined.temperature(), None);
+        assert_eq!(joined.top_p(), None);
     }
 }
