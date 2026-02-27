@@ -3,7 +3,6 @@
 use super::{categorize_reqwest_error, check_size, process_content, WebFetchOutput};
 use crate::error::{ToolError, ToolResult};
 use std::io::Read;
-use std::mem::MaybeUninit;
 use std::time::Duration;
 
 /// Fetches content from a URL and returns processed content.
@@ -53,24 +52,18 @@ pub fn fetch_url(
     // Stream response body with incremental size checks to avoid memory exhaustion
     let mut bytes = content_length.map_or_else(Vec::new, Vec::with_capacity);
     let mut total_len: usize = 0;
-    let mut buffer = [MaybeUninit::<u8>::uninit(); 8192];
-    let buffer_ptr = buffer.as_mut_ptr() as *mut u8;
-    let buffer_len = buffer.len();
+    let mut buffer = [0u8; 8192];
 
     loop {
-        let n = {
-            let buf = unsafe { std::slice::from_raw_parts_mut(buffer_ptr, buffer_len) };
-            response
-                .read(buf)
-                .map_err(|e| ToolError::Http(e.to_string()))?
-        };
+        let n = response
+            .read(&mut buffer)
+            .map_err(|e| ToolError::Http(e.to_string()))?;
         if n == 0 {
             break;
         }
         total_len += n;
         check_size(total_len, url)?;
-        let initialized = unsafe { std::slice::from_raw_parts(buffer_ptr, n) };
-        bytes.extend_from_slice(initialized);
+        bytes.extend_from_slice(&buffer[..n]);
     }
 
     let byte_length = total_len;
