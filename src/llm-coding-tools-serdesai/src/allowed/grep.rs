@@ -6,10 +6,9 @@ use llm_coding_tools_core::path::AllowedPathResolver;
 use llm_coding_tools_core::tool_names;
 use llm_coding_tools_core::tools::{DEFAULT_MAX_LINE_LENGTH, grep_search};
 use serde::Deserialize;
-use serdes_ai::tools::{
-    RunContext, SchemaBuilder, Tool, ToolDefinition, ToolError, ToolResult, ToolReturn,
-};
+use serdes_ai::tools::{RunContext, SchemaBuilder, Tool, ToolDefinition, ToolError, ToolResult};
 
+use crate::common::grep::output_to_return as grep_output_to_return;
 use crate::convert::to_serdes_result;
 
 const DEFAULT_LIMIT: usize = 100;
@@ -121,14 +120,11 @@ impl<Deps: Send + Sync, const LINE_NUMBERS: bool> Tool<Deps> for GrepTool<LINE_N
 
         match result {
             Err(e) => to_serdes_result(tool_names::GREP, Err(e)),
-            Ok(grep_output) => {
-                if grep_output.files.is_empty() {
-                    return Ok(ToolReturn::text("No matches found."));
-                }
-
-                let output = grep_output.format::<LINE_NUMBERS>(limit, DEFAULT_MAX_LINE_LENGTH);
-                Ok(ToolReturn::text(output))
-            }
+            Ok(grep_output) => Ok(grep_output_to_return::<LINE_NUMBERS>(
+                grep_output,
+                limit,
+                DEFAULT_MAX_LINE_LENGTH,
+            )),
         }
     }
 }
@@ -209,5 +205,32 @@ mod tests {
             .await;
 
         assert!(result.is_err());
+    }
+
+    #[tokio::test]
+    async fn returns_partial_json_when_search_has_errors() {
+        let dir = TempDir::new().unwrap();
+        let resolver = AllowedPathResolver::new([dir.path()]).unwrap();
+        let tool: GrepTool<true> = GrepTool::new(resolver);
+        let result = tool
+            .call(
+                &mock_ctx(),
+                json!({
+                    "pattern": "hello",
+                    "path": "missing-root"
+                }),
+            )
+            .await
+            .unwrap();
+
+        let payload = result.as_json().unwrap();
+        assert_eq!(payload["partial"], true);
+        assert!(!payload["errors"].as_array().unwrap().is_empty());
+        assert!(
+            payload["content"]
+                .as_str()
+                .unwrap()
+                .contains("Partial results")
+        );
     }
 }

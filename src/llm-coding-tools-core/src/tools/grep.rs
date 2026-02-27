@@ -47,6 +47,12 @@ pub struct GrepOutput {
     pub match_count: usize,
     /// Whether results were truncated due to limit.
     pub truncated: bool,
+    /// Whether one or more files could not be searched.
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub partial: bool,
+    /// Per-file traversal/search errors encountered while collecting matches.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub errors: Vec<String>,
 }
 
 impl GrepOutput {
@@ -86,6 +92,14 @@ impl GrepOutput {
             let _ = write!(&mut output, "\n(Results truncated at {} matches)", limit);
         }
 
+        if self.partial {
+            let _ = write!(
+                &mut output,
+                "\n(Partial results: {} file error(s) encountered)",
+                self.errors.len()
+            );
+        }
+
         output
     }
 }
@@ -116,6 +130,7 @@ pub fn grep_search<R: PathResolver>(
         .build();
 
     let mut files: Vec<GrepFileMatches> = Vec::with_capacity(64);
+    let mut errors: Vec<String> = Vec::with_capacity(8);
 
     let walker = WalkBuilder::new(&path)
         .hidden(false)
@@ -127,7 +142,10 @@ pub fn grep_search<R: PathResolver>(
     for entry_result in walker {
         let entry = match entry_result {
             Ok(e) => e,
-            Err(_) => continue,
+            Err(err) => {
+                errors.push(format!("walk error: {err}"));
+                continue;
+            }
         };
 
         // Skip directories and non-regular files.
@@ -149,8 +167,13 @@ pub fn grep_search<R: PathResolver>(
             }
         }
 
-        let matches = collect_file_matches(&matcher, &mut searcher, entry_path);
-        if matches.is_empty() {
+        let search_result = collect_file_matches(&matcher, &mut searcher, entry_path);
+
+        if let Some(error) = search_result.error {
+            errors.push(error);
+        }
+
+        if search_result.matches.is_empty() {
             continue;
         }
 
@@ -162,7 +185,7 @@ pub fn grep_search<R: PathResolver>(
 
         files.push(GrepFileMatches {
             path: entry_path.to_string_lossy().into_owned(),
-            matches,
+            matches: search_result.matches,
             mtime,
         });
     }
@@ -193,7 +216,14 @@ pub fn grep_search<R: PathResolver>(
         files,
         match_count,
         truncated,
+        partial: !errors.is_empty(),
+        errors,
     })
+}
+
+struct FileSearchResult {
+    matches: Vec<GrepLineMatch>,
+    error: Option<String>,
 }
 
 #[inline]
@@ -201,22 +231,25 @@ fn collect_file_matches(
     matcher: &RegexMatcher,
     searcher: &mut Searcher,
     path: &Path,
-) -> Vec<GrepLineMatch> {
+) -> FileSearchResult {
     let mut matches = Vec::new();
 
-    let _ = searcher.search_path(
-        matcher,
-        path,
-        UTF8(|line_num, line| {
-            matches.push(GrepLineMatch {
-                line_num,
-                line_text: line.trim_end().to_string(),
-            });
-            Ok(true)
-        }),
-    );
+    let error = searcher
+        .search_path(
+            matcher,
+            path,
+            UTF8(|line_num, line| {
+                matches.push(GrepLineMatch {
+                    line_num,
+                    line_text: line.trim_end().to_string(),
+                });
+                Ok(true)
+            }),
+        )
+        .err()
+        .map(|err| format!("failed to search '{}': {err}", path.display()));
 
-    matches
+    FileSearchResult { matches, error }
 }
 
 #[cfg(test)]
@@ -256,5 +289,50 @@ mod tests {
 
         assert_eq!(result.files.len(), 1);
         assert!(result.files[0].path.ends_with(".rs"));
+    }
+
+    #[test]
+    fn grep_format_includes_partial_marker() {
+        let output = GrepOutput {
+            files: Vec::new(),
+            match_count: 0,
+            truncated: false,
+            partial: true,
+            errors: vec!["walk error: denied".to_string()],
+        };
+
+        let formatted = output.format::<true>(10, DEFAULT_MAX_LINE_LENGTH);
+
+        assert!(formatted.contains("Partial results"));
+    }
+
+    #[test]
+    fn collect_file_matches_reports_error_for_missing_file() {
+        let temp = tempdir().unwrap();
+        let missing = temp.path().join("missing.txt");
+        let matcher = RegexMatcher::new("hello").unwrap();
+        let mut searcher = SearcherBuilder::new()
+            .binary_detection(BinaryDetection::quit(0))
+            .build();
+
+        let result = collect_file_matches(&matcher, &mut searcher, &missing);
+
+        assert!(result.matches.is_empty());
+        assert!(result.error.is_some());
+    }
+
+    #[test]
+    fn grep_marks_results_partial_when_walker_reports_error() {
+        let temp = tempdir().unwrap();
+        let missing_root = temp.path().join("missing-root");
+        let resolver = AbsolutePathResolver;
+
+        let result =
+            grep_search(&resolver, "hello", None, missing_root.to_str().unwrap(), 10).unwrap();
+
+        assert!(result.partial);
+        assert_eq!(result.match_count, 0);
+        assert!(!result.truncated);
+        assert!(!result.errors.is_empty());
     }
 }

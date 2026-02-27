@@ -1,13 +1,14 @@
 //! Glob pattern file finding tool using [`AbsolutePathResolver`].
 
 use async_trait::async_trait;
+use llm_coding_tools_core::ToolContext;
 use llm_coding_tools_core::path::AbsolutePathResolver;
 use llm_coding_tools_core::tool_names;
 use llm_coding_tools_core::tools::glob_files;
-use llm_coding_tools_core::{ToolContext, ToolOutput};
 use serde::Deserialize;
 use serdes_ai::tools::{RunContext, SchemaBuilder, Tool, ToolDefinition, ToolError, ToolResult};
 
+use crate::common::glob::output_to_return as glob_output_to_return;
 use crate::convert::to_serdes_result;
 
 /// Internal args for JSON deserialization.
@@ -60,22 +61,10 @@ impl<Deps: Send + Sync> Tool<Deps> for GlobTool {
         let resolver = AbsolutePathResolver;
         let result = glob_files(&resolver, &args.pattern, &args.path);
 
-        // Convert GlobOutput to ToolOutput for consistent error handling
-        to_serdes_result(
-            tool_names::GLOB,
-            result.map(|output| {
-                let content = if output.files.is_empty() {
-                    "No files found matching the pattern.".to_string()
-                } else {
-                    output.files.join("\n")
-                };
-                if output.truncated {
-                    ToolOutput::truncated(content)
-                } else {
-                    ToolOutput::new(content)
-                }
-            }),
-        )
+        match result {
+            Err(e) => to_serdes_result(tool_names::GLOB, Err(e)),
+            Ok(output) => Ok(glob_output_to_return(output)),
+        }
     }
 }
 
@@ -90,6 +79,7 @@ impl ToolContext for GlobTool {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use llm_coding_tools_core::tools::GlobOutput;
     use serde_json::json;
     use serdes_ai::tools::RunContext;
     use std::fs::{self, File};
@@ -121,5 +111,19 @@ mod tests {
         let text = result.as_text().unwrap();
         assert!(text.contains("lib.rs"));
         assert!(text.contains("main.rs"));
+    }
+
+    #[test]
+    fn partial_glob_output_returns_json_payload() {
+        let payload = glob_output_to_return(GlobOutput {
+            files: vec!["src/lib.rs".to_string()],
+            truncated: false,
+            partial: true,
+            errors: vec!["walk error: denied".to_string()],
+        });
+
+        let json = payload.as_json().unwrap();
+        assert_eq!(json["partial"], true);
+        assert_eq!(json["errors"][0], "walk error: denied");
     }
 }
