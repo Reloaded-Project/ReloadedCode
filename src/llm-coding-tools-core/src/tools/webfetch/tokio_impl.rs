@@ -36,7 +36,15 @@ pub async fn fetch_url(
     // Check Content-Length header if available for early rejection and preallocation
     let content_length = response
         .content_length()
-        .and_then(|len| usize::try_from(len).ok());
+        .map(|len| {
+            usize::try_from(len).map_err(|_| {
+                ToolError::Http(format!(
+                    "Content-Length {} exceeds platform limits for {}",
+                    len, url
+                ))
+            })
+        })
+        .transpose()?;
     if let Some(len) = content_length {
         check_size(len, url)?;
     }
