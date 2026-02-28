@@ -57,12 +57,13 @@ use crate::internal::packed_permission::PackedPermission;
 /// Permission level for tool access.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
+#[repr(u8)]
 pub enum PermissionAction {
     /// Tool is denied.
     #[default]
-    Deny,
+    Deny = 0,
     /// Tool is allowed.
-    Allow,
+    Allow = 1,
 }
 
 /// A single permission rule with pattern-based matching.
