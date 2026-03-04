@@ -1357,7 +1357,7 @@ dependencies = [
  "serde_json",
  "serdes-ai",
  "serdes-ai-models",
- "serdes-ai-streaming",
+ "serdes-ai-streaming 0.2.6",
  "tempfile",
  "tokio",
  "wiremock",
@@ -2233,13 +2233,13 @@ checksum = "529a55f25c8f40f691c1ccdbbd7e6e0f7c610365b0848a4affcdc5444cbbb9aa"
 dependencies = [
  "futures",
  "serdes-ai-agent",
- "serdes-ai-core",
+ "serdes-ai-core 0.1.1",
  "serdes-ai-macros",
  "serdes-ai-models",
  "serdes-ai-output",
  "serdes-ai-providers",
  "serdes-ai-retries",
- "serdes-ai-streaming",
+ "serdes-ai-streaming 0.1.1",
  "serdes-ai-tools",
  "serdes-ai-toolsets",
  "thiserror 1.0.69",
@@ -2260,7 +2260,7 @@ dependencies = [
  "pin-project-lite",
  "serde",
  "serde_json",
- "serdes-ai-core",
+ "serdes-ai-core 0.1.1",
  "serdes-ai-models",
  "serdes-ai-tools",
  "thiserror 1.0.69",
@@ -2273,6 +2273,26 @@ name = "serdes-ai-core"
 version = "0.1.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "0edca768fae68ebc176484581627d6138abeb68df0bd5643d0b858a54898986e"
+dependencies = [
+ "anyhow",
+ "base64",
+ "bytes",
+ "chrono",
+ "derive_builder",
+ "indexmap",
+ "mime",
+ "serde",
+ "serde_json",
+ "thiserror 1.0.69",
+ "url",
+ "uuid",
+]
+
+[[package]]
+name = "serdes-ai-core"
+version = "0.2.6"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "8c75900724c512454172492ffdd9ae24f8ccc5569e812c258a79d4151cd8934c"
 dependencies = [
  "anyhow",
  "base64",
@@ -2317,7 +2337,7 @@ dependencies = [
  "reqwest 0.12.28",
  "serde",
  "serde_json",
- "serdes-ai-core",
+ "serdes-ai-core 0.1.1",
  "serdes-ai-output",
  "serdes-ai-tools",
  "thiserror 1.0.69",
@@ -2339,7 +2359,7 @@ dependencies = [
  "regex",
  "serde",
  "serde_json",
- "serdes-ai-core",
+ "serdes-ai-core 0.1.1",
  "serdes-ai-macros",
  "serdes-ai-tools",
  "serdes-ai-toolsets",
@@ -2361,7 +2381,7 @@ dependencies = [
  "reqwest 0.12.28",
  "serde",
  "serde_json",
- "serdes-ai-core",
+ "serdes-ai-core 0.1.1",
  "serdes-ai-models",
  "sha2",
  "thiserror 1.0.69",
@@ -2400,7 +2420,27 @@ dependencies = [
  "pin-project-lite",
  "serde",
  "serde_json",
- "serdes-ai-core",
+ "serdes-ai-core 0.1.1",
+ "thiserror 1.0.69",
+ "tokio",
+ "tracing",
+]
+
+[[package]]
+name = "serdes-ai-streaming"
+version = "0.2.6"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "159b5dfda85e1a886793e0962c6d40581044bb3ca008665b53f75ecb62eb3f74"
+dependencies = [
+ "async-trait",
+ "bytes",
+ "chrono",
+ "futures",
+ "parking_lot",
+ "pin-project-lite",
+ "serde",
+ "serde_json",
+ "serdes-ai-core 0.2.6",
  "thiserror 1.0.69",
  "tokio",
  "tracing",
@@ -2419,7 +2459,7 @@ dependencies = [
  "parking_lot",
  "serde",
  "serde_json",
- "serdes-ai-core",
+ "serdes-ai-core 0.1.1",
  "serdes-ai-macros",
  "thiserror 1.0.69",
  "tokio",
@@ -2437,7 +2477,7 @@ dependencies = [
  "parking_lot",
  "serde",
  "serde_json",
- "serdes-ai-core",
+ "serdes-ai-core 0.1.1",
  "serdes-ai-tools",
  "thiserror 1.0.69",
  "tokio",

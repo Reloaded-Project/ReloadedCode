@@ -17,7 +17,7 @@ llm-coding-tools-core = { version = "0.2.0", path = "../llm-coding-tools-core", 
 # serdes-ai provides Tool trait, ToolDefinition, RunContext
 serdes-ai = "0.1"
 serdes-ai-models = { version = "0.1", features = ["openrouter"] }
-serdes-ai-streaming = "0.1"
+serdes-ai-streaming = "0.2"
 futures = "0.3"
 
 # Tool trait is async - async-trait is NOT re-exported from serdes-ai
