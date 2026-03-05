@@ -2,12 +2,12 @@
 //!
 //! These are the flattened types returned by [`ModelCatalog`] lookup methods.
 //! For builder input types, see [`ProviderSourceRow`],
-//! [`ModelSourceRow`], [`ProviderInfo`],
+//! [`ProviderModelSourceRow`], [`ProviderInfo`],
 //! and [`ModelInfo`].
 //!
 //! [`ModelCatalog`]: crate::models::catalog::ModelCatalog
 //! [`ProviderSourceRow`]: crate::models::catalog::ProviderSourceRow
-//! [`ModelSourceRow`]: crate::models::catalog::ModelSourceRow
+//! [`ProviderModelSourceRow`]: crate::models::catalog::ProviderModelSourceRow
 //! [`ProviderInfo`]: crate::models::catalog::ProviderInfo
 //! [`ModelInfo`]: crate::models::catalog::ModelInfo
 

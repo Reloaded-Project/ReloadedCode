@@ -1,15 +1,25 @@
 //! Efficient catalog/registry of providers and models sourced
-//! from places like 'models.dev'. Contains bare minimum of information
-//! required for usage.
+//! from places like models.dev. Contains the bare minimum of information
+//! required at runtime.
 //!
-//! For instance; a model entry like `synthetic/hf:moonshotai/Kimi-K2.5` may be
-//! split into:
+//! For instance, a fully-qualified entry like
+//! `synthetic/hf:moonshotai/Kimi-K2.5` can be split into:
 //!
-//! Provider: 'synthetic'
-//! Model: 'hf:moonshotai/Kimi-K2.5'
+//! Provider: `synthetic`
+//! Model: `hf:moonshotai/Kimi-K2.5`
 //!
-//! Internally the `provider`(s) and `model`(s) are stored in separate tables;
-//! with friendly APIs to return those back combined when needed.
+//! Internally the providers and models are stored in separate hash tables,
+//! with friendly APIs to return them combined when needed:
+//!
+//! - `ProviderTable`: `hash(provider_key) -> provider_idx`
+//! - `ProviderModelTable`: `hash(provider_key + 0xFF + model_key) -> model_config_idx`
+//!
+//! The `ProviderModelTable` hashes the provider key and model key together,
+//! separated by `0xFF`, so the same model name can exist under multiple
+//! providers without ambiguity.
+//!
+//! Model metadata/config rows remain deduplicated in side tables, so repeated
+//! configurations do not inflate memory usage.
 //!
 //! # Public API
 //!
@@ -17,53 +27,65 @@
 //!
 //! - [`ModelCatalog::build`] - Batch builder entry point
 //! - [`ProviderSourceRow`] - Provider key + metadata input row
-//! - [`ModelSourceRow`] - Model key + metadata input row
+//! - [`ProviderModelSourceRow`] - Model key + metadata input row for a provider
 //! - [`ModelInfo`] - Model metadata input (modalities, token limits, sampling)
 //! - [`ProviderInfo`] - Provider metadata input (API URL, env vars, type)
 //! - [`Modality`] - Content modality flags (text, image, audio, video)
 //!
 //! ## Querying a Catalog
 //!
-//! - [`ModelCatalog`] - Immutable lookup catalog
-//! - [`Model`] - Model lookup result
-//! - [`Provider`] - Provider lookup result
-//! - [`CatalogEntry`] - Combined provider + model lookup result
+//! - [`ModelCatalog::lookup`] - Combined provider + model lookup
+//! - [`ModelCatalog::provider_count`] - Total providers
+//! - [`ModelCatalog::providers`] - Iterate all providers
+//! - [`ModelCatalog::provider_model_count`] - Total provider-model entries
+//! - [`ModelCatalog::model_config_count`] - Unique deduplicated model configs
+//! - [`Provider`] / [`Model`] / [`CatalogEntry`] - Lookup return types
 //!
 //! ## Error Handling
 //!
 //! - [`ModelCatalogBuildError`] - Errors during catalog construction
-//! - [`LookupTableKind`] - Identifies which hash table had a collision
+//! - [`LookupTableKind`] - Identifies which lookup table had a collision
 //!
 //! # Why split provider and model tables?
 //!
-//! Many providers share the same models. Although they may sometimes be renamed,
-//! e.g. `Kimi-K2.5` vs `hf:moonshotai/Kimi-K2.5`; they often have identical
-//! metadata. (token limits, modalities, etc.)
+//! There's 2 reasons:
 //!
-//! Given a snapshot of models.dev from 20th of February 2026, we have:
+//! 1. Many providers share the same models. A model like
+//!    `moonshotai/Kimi-K2.5` may exist under multiple providers while still
+//!    having provider specific metdata (e.g. different context lengths)
 //!
-//! - Unique model IDs: 1,669
-//! - Unique model configurations: 552
+//! 2. There's few providers (96), many provider-models (3,031).
+//!    Storing both would require a 16-byte HashTable entry.
+//!    But storing separately, we can have 8-byte entries.
+//!    This saves 8 bytes on 2,935 entries (3,031-96). Or 23.48KB.
 //!
-//! We optimize for this case hashtables of `hash -> index` 😉
+//! Lookups are also infrequent, and users typically switch between models from
+//! the same provider within a session. That means the provider usually needs to
+//! be resolved only once per session.
 //!
-//! # Memory Optimizations
+//! In the common case, switching models therefore adds little lookup overhead,
+//! making the memory savings worth the extra indirection.
 //!
-//! To save on memory, we don't actually store the original strings for provider
-//! or model anywhere. The typical use case is that a user has a given provider &
-//! model ID e.g. `synthetic/hf:moonshotai/Kimi-K2.5` and just needs to pull
-//! up metadata for it. e.g. when `model` is specified in an agent file.
+//! # Extra Memory Optimizations
 //!
-//! Instead, we provide a guarantee that a *VALID* user provided provider and
-//! model key will always hash to unique values (0 collisions). Since the
-//! `ModelCatalog` is usually constructed once at startup, this is something
-//! we can practically guarantee. (negligible failure probability)
+//! To save memory, we do not store the original provider or model strings in
+//! the catalog. The usual use case is that a caller already has a provider and
+//! model ID, such as `synthetic/hf:moonshotai/Kimi-K2.5`, and just needs to
+//! pull up metadata for it.
 //!
-//! Sometimes this concept is referred to as a 'perfect hash', elsewhere.
+//! Because `ModelCatalog` is usually built once at startup, we can reject
+//! collisions and retry with new seeds if needed.
 //!
 //! ## Hash Collision Probabilities
 //!
-//! Currently `ProviderTable` and `ModelTable` use 48 bits for the hash.
+//! `ProviderTable` and `ProviderModelTable` use 48 bits from the 64-bit hash.
+//!
+//! Collision estimates use the birthday-bound approximation described by
+//! [Preshing](https://preshing.com/20110504/hash-collision-probabilities/):
+//!
+//! `p(at least one collision) ~= 1 - exp(-n * (n - 1) / (2 * 2^48))`
+//!
+//! where `n` is the number of inserted keys.
 //!
 //! | Odds of collision | # 48-bit hash values |
 //! | ----------------- | -------------------: |
@@ -84,8 +106,8 @@
 //!
 //! Today's probabilities of 'at least 1 collision' are:
 //!
-//! - `ProviderTable`: 96 entries, 48-bit hash -> about `1 in 61 billion`
-//! - `ModelTable`: 1,669 entries, 48-bit hash -> about `1 in 202 million`
+//! - `ProviderTable`: 96 entries, 48-bit hash -> about `1 in 62 billion`
+//! - `ProviderModelTable`: 3,031 entries, 48-bit hash -> about `1 in 61 million`
 //!
 //! Note: Above assumes a 'perfect' hash function with uniformly distributed output.
 //!       While such function does not exist in practice, 'ahash' which I used
@@ -93,28 +115,28 @@
 //!
 //! ## Reseeding
 //!
-//! As an additional safety measure, re-seeding is also supported.
-//! i.e. Using alternative seeds for hashing.
+//! As an additional safety measure, reseeding is also supported by trying
+//! alternative hash seeds, up to 16 attempts.
 //!
-//! ProviderTable (96 entries, 48-bit):
+//! `ProviderTable` (96 entries, 48-bit):
 //!
 //! | Seeds | Odds of failure      |
 //! | ----- | -------------------: |
 //! | 1     | 1 in 62 billion      |
-//! | 2     | 1 in 3.8 quintillion |
-//! | 4     | 1 in 1.4 x 10^43     |
+//! | 2     | 1 in 3.8 sextillion  |
+//! | 4     | 1 in 1.5 x 10^43     |
 //! | 8     | 1 in 2.1 x 10^86     |
 //! | 16    | 1 in 4.4 x 10^172    |
 //!
-//! ModelTable (1,669 entries, 48-bit):
+//! `ProviderModelTable` (3,031 entries, 48-bit):
 //!
 //! | Seeds | Odds of failure      |
 //! | ----- | -------------------: |
-//! | 1     | 1 in 202 million     |
-//! | 2     | 1 in 41 quadrillion  |
-//! | 4     | 1 in 1.7 x 10^33     |
-//! | 8     | 1 in 2.8 x 10^66     |
-//! | 16    | 1 in 7.8 x 10^132    |
+//! | 1     | 1 in 61 million      |
+//! | 2     | 1 in 3.8 quadrillion |
+//! | 4     | 1 in 1.4 x 10^31     |
+//! | 8     | 1 in 2.0 x 10^62     |
+//! | 16    | 1 in 4.0 x 10^124    |
 //!
 //! This basically seals the deal, ensuring a collision will never happen.
 //!
@@ -127,22 +149,21 @@
 //! | ------------------------- | ----------: | ------------------------------------------------ |
 //! | Max providers             |      65,536 | Addressable by 16-bit provider index             |
 //! | Max model configs         |      65,536 | Addressable by 16-bit model configuration index  |
-//! | Max provider env vars     |      16,384 | Per-provider env-var pool offset (14-bit)        |
-//! | Max env vars per provider |           3 | Count field in provider entry (2-bit)            |
+//! | Max provider env vars     |      16,384 | Global env-var pool offset (14-bit)              |
+//! | Max env vars per provider |           3 | Count field in provider range entry (2-bit)      |
 //! | Max input tokens          | 536,870,911 | 29-bit packed field (≈536M)                      |
 //! | Max output tokens         | 134,217,727 | 27-bit packed field (≈134M)                      |
-//! | Hash bits retained        |          48 | Truncated from 64-bit ahash output               |
+//! | Hash bits retained        |          48 | Truncated from 64-bit hash output                |
 //! | Max reseed attempts       |          16 | Number of alternative hash seeds                 |
-//!
-//! Note: There's technically 16 bits per provider, but only 14 bits for provider env var.
-//! Since each provider typically has 1 env var; that means 14 bits for provider, effectively.
 //!
 //! # Detailed Memory Layout
 //!
 //! This layout is optimized for scenarios where many providers host overlapping
-//! models. Numbers below are from real API data (`api.json`):
+//! model configurations.
 //!
-//! ## Statistics
+//! Numbers below are from a models.dev snapshot.
+//!
+//! ## Statistics (models.dev snapshot example)
 //!
 //! | Metric                               | Value   |
 //! | ------------------------------------ | ------: |
@@ -153,60 +174,65 @@
 //!
 //! ## Packed Metadata Storage
 //!
-//! | Field                 | Type                                  | Size | Count |   Total  |
-//! | --------------------- | ------------------------------------- | ---- | ----- | -------: |
-//! | `provider_table`      | `HashTable<PackedProviderTableEntry>` | 8 B  |    96 |    768 B |
-//! | `model_table`         | `HashTable<PackedModelTableEntry>`    | 8 B  | 3,031 | 24,248 B |
-//! | `provider_entries`    | `Box<[ProviderType]>`                 | 1 B  |    96 |     96 B |
-//! | `model_entries`       | `Box<[PackedModelEntry]>`             | 8 B  |   585 |  4,680 B |
-//! | `provider_env_ranges` | `Box<[PackedEnvRange]>`               | 2 B  |    96 |    192 B |
+//! | Field                  | Type                                         | Size | Count |   Total  |
+//! | ---------------------- | -------------------------------------------- | ---- | ----- | -------: |
+//! | `provider_table`       | `HashTable<PackedProviderTableEntry>`        | 8 B  |    96 |    768 B |
+//! | `provider_model_table` | `HashTable<PackedProviderModelTableEntry>`   | 8 B  | 3,031 | 24,248 B |
+//! | `provider_entries`     | `Box<[ProviderType]>`                        | 1 B  |    96 |     96 B |
+//! | `model_entries`        | `Box<[PackedModelEntry]>`                    | 8 B  |   585 |  4,680 B |
+//! | `provider_env_ranges`  | `Box<[PackedEnvRange]>`                      | 2 B  |    96 |    192 B |
 //!
-//! **Packed metadata total: ~26.0 KB**
+//! **Packed metadata total: ~30.0 KB**
 //!
 //! ## Optional Metadata
 //!
 //! The `model_config_entries` field stores preset sampling parameters (`temperature`,
 //! `top_p`) as [`ModelConfigEntry`] (4 bytes each). models.dev does not provide
-//! this so this is currently markes as `None`.
+//! this so we count this as 0.
 //!
-//! | Field                  | Type                               | Size | Count | Total |
-//! | ---------------------- | ---------------------------------- | ---- | ----- | ----: |
-//! | `model_config_entries` | `Option<Box<[ModelConfigEntry]>>`  | 4 B  |     0 |    —  |
+//! | Field                  | Type                              | Size | Count | Total |
+//! | ---------------------- | --------------------------------- | ---- | ----- | ----: |
+//! | `model_config_entries` | `Option<Box<[ModelConfigEntry]>>` | 4 B  |     0 |    -  |
+//!
+//! Alternative model info sources may provide recommended values for these fields.
 //!
 //! ## String Table Storage
 //!
-//! | Field               | Type                           | String Data | Offsets |   Total  |
-//! | ------------------- | ------------------------------ | ----------: | ------: | -------: |
-//! | `provider_api_urls` | `StringTable<u32, ProviderIdx>`|    2,460 B  |   296 B |  2,756 B |
-//! | `provider_env_keys` | `StringTable<u32, ProviderIdx>`|    1,904 B  |   436 B |  2,340 B |
+//! Provider API URLs and env-var names are stored in a compact buffer using
+//! `lite_strtab`. 4GB max size.
+//!
+//! | Field               | Type                            | String Data | Offsets |   Total  |
+//! | ------------------- | ------------------------------- | ----------: | ------: | -------: |
+//! | `provider_api_urls` | `StringTable<u32, ProviderIdx>` |    2,460 B  |   296 B |  2,756 B |
+//! | `provider_env_keys` | `StringTable<u32, ProviderIdx>` |    1,904 B  |   436 B |  2,340 B |
 //!
 //! **String tables total: ~5.1 KB** (null-terminated strings + 4-byte offsets)
 //!
 //! ## Other Runtime State
 //!
 //! | Field        | Type          | Size |
-//! | ------------ | ------------- | ---- |
+//! | ------------ | ------------- | ---: |
 //! | `hash_state` | `RandomState` | ~8 B |
-//!
-//! String tables use `lite_strtab` with 4-byte offsets.
 //!
 //! ## Deduplication
 //!
-//! The key insight is that `ModelTable` keys can point to shared
-//! `ModelEntry` / `ModelConfigEntry` rows. When multiple providers host the
-//! same model, we only store the metadata once. This is why we have 1,669
-//! model keys but only 552 unique model configurations.
+//! `ProviderModelTable` keys point to shared `model_entries` and optional
+//! `model_config_entries` rows. If multiple provider models share the same
+//! model metadata, the metadata is stored once and reused by index.
 
+use crate::internal::hash64::Hash64;
 use crate::models::ProviderType;
 use ahash::RandomState;
 use hashbrown::HashTable;
 use internal::{
-    build_from_source, hash_model_key, hash_provider_key, Fixed4, ModelConfigEntry, PackedEnvRange,
-    PackedModelEntry, PackedModelTableEntry, PackedProviderTableEntry, ProviderHash,
+    build_from_source, hash_provider_key, hash_provider_model_key, Fixed4, ModelConfigEntry,
+    PackedEnvRange, PackedModelEntry, PackedProviderModelTableEntry, PackedProviderTableEntry,
 };
 use lite_strtab::{StringId, StringTable};
 
-pub use public::builder_types::{ModelCatalogBuildError, ModelSourceRow, ProviderSourceRow};
+pub use public::builder_types::{
+    ModelCatalogBuildError, ProviderModelSourceRow, ProviderSourceRow,
+};
 pub use public::*;
 
 mod internal;
@@ -219,7 +245,7 @@ mod public;
 pub struct ModelCatalog {
     hash_state: RandomState,
     provider_table: HashTable<PackedProviderTableEntry>,
-    model_table: HashTable<PackedModelTableEntry>,
+    provider_model_table: HashTable<PackedProviderModelTableEntry>,
     provider_api_urls: StringTable<u32, ProviderIdx>,
     provider_env_keys: StringTable<u32, ProviderIdx>,
     provider_env_ranges: Box<[PackedEnvRange]>,
@@ -234,7 +260,7 @@ impl ModelCatalog {
     pub(crate) fn new(
         hash_state: RandomState,
         provider_table: HashTable<PackedProviderTableEntry>,
-        model_table: HashTable<PackedModelTableEntry>,
+        provider_model_table: HashTable<PackedProviderModelTableEntry>,
         provider_api_urls: StringTable<u32, ProviderIdx>,
         provider_env_keys: StringTable<u32, ProviderIdx>,
         provider_env_ranges: Box<[PackedEnvRange]>,
@@ -245,7 +271,7 @@ impl ModelCatalog {
         Self {
             hash_state,
             provider_table,
-            model_table,
+            provider_model_table,
             provider_api_urls,
             provider_env_keys,
             provider_env_ranges,
@@ -255,163 +281,117 @@ impl ModelCatalog {
         }
     }
 
-    /// Builds a catalog from provider and model source rows.
+    /// Builds a catalog from provider rows and provider model rows.
     ///
     /// # Parameters
     ///
     /// * `providers` - [`ProviderSourceRow`] values keyed by provider identifier.
-    /// * `models` - [`ModelSourceRow`] values keyed by model identifier.
-    ///
-    /// # Returns
-    ///
-    /// A fully built [`ModelCatalog`] when construction succeeds.
+    /// * `provider_models` - [`ProviderModelSourceRow`] values keyed by provider and model.
     ///
     /// # Errors
     ///
     /// Returns [`ModelCatalogBuildError`] when:
     /// - input exceeds supported numeric limits,
     /// - token limits cannot be represented in packed model entries,
+    /// - provider model rows reference unknown providers,
     /// - or all seed-retry attempts still result in collisions.
     #[inline]
     pub fn build(
         providers: &[ProviderSourceRow],
-        models: &[ModelSourceRow],
+        provider_models: &[ProviderModelSourceRow],
     ) -> Result<Self, ModelCatalogBuildError> {
-        build_from_source(providers, models)
+        build_from_source(providers, provider_models)
     }
 
-    /// Returns the number of provider keys.
+    /// Returns the number of providers in the catalog.
     ///
     /// # Returns
     ///
-    /// The total number of provider entries in the catalog.
+    /// The total number of provider entries.
     #[inline]
-    pub fn provider_len(&self) -> usize {
+    pub fn provider_count(&self) -> usize {
         self.provider_table.len()
     }
 
-    /// Returns the total number of model keys.
-    ///
-    /// This includes all model entries before deduplication. Multiple keys may
-    /// reference the same configuration (see [`Self::model_config_len`]).
-    ///
-    /// For example, if providers `evroc`, `togetherai`, and `moonshotai` all
-    /// host `moonshotai/Kimi-K2.5` with identical metadata, this returns 3.
-    ///
-    /// Note: Model key names depend on the source. For models.dev, they follow
-    /// the `{owner}/{model}` format, but other registries may use different naming.
+    /// Iterates all providers in source insertion order.
     ///
     /// # Returns
     ///
-    /// The total number of model entries in the catalog.
+    /// An iterator of [`Provider`] values.
     #[inline]
-    pub fn model_len(&self) -> usize {
-        self.model_table.len()
+    pub fn providers(&self) -> impl Iterator<Item = Provider<'_>> + '_ {
+        (0..self.provider_entries.len())
+            .map(|idx| ProviderIdx::new(idx as u16))
+            .filter_map(|provider_idx| self.provider_from_index(provider_idx))
     }
 
-    /// Returns the number of unique model configurations.
+    /// Returns the number of provider-model entries in the catalog.
     ///
-    /// Models with identical metadata are deduplicated and share a configuration
-    /// entry. This is always less than or equal to [`Self::model_len`].
+    /// This counts provider-specific `(provider_key, model_key)` entries before
+    /// deduplicating shared model configurations, so it is always greater than
+    /// or equal to [`Self::model_config_count`].
     ///
     /// For example, if providers `evroc`, `togetherai`, and `moonshotai` all
-    /// host `moonshotai/Kimi-K2.5` with identical metadata, this returns 1.
+    /// expose `moonshotai/Kimi-K2.5`, this returns `3`.
     ///
-    /// Note: Model key names depend on the source. For models.dev, they follow
-    /// the `{owner}/{model}` format, but other registries may use different naming.
+    /// # Returns
+    ///
+    /// The total number of provider-model entries.
+    #[inline]
+    pub fn provider_model_count(&self) -> usize {
+        self.provider_model_table.len()
+    }
+
+    /// Returns the number of unique model configuration rows in the catalog.
+    ///
+    /// Shared model metadata is deduplicated across provider-model entries, so
+    /// this is always less than or equal to [`Self::provider_model_count`].
+    ///
+    /// For example, if providers `evroc`, `togetherai`, and `moonshotai` all
+    /// expose `moonshotai/Kimi-K2.5` with identical metadata, this returns `1`.
     ///
     /// # Returns
     ///
     /// The number of unique model configuration rows.
     #[inline]
-    pub fn model_config_len(&self) -> usize {
+    pub fn model_config_count(&self) -> usize {
         self.model_entries.len()
     }
 
-    /// Returns true when catalog has no providers and no models.
+    /// Returns `true` when the catalog has no providers and no models.
     ///
     /// # Returns
     ///
     /// `true` if both provider and model tables are empty.
     #[inline]
     pub fn is_empty(&self) -> bool {
-        self.provider_table.is_empty() && self.model_table.is_empty()
-    }
-
-    /// Looks up a provider by its key.
-    ///
-    /// # Parameters
-    ///
-    /// * `provider_key` - The provider identifier (e.g., `"openai"`, `"moonshotai"`).
-    ///
-    /// # Returns
-    ///
-    /// The provider information if found, or `None` if not present.
-    #[inline]
-    pub fn lookup_provider(&self, provider_key: &str) -> Option<Provider<'_>> {
-        let key = hash_provider_key(&self.hash_state, provider_key);
-        self.lookup_provider_hash(key)
-    }
-
-    /// Looks up one provider by prehashed key.
-    #[inline]
-    fn lookup_provider_hash(&self, key: ProviderHash) -> Option<Provider<'_>> {
-        let hash48 = PackedProviderTableEntry::truncate_hash48(key.as_u64());
-        let entry = self
-            .provider_table
-            .find(hash48, |entry: &PackedProviderTableEntry| {
-                entry.hash48() == hash48
-            })?;
-        self.provider_from_index(entry.provider_idx_val())
-    }
-
-    /// Looks up a model by its key.
-    ///
-    /// # Parameters
-    ///
-    /// * `model_key` - The model identifier (e.g., `"gpt-4"`, `"moonshotai/Kimi-K2.5"`).
-    ///   Note that model key format depends on the source registry.
-    ///
-    /// # Returns
-    ///
-    /// The model information if found, or `None` if not present.
-    #[inline]
-    pub fn lookup_model(&self, model_key: &str) -> Option<Model> {
-        let hash = hash_model_key(&self.hash_state, model_key);
-        self.lookup_model_hash(hash)
-    }
-
-    /// Looks up one model by prehashed key.
-    #[inline]
-    fn lookup_model_hash(&self, hash: internal::hash::ModelHash) -> Option<Model> {
-        let hash48 = PackedModelTableEntry::truncate_hash48(hash.as_u64());
-        let entry = self
-            .model_table
-            .find(hash48, |entry: &PackedModelTableEntry| {
-                entry.hash48() == hash48
-            })?;
-        self.model_from_index(entry.model_config_idx_val())
+        self.provider_table.is_empty() && self.provider_model_table.is_empty()
     }
 
     /// Looks up both provider and model and returns a combined entry.
     ///
-    /// This is a convenience method that performs both lookups and combines
-    /// the results into a single [`CatalogEntry`].
+    /// This performs exact per-provider model lookup. The `model_key` must
+    /// exist under the specified `provider_key`; the same model name under
+    /// another provider does not match.
     ///
     /// # Parameters
     ///
-    /// * `provider_key` - The provider identifier.
-    /// * `model_key` - The model identifier.
+    /// * `provider_key` - Provider identifier (for example, `"openai"`).
+    /// * `model_key` - Model identifier within that provider.
     ///
     /// # Returns
     ///
-    /// A combined provider and model entry if both are found, or `None` if
-    /// either is missing.
+    /// A [`CatalogEntry`] if the requested provider and model combination
+    /// exists, otherwise `None`.
     #[inline]
     pub fn lookup(&self, provider_key: &str, model_key: &str) -> Option<CatalogEntry<'_>> {
         let provider =
             self.lookup_provider_hash(hash_provider_key(&self.hash_state, provider_key))?;
-        let model = self.lookup_model_hash(hash_model_key(&self.hash_state, model_key))?;
+        let model = self.lookup_provider_model_hash(hash_provider_model_key(
+            &self.hash_state,
+            provider_key,
+            model_key,
+        ))?;
 
         Some(CatalogEntry::new(
             provider.provider_idx,
@@ -433,15 +413,39 @@ impl ModelCatalog {
         ))
     }
 
+    /// Looks up one provider by prehashed key.
+    #[inline]
+    fn lookup_provider_hash(&self, key: Hash64) -> Option<Provider<'_>> {
+        let hash48 = PackedProviderTableEntry::truncate_hash48(key.as_u64());
+        let entry = self
+            .provider_table
+            .find(hash48, |entry: &PackedProviderTableEntry| {
+                entry.hash48() == hash48
+            })?;
+        self.provider_from_index(entry.provider_idx_val())
+    }
+
+    /// Looks up one model for a specific provider by prehashed key.
+    #[inline]
+    fn lookup_provider_model_hash(&self, hash: Hash64) -> Option<Model> {
+        let hash48 = PackedProviderModelTableEntry::truncate_hash48(hash.as_u64());
+        let entry = self
+            .provider_model_table
+            .find(hash48, |entry: &PackedProviderModelTableEntry| {
+                entry.hash48() == hash48
+            })?;
+        self.model_from_index(entry.model_config_idx_val())
+    }
+
     /// Looks up a provider by its index.
     ///
     /// # Parameters
     ///
-    /// * `provider_idx` - The provider index obtained from a previous lookup.
+    /// * `provider_idx` - Provider index obtained from a previous lookup.
     ///
     /// # Returns
     ///
-    /// The provider information if the index is valid, or `None` if out of bounds.
+    /// The provider if `provider_idx` is in range, otherwise `None`.
     #[inline]
     pub fn provider_from_index(&self, provider_idx: ProviderIdx) -> Option<Provider<'_>> {
         let provider_idx_usize = provider_idx.as_usize();
@@ -473,16 +477,8 @@ impl ModelCatalog {
     }
 
     /// Looks up a model by its configuration index.
-    ///
-    /// # Parameters
-    ///
-    /// * `model_config_idx` - The model configuration index obtained from a previous lookup.
-    ///
-    /// # Returns
-    ///
-    /// The model information if the index is valid, or `None` if out of bounds.
     #[inline]
-    pub fn model_from_index(&self, model_config_idx: ModelIdx) -> Option<Model> {
+    fn model_from_index(&self, model_config_idx: ModelIdx) -> Option<Model> {
         let idx = model_config_idx.as_usize();
         let info = self.model_entries.get(idx)?.into_model_info();
         let (temperature, top_p) = self
@@ -514,7 +510,7 @@ impl ModelCatalog {
 mod tests {
     use super::*;
     use crate::models::catalog::{
-        Modality, ModelInfo, ModelSourceRow, ProviderInfo, ProviderSourceRow,
+        Modality, ModelInfo, ProviderInfo, ProviderModelSourceRow, ProviderSourceRow,
     };
 
     fn provider(api_url: &str, env_vars: &[&str], api_type: ProviderType) -> ProviderInfo {
@@ -552,22 +548,25 @@ mod tests {
 
     fn build_catalog(
         providers: Vec<(&str, ProviderInfo)>,
-        models: Vec<(&str, ModelInfo)>,
+        provider_models: Vec<(&str, &str, ModelInfo)>,
     ) -> ModelCatalog {
         let provider_rows: Vec<ProviderSourceRow> = providers
             .into_iter()
             .map(|(key, info)| ProviderSourceRow::new(key, info))
             .collect();
-        let model_rows: Vec<ModelSourceRow> = models
+        let provider_model_rows: Vec<ProviderModelSourceRow> = provider_models
             .into_iter()
-            .map(|(key, info)| ModelSourceRow::new(key, info))
+            .map(|(provider_key, model_key, info)| {
+                ProviderModelSourceRow::new(provider_key, model_key, info)
+            })
             .collect();
 
-        ModelCatalog::build(&provider_rows, &model_rows).expect("build catalog from source rows")
+        ModelCatalog::build(&provider_rows, &provider_model_rows)
+            .expect("build catalog from source rows")
     }
 
     #[test]
-    fn lookup_provider_and_model_work_independently() {
+    fn lookup_is_provider_model_specific() {
         let catalog = build_catalog(
             vec![
                 (
@@ -584,79 +583,90 @@ mod tests {
                 ),
             ],
             vec![
-                ("m1", info_with_sampling(8192, 1024, 1.2, 0.5)),
-                ("m2", info(16_384, 2_048)),
+                ("alpha", "m1", info(8192, 1024)),
+                ("beta", "m1", info(16_384, 2_048)),
             ],
         );
 
-        let alpha = catalog
-            .lookup_provider("alpha")
-            .expect("provider alpha exists");
+        let alpha = catalog.lookup("alpha", "m1").expect("alpha/m1 exists");
+        let beta = catalog.lookup("beta", "m1").expect("beta/m1 exists");
+
         assert_eq!(alpha.api_url, "https://alpha.example");
-        assert_eq!(alpha.api_type, ProviderType::OpenAiCompletions);
-
-        let m1 = catalog.lookup_model("m1").expect("model m1 exists");
-        assert_eq!(m1.max_input, 8192);
-        assert_eq!(m1.max_output, 1024);
-        assert_eq!(m1.temperature(), Some(1.2));
-        assert_eq!(m1.top_p(), Some(0.5));
-
-        let joined = catalog.lookup("alpha", "m1").expect("joined lookup exists");
-        assert_eq!(joined.api_url, "https://alpha.example");
-        assert_eq!(joined.max_output, 1024);
+        assert_eq!(alpha.max_output, 1024);
+        assert_eq!(beta.api_url, "https://beta.example");
+        assert_eq!(beta.max_output, 2_048);
     }
 
     #[test]
-    fn unknown_provider_or_model_returns_none() {
+    fn missing_provider_model_edge_returns_none() {
         let catalog = build_catalog(
-            vec![(
-                "alpha",
-                provider("", &["ALPHA_KEY"], ProviderType::OpenAiCompletions),
-            )],
-            vec![("m1", info(4096, 512))],
+            vec![
+                (
+                    "alpha",
+                    provider("https://alpha.example", &["ALPHA_KEY"], ProviderType::Azure),
+                ),
+                (
+                    "beta",
+                    provider("https://beta.example", &["BETA_KEY"], ProviderType::Azure),
+                ),
+            ],
+            vec![
+                ("alpha", "m1", info(4096, 512)),
+                ("beta", "m2", info(8192, 1024)),
+            ],
         );
 
-        assert!(catalog.lookup_provider("missing").is_none());
-        assert!(catalog.lookup_model("missing").is_none());
-        assert!(catalog.lookup("missing", "m1").is_none());
-        assert!(catalog.lookup("alpha", "missing").is_none());
+        assert!(catalog.lookup("alpha", "m2").is_none());
+        assert!(catalog.lookup("beta", "m1").is_none());
+        assert!(catalog.lookup("missing", "m2").is_none());
     }
 
     #[test]
     fn model_entries_are_deduplicated_by_info_and_config() {
         let catalog = build_catalog(
-            Vec::new(),
             vec![
-                ("m1", info_with_sampling(4096, 512, 1.0, 0.9)),
-                ("m2", info_with_sampling(4096, 512, 1.0, 0.9)),
+                (
+                    "alpha",
+                    provider("https://alpha.example", &["ALPHA_KEY"], ProviderType::Azure),
+                ),
+                (
+                    "beta",
+                    provider("https://beta.example", &["BETA_KEY"], ProviderType::Azure),
+                ),
+            ],
+            vec![
+                ("alpha", "m1", info_with_sampling(4096, 512, 1.0, 0.9)),
+                ("beta", "m2", info_with_sampling(4096, 512, 1.0, 0.9)),
             ],
         );
 
-        assert_eq!(catalog.model_len(), 2);
-        assert_eq!(catalog.model_config_len(), 1);
+        assert_eq!(catalog.provider_model_count(), 2);
+        assert_eq!(catalog.model_config_count(), 1);
     }
 
     #[test]
-    fn provider_env_vars_are_flattened_and_indexed() {
+    fn provider_count_matches_provider_iterator() {
         let catalog = build_catalog(
-            vec![(
-                "azure",
-                provider(
-                    "https://azure.example",
-                    &["AZURE_KEY", "AZURE_TOKEN", "FALLBACK_KEY"],
-                    ProviderType::Azure,
+            vec![
+                (
+                    "alpha",
+                    provider("https://alpha.example", &["ALPHA_KEY"], ProviderType::Azure),
                 ),
-            )],
-            Vec::new(),
+                (
+                    "beta",
+                    provider("https://beta.example", &["BETA_KEY"], ProviderType::Azure),
+                ),
+            ],
+            vec![
+                ("alpha", "m1", info(4096, 512)),
+                ("beta", "m2", info(4096, 512)),
+            ],
         );
 
-        let provider = catalog
-            .lookup_provider("azure")
-            .expect("provider azure exists");
-        assert_eq!(provider.env_vars.len(), 3);
-        assert_eq!(provider.env_vars[0], "AZURE_KEY");
-        assert_eq!(provider.env_vars[1], "AZURE_TOKEN");
-        assert_eq!(provider.env_vars[2], "FALLBACK_KEY");
+        let providers: Vec<Provider<'_>> = catalog.providers().collect();
+        assert_eq!(catalog.provider_count(), providers.len());
+        assert_eq!(providers[0].api_url, "https://alpha.example");
+        assert_eq!(providers[1].api_url, "https://beta.example");
     }
 
     #[test]
@@ -670,12 +680,8 @@ mod tests {
                     ProviderType::OpenAiCompletions,
                 ),
             )],
-            vec![("m1", info(4096, 512))],
+            vec![("alpha", "m1", info(4096, 512))],
         );
-
-        let m1 = catalog.lookup_model("m1").expect("model m1 exists");
-        assert_eq!(m1.temperature(), None);
-        assert_eq!(m1.top_p(), None);
 
         let joined = catalog.lookup("alpha", "m1").expect("joined lookup exists");
         assert_eq!(joined.temperature(), None);

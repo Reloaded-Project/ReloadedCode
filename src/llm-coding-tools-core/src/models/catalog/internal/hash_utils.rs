@@ -1,7 +1,8 @@
 //! Internal hash utilities for the model catalog.
 
-use crate::models::catalog::internal::hash::{ModelHash, ProviderHash};
+use crate::internal::hash64::Hash64;
 use ahash::RandomState;
+use core::hash::{BuildHasher, Hasher};
 
 #[inline(always)]
 pub fn provider_table_entry_hash(entry: &super::PackedProviderTableEntry) -> u64 {
@@ -9,18 +10,26 @@ pub fn provider_table_entry_hash(entry: &super::PackedProviderTableEntry) -> u64
 }
 
 #[inline(always)]
-pub fn model_table_entry_hash(entry: &super::PackedModelTableEntry) -> u64 {
+pub fn provider_model_table_entry_hash(entry: &super::PackedProviderModelTableEntry) -> u64 {
     entry.hash48()
 }
 
 #[inline(always)]
-pub fn hash_provider_key(hash_state: &RandomState, provider_key: &str) -> ProviderHash {
-    ProviderHash::from_u64(hash_state.hash_one(provider_key.as_bytes()))
+pub fn hash_provider_key(hash_state: &RandomState, provider_key: &str) -> Hash64 {
+    Hash64::from_u64(hash_state.hash_one(provider_key.as_bytes()))
 }
 
 #[inline(always)]
-pub fn hash_model_key(hash_state: &RandomState, model_key: &str) -> ModelHash {
-    ModelHash::from_u64(hash_state.hash_one(model_key.as_bytes()))
+pub fn hash_provider_model_key(
+    hash_state: &RandomState,
+    provider_key: &str,
+    model_key: &str,
+) -> Hash64 {
+    let mut hasher = hash_state.build_hasher();
+    hasher.write(provider_key.as_bytes());
+    hasher.write_u8(0xFF);
+    hasher.write(model_key.as_bytes());
+    Hash64::from_u64(hasher.finish())
 }
 
 #[inline(always)]
