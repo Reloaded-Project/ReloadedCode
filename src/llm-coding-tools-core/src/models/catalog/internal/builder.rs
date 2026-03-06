@@ -10,7 +10,7 @@ use crate::models::catalog::public::builder_types::{
 use crate::models::catalog::public::ProviderIdx;
 use crate::models::catalog::ModelCatalog;
 use crate::models::ProviderType;
-use ahash::AHashMap;
+use ahash::{AHashMap, AHashSet};
 use hashbrown::{hash_table::Entry as TableEntry, HashTable};
 use lite_strtab::{Global, StringTable, StringTableBuilder};
 use std::collections::hash_map::Entry as MapEntry;
@@ -95,25 +95,60 @@ fn populate_tables_once(
     let mut env_start: u16 = 0;
     let mut provider_idx_by_key: AHashMap<&str, ProviderIdx> =
         AHashMap::with_capacity(providers.len());
+    let mut seen_provider_models: AHashSet<(&str, &str)> =
+        AHashSet::with_capacity(provider_models.len());
 
     for provider in providers {
         let provider_info = &provider.provider;
         let env_count = provider_info.env_vars.len() as u8;
-        let provider_idx = insert_provider(
-            state,
-            &provider.provider_key,
-            env_start,
-            env_count,
-            provider_info.api_type,
-        )?;
-        provider_idx_by_key.insert(provider.provider_key.as_str(), provider_idx);
+
+        match provider_idx_by_key.entry(provider.provider_key.as_str()) {
+            MapEntry::Occupied(_) => {
+                return Err(ModelCatalogBuildError::DuplicateKey {
+                    table: LookupTableKind::Provider,
+                    key: provider.provider_key.clone(),
+                });
+            }
+            MapEntry::Vacant(e) => {
+                let provider_idx = insert_provider(
+                    state,
+                    &provider.provider_key,
+                    env_start,
+                    env_count,
+                    provider_info.api_type,
+                )?;
+                e.insert(provider_idx);
+            }
+        }
 
         // SAFETY: analyze_provider_sources bounds env_start and env_count (<= 3).
         env_start += u16::from(env_count);
     }
 
     for provider_model in provider_models {
-        insert_provider_model(state, &provider_idx_by_key, provider_model)?;
+        // Validate provider exists before inserting model.
+        if !provider_idx_by_key.contains_key(provider_model.provider_key.as_str()) {
+            return Err(ModelCatalogBuildError::ProviderKeyNotFoundForModel {
+                provider_key: provider_model.provider_key.clone(),
+                model_key: provider_model.model_key.clone(),
+            });
+        }
+
+        // Check for duplicate (provider_key, model_key) pair.
+        let key = (
+            provider_model.provider_key.as_str(),
+            provider_model.model_key.as_str(),
+        );
+        if !seen_provider_models.insert(key) {
+            return Err(ModelCatalogBuildError::DuplicateKey {
+                table: LookupTableKind::ProviderModel,
+                key: format!(
+                    "{}/{}",
+                    provider_model.provider_key, provider_model.model_key
+                ),
+            });
+        }
+        insert_provider_model(state, provider_model)?;
     }
 
     Ok(())
@@ -162,16 +197,8 @@ fn insert_provider(
 #[inline]
 fn insert_provider_model(
     state: &mut BuildState,
-    provider_idx_by_key: &AHashMap<&str, ProviderIdx>,
     provider_model: &ProviderModelSource,
 ) -> Result<(), ModelCatalogBuildError> {
-    if !provider_idx_by_key.contains_key(provider_model.provider_key.as_str()) {
-        return Err(ModelCatalogBuildError::ProviderKeyNotFoundForModel {
-            provider_key: provider_model.provider_key.clone(),
-            model_key: provider_model.model_key.clone(),
-        });
-    }
-
     let info = provider_model.model;
 
     if info.max_output > MAX_OUTPUT_TOKENS {
@@ -398,10 +425,10 @@ fn build_provider_env_key_table(
 
 #[cfg(test)]
 mod tests {
-    use super::{build_from_source, MAX_SEED};
+    use super::build_from_source;
     use crate::models::catalog::{
-        Modality, ModelCatalogBuildError, ModelInfo, ProviderInfo, ProviderModelSource,
-        ProviderSource,
+        LookupTableKind, Modality, ModelCatalogBuildError, ModelInfo, ProviderInfo,
+        ProviderModelSource, ProviderSource,
     };
     use crate::models::ProviderType;
 
@@ -461,7 +488,7 @@ mod tests {
     }
 
     #[test]
-    fn duplicate_provider_keys_exhaust_reseed_attempts() {
+    fn duplicate_provider_keys_returns_error() {
         let providers = vec![
             provider_source(
                 "alpha",
@@ -478,17 +505,18 @@ mod tests {
             Err(err) => {
                 assert_eq!(
                     err,
-                    ModelCatalogBuildError::HashCollisionExhausted {
-                        attempts: MAX_SEED.into()
+                    ModelCatalogBuildError::DuplicateKey {
+                        table: LookupTableKind::Provider,
+                        key: "alpha".to_string(),
                     }
                 );
             }
-            Ok(_) => panic!("duplicate provider key should collide for all seeds"),
+            Ok(_) => panic!("duplicate provider key should return error"),
         }
     }
 
     #[test]
-    fn duplicate_provider_model_keys_exhaust_reseed_attempts() {
+    fn duplicate_provider_model_keys_returns_error() {
         let providers = vec![provider_source(
             "alpha",
             provider("https://alpha.example", &["ALPHA_KEY"], ProviderType::Azure),
@@ -502,12 +530,13 @@ mod tests {
             Err(err) => {
                 assert_eq!(
                     err,
-                    ModelCatalogBuildError::HashCollisionExhausted {
-                        attempts: MAX_SEED.into()
+                    ModelCatalogBuildError::DuplicateKey {
+                        table: LookupTableKind::ProviderModel,
+                        key: "alpha/m1".to_string(),
                     }
                 );
             }
-            Ok(_) => panic!("duplicate provider-model key should collide for all seeds"),
+            Ok(_) => panic!("duplicate provider-model key should return error"),
         }
     }
 

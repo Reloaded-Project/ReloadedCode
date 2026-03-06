@@ -212,6 +212,14 @@ pub enum ModelCatalogBuildError {
         /// Number of seeds attempted.
         attempts: u16,
     },
+    /// Duplicate key detected during catalog construction.
+    #[error("duplicate key in {table} table: {key}")]
+    DuplicateKey {
+        /// Table where the duplicate was detected.
+        table: LookupTableKind,
+        /// The duplicate key (provider_key or "provider_key/model_key").
+        key: String,
+    },
     /// Total env-var keys across all providers exceeds packed range capacity.
     #[error("total env-var keys {count} exceeds packed range capacity {max}")]
     TooManyEnvVarKeys {
