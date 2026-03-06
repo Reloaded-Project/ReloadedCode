@@ -7,9 +7,32 @@ use llm_coding_tools_core::models::{
     ProviderType,
 };
 
+struct ProviderModelSpec {
+    provider_idx: usize,
+    model_key: String,
+    model: ModelInfo,
+}
+
 struct Dataset {
     providers: Vec<ProviderSource>,
-    provider_models: Vec<ProviderModelSource>,
+    provider_models: Vec<ProviderModelSpec>,
+}
+
+impl Dataset {
+    fn provider_model_sources(&self) -> Vec<ProviderModelSource<'_>> {
+        let mut sources = Vec::with_capacity(self.provider_models.len());
+        for provider_model in &self.provider_models {
+            let provider_key = self.providers[provider_model.provider_idx]
+                .provider_key
+                .as_str();
+            sources.push(ProviderModelSource::new(
+                provider_key,
+                provider_model.model_key.as_str(),
+                provider_model.model,
+            ));
+        }
+        sources
+    }
 }
 
 fn make_dataset(provider_count: usize, model_count: usize) -> Dataset {
@@ -47,17 +70,17 @@ fn make_dataset(provider_count: usize, model_count: usize) -> Dataset {
             None
         };
 
-        provider_models.push(ProviderModelSource::new(
-            format!("provider-{provider_idx}"),
-            format!("org-{}/model-{i}", i % 17),
-            ModelInfo {
+        provider_models.push(ProviderModelSpec {
+            provider_idx,
+            model_key: format!("org-{}/model-{i}", i % 17),
+            model: ModelInfo {
                 modalities: Modality::TEXT,
                 max_input: 4096 + ((cfg as u32) * 32),
                 max_output: 512 + ((cfg as u32) * 8),
                 temperature,
                 top_p,
             },
-        ));
+        });
     }
 
     Dataset {
@@ -66,9 +89,8 @@ fn make_dataset(provider_count: usize, model_count: usize) -> Dataset {
     }
 }
 
-fn construct_batch(dataset: &Dataset) {
-    let catalog =
-        ModelCatalog::build(&dataset.providers, &dataset.provider_models).expect("batch build");
+fn construct_batch(providers: &[ProviderSource], provider_models: &[ProviderModelSource<'_>]) {
+    let catalog = ModelCatalog::build(providers, provider_models).expect("batch build");
 
     black_box((
         catalog.provider_count(),
@@ -85,12 +107,18 @@ fn benchmark_builder_construction(c: &mut Criterion) {
         ("max", 16384usize, 65535usize),
     ] {
         let dataset = make_dataset(provider_count, model_count);
+        let provider_model_sources = dataset.provider_model_sources();
         group.throughput(Throughput::Elements(
             (provider_count + dataset.provider_models.len()) as u64,
         ));
 
         group.bench_with_input(BenchmarkId::new("batch", name), &dataset, |b, input| {
-            b.iter(|| construct_batch(black_box(input)))
+            b.iter(|| {
+                construct_batch(
+                    black_box(&input.providers),
+                    black_box(&provider_model_sources),
+                )
+            })
         });
     }
 

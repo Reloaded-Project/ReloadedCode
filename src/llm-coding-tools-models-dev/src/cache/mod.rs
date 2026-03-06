@@ -1,4 +1,4 @@
-//! Cache path and container utilities for models.dev snapshots.
+//! Cache path and container utilities for models.dev catalog data.
 //!
 //! Responsibilities are split by concern:
 //!

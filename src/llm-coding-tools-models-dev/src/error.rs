@@ -22,6 +22,10 @@ pub enum CatalogError {
     #[error("HTTP error: {0}")]
     Reqwest(#[from] reqwest::Error),
 
+    /// A JSON parse error occurred while decoding models.dev API JSON.
+    #[error("JSON parse error: {0}")]
+    Json(#[from] serde_json::Error),
+
     /// A zstd decompression error occurred.
     #[error("decompression error: {0}")]
     Zstd(String),

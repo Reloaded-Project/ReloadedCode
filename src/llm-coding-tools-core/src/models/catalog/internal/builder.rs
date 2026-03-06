@@ -68,7 +68,7 @@ fn build_state_with_capacity(
 #[inline]
 pub(crate) fn build_from_source(
     providers: &[ProviderSource],
-    provider_models: &[ProviderModelSource],
+    provider_models: &[ProviderModelSource<'_>],
 ) -> Result<ModelCatalog, ModelCatalogBuildError> {
     let provider_stats = analyze_provider_sources(providers)?;
     let mut state = build_state_with_capacity(provider_stats.provider_count, provider_models.len());
@@ -90,7 +90,7 @@ pub(crate) fn build_from_source(
 fn populate_tables_once(
     state: &mut BuildState,
     providers: &[ProviderSource],
-    provider_models: &[ProviderModelSource],
+    provider_models: &[ProviderModelSource<'_>],
 ) -> Result<(), ModelCatalogBuildError> {
     let mut env_start: u16 = 0;
     let mut provider_idx_by_key: AHashMap<&str, ProviderIdx> =
@@ -127,18 +127,15 @@ fn populate_tables_once(
 
     for provider_model in provider_models {
         // Validate provider exists before inserting model.
-        if !provider_idx_by_key.contains_key(provider_model.provider_key.as_str()) {
+        if !provider_idx_by_key.contains_key(provider_model.provider_key) {
             return Err(ModelCatalogBuildError::ProviderKeyNotFoundForModel {
-                provider_key: provider_model.provider_key.clone(),
-                model_key: provider_model.model_key.clone(),
+                provider_key: provider_model.provider_key.to_owned(),
+                model_key: provider_model.model_key.to_owned(),
             });
         }
 
         // Check for duplicate (provider_key, model_key) pair.
-        let key = (
-            provider_model.provider_key.as_str(),
-            provider_model.model_key.as_str(),
-        );
+        let key = (provider_model.provider_key, provider_model.model_key);
         if !seen_provider_models.insert(key) {
             return Err(ModelCatalogBuildError::DuplicateKey {
                 table: LookupTableKind::ProviderModel,
@@ -197,7 +194,7 @@ fn insert_provider(
 #[inline]
 fn insert_provider_model(
     state: &mut BuildState,
-    provider_model: &ProviderModelSource,
+    provider_model: &ProviderModelSource<'_>,
 ) -> Result<(), ModelCatalogBuildError> {
     let info = provider_model.model;
 
@@ -240,8 +237,8 @@ fn insert_provider_model(
 
     let key = hash_provider_model_key(
         &state.hash_state,
-        &provider_model.provider_key,
-        &provider_model.model_key,
+        provider_model.provider_key,
+        provider_model.model_key,
     );
     let hash48 = PackedProviderModelTableEntry::truncate_hash48(key.as_u64());
 
@@ -454,15 +451,15 @@ mod tests {
         ProviderSource::new(provider_key, provider)
     }
 
-    fn provider_model_source(
-        provider_key: &str,
-        model_key: &str,
+    fn provider_model_source<'a>(
+        provider_key: &'a str,
+        model_key: &'a str,
         model: ModelInfo,
-    ) -> ProviderModelSource {
+    ) -> ProviderModelSource<'a> {
         ProviderModelSource::new(provider_key, model_key, model)
     }
 
-    fn test_sources() -> (Vec<ProviderSource>, Vec<ProviderModelSource>) {
+    fn test_sources() -> (Vec<ProviderSource>, Vec<ProviderModelSource<'static>>) {
         (
             vec![provider_source(
                 "alpha",

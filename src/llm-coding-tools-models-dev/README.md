@@ -18,7 +18,7 @@ the relevant data we need; and create a llm_coding_tools_core `ModelCatalog`.
 1. Read cache header (if present) and get the old ETag.
 2. Send request to models.dev with `If-None-Match` when ETag exists.
 3. If server returns `304 Not Modified`, load catalog from cache.
-4. If server returns `200 OK`, parse and normalize JSON, write fresh cache, then build catalog.
+4. If server returns `200 OK`, parse JSON, map it into catalog sources, write fresh cache, then build catalog.
 5. If network fails, try cached data as fallback; if no valid cache exists, return an error.
 
 ### Non-blocking (`tokio`)
@@ -31,9 +31,9 @@ async fn load_catalog() -> Result<(), Box<dyn std::error::Error>> {
     let result = ModelsDevCatalog::load().await?;
 
     match result.source {
-        CatalogLoadSource::Downloaded => println!("Downloaded fresh snapshot."),
+        CatalogLoadSource::Downloaded => println!("Downloaded fresh catalog data."),
         CatalogLoadSource::NotModifiedCache => println!("Cache is already up to date."),
-        CatalogLoadSource::FallbackCache => println!("Network unavailable, using cached snapshot."),
+        CatalogLoadSource::FallbackCache => println!("Network unavailable, using cached catalog data."),
     }
 
     if let Some(entry) = result.catalog.lookup("openai", "gpt-4") {
@@ -55,9 +55,9 @@ fn load_catalog() -> Result<(), Box<dyn std::error::Error>> {
     let result = ModelsDevCatalog::load()?;
 
     match result.source {
-        CatalogLoadSource::Downloaded => println!("Downloaded fresh snapshot."),
+        CatalogLoadSource::Downloaded => println!("Downloaded fresh catalog data."),
         CatalogLoadSource::NotModifiedCache => println!("Cache is already up to date."),
-        CatalogLoadSource::FallbackCache => println!("Network unavailable, using cached snapshot."),
+        CatalogLoadSource::FallbackCache => println!("Network unavailable, using cached catalog data."),
     }
 
     if let Some(entry) = result.catalog.lookup("openai", "gpt-4") {

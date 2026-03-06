@@ -24,7 +24,8 @@ impl ModelsDevCatalog {
     /// This is the primary entry point for most use cases. It will:
     /// 1. Check for an existing cache and extract its ETag
     /// 2. Send a conditional GET request with `If-None-Match`
-    /// 3. On `200 OK`: download, normalize, cache, and return fresh data
+    /// 3. On `200 OK`: download, map the API payload into catalog sources,
+    ///    cache it, and return fresh data
     /// 4. On `304 Not Modified`: decode and return cached data
     /// 5. On network failure: fall back to cached data if available
     ///
@@ -43,7 +44,7 @@ impl ModelsDevCatalog {
     /// - The cache path cannot be determined and no cache exists
     /// - An HTTP error occurs and no cache is available for fallback
     /// - The cache is corrupted and cannot be decoded
-    /// - Catalog construction from normalized data fails
+    /// - Catalog construction from mapped catalog sources fails
     ///
     /// # Examples
     ///

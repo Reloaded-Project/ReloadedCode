@@ -80,17 +80,22 @@ impl From<(String, ProviderInfo)> for ProviderSource {
 ///
 /// This wrapper keeps builder input self-documenting and avoids tuple-position
 /// ambiguity at call sites.
+///
+/// The keys are borrowed because the catalog builder hashes them during
+/// construction and does not retain them afterward. Callers must therefore keep
+/// the referenced strings alive until [`crate::models::catalog::ModelCatalog::build`]
+/// returns.
 #[derive(Debug, Clone, PartialEq)]
-pub struct ProviderModelSource {
-    /// Provider identifier used by lookups (for example, `"openai"`).
-    pub provider_key: String,
-    /// Model identifier used by lookups (for example, `"gpt-4"`).
-    pub model_key: String,
+pub struct ProviderModelSource<'a> {
+    /// Borrowed provider identifier used by lookups (for example, `"openai"`).
+    pub provider_key: &'a str,
+    /// Borrowed model identifier used by lookups (for example, `"gpt-4"`).
+    pub model_key: &'a str,
     /// Model metadata associated with [`Self::model_key`].
     pub model: ModelInfo,
 }
 
-impl ProviderModelSource {
+impl<'a> ProviderModelSource<'a> {
     /// Creates a provider model source.
     ///
     /// # Parameters
@@ -103,22 +108,18 @@ impl ProviderModelSource {
     ///
     /// A new [`ProviderModelSource`].
     #[inline]
-    pub fn new(
-        provider_key: impl Into<String>,
-        model_key: impl Into<String>,
-        model: ModelInfo,
-    ) -> Self {
+    pub fn new(provider_key: &'a str, model_key: &'a str, model: ModelInfo) -> Self {
         Self {
-            provider_key: provider_key.into(),
-            model_key: model_key.into(),
+            provider_key,
+            model_key,
             model,
         }
     }
 }
 
-impl From<(String, String, ModelInfo)> for ProviderModelSource {
+impl<'a> From<(&'a str, &'a str, ModelInfo)> for ProviderModelSource<'a> {
     #[inline]
-    fn from((provider_key, model_key, model): (String, String, ModelInfo)) -> Self {
+    fn from((provider_key, model_key, model): (&'a str, &'a str, ModelInfo)) -> Self {
         Self {
             provider_key,
             model_key,

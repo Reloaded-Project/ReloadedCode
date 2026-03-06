@@ -298,7 +298,7 @@ impl ModelCatalog {
     #[inline]
     pub fn build(
         providers: &[ProviderSource],
-        provider_models: &[ProviderModelSource],
+        provider_models: &[ProviderModelSource<'_>],
     ) -> Result<Self, ModelCatalogBuildError> {
         build_from_source(providers, provider_models)
     }
@@ -562,7 +562,7 @@ mod tests {
             .into_iter()
             .map(|(key, info)| ProviderSource::new(key, info))
             .collect();
-        let provider_model_sources: Vec<ProviderModelSource> = provider_models
+        let provider_model_sources: Vec<ProviderModelSource<'_>> = provider_models
             .into_iter()
             .map(|(provider_key, model_key, info)| {
                 ProviderModelSource::new(provider_key, model_key, info)
