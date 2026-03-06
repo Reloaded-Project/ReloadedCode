@@ -28,7 +28,7 @@ impl PackedEnvRange {
     ///
     /// SAFETY: The `start` parameter is not validated here. The caller must ensure
     /// `start` fits within 14 bits (max 16383). This invariant is enforced in
-    /// `analyze_provider_rows` before `populate_tables_once` calls this function.
+    /// `analyze_provider_sources` before `populate_tables_once` calls this function.
     #[inline]
     pub fn from_parts(start: u16, count: u8) -> Self {
         let mut packed = Self::new_without_defaults();

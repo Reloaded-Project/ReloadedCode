@@ -26,8 +26,8 @@
 //! ## Building a Catalog
 //!
 //! - [`ModelCatalog::build`] - Batch builder entry point
-//! - [`ProviderSourceRow`] - Provider key + metadata input row
-//! - [`ProviderModelSourceRow`] - Model key + metadata input row for a provider
+//! - [`ProviderSource`] - Provider key + metadata input
+//! - [`ProviderModelSource`] - Model key + metadata input for a provider
 //! - [`ModelInfo`] - Model metadata input (modalities, token limits, sampling)
 //! - [`ProviderInfo`] - Provider metadata input (API URL, env vars, type)
 //! - [`Modality`] - Content modality flags (text, image, audio, video)
@@ -230,9 +230,7 @@ use internal::{
 };
 use lite_strtab::{StringId, StringTable};
 
-pub use public::builder_types::{
-    ModelCatalogBuildError, ProviderModelSourceRow, ProviderSourceRow,
-};
+pub use public::builder_types::{ModelCatalogBuildError, ProviderModelSource, ProviderSource};
 pub use public::*;
 
 mod internal;
@@ -281,24 +279,29 @@ impl ModelCatalog {
         }
     }
 
-    /// Builds a catalog from provider rows and provider model rows.
+    /// Builds a catalog from provider sources and provider model sources.
     ///
     /// # Parameters
     ///
-    /// * `providers` - [`ProviderSourceRow`] values keyed by provider identifier.
-    /// * `provider_models` - [`ProviderModelSourceRow`] values keyed by provider and model.
+    /// * `providers` - [`ProviderSource`] values keyed by provider identifier.
+    /// * `provider_models` - [`ProviderModelSource`] values keyed by provider and model.
+    ///
+    /// # Type Parameters
+    ///
+    /// * `P` - Iterator over provider sources.
+    /// * `M` - Iterator over provider model sources.
     ///
     /// # Errors
     ///
     /// Returns [`ModelCatalogBuildError`] when:
     /// - input exceeds supported numeric limits,
     /// - token limits cannot be represented in packed model entries,
-    /// - provider model rows reference unknown providers,
+    /// - provider model sources reference unknown providers,
     /// - or all seed-retry attempts still result in collisions.
     #[inline]
     pub fn build(
-        providers: &[ProviderSourceRow],
-        provider_models: &[ProviderModelSourceRow],
+        providers: &[ProviderSource],
+        provider_models: &[ProviderModelSource],
     ) -> Result<Self, ModelCatalogBuildError> {
         build_from_source(providers, provider_models)
     }
@@ -342,7 +345,7 @@ impl ModelCatalog {
         self.provider_model_table.len()
     }
 
-    /// Returns the number of unique model configuration rows in the catalog.
+    /// Returns the number of unique model configurations in the catalog.
     ///
     /// Shared model metadata is deduplicated across provider-model entries, so
     /// this is always less than or equal to [`Self::provider_model_count`].
@@ -352,7 +355,7 @@ impl ModelCatalog {
     ///
     /// # Returns
     ///
-    /// The number of unique model configuration rows.
+    /// The number of unique model configurations.
     #[inline]
     pub fn model_config_count(&self) -> usize {
         self.model_entries.len()
@@ -510,7 +513,7 @@ impl ModelCatalog {
 mod tests {
     use super::*;
     use crate::models::catalog::{
-        Modality, ModelInfo, ProviderInfo, ProviderModelSourceRow, ProviderSourceRow,
+        Modality, ModelInfo, ProviderInfo, ProviderModelSource, ProviderSource,
     };
 
     fn provider(api_url: &str, env_vars: &[&str], api_type: ProviderType) -> ProviderInfo {
@@ -550,18 +553,17 @@ mod tests {
         providers: Vec<(&str, ProviderInfo)>,
         provider_models: Vec<(&str, &str, ModelInfo)>,
     ) -> ModelCatalog {
-        let provider_rows: Vec<ProviderSourceRow> = providers
+        let provider_sources: Vec<ProviderSource> = providers
             .into_iter()
-            .map(|(key, info)| ProviderSourceRow::new(key, info))
+            .map(|(key, info)| ProviderSource::new(key, info))
             .collect();
-        let provider_model_rows: Vec<ProviderModelSourceRow> = provider_models
+        let provider_model_sources: Vec<ProviderModelSource> = provider_models
             .into_iter()
             .map(|(provider_key, model_key, info)| {
-                ProviderModelSourceRow::new(provider_key, model_key, info)
+                ProviderModelSource::new(provider_key, model_key, info)
             })
             .collect();
-
-        ModelCatalog::build(&provider_rows, &provider_model_rows)
+        ModelCatalog::build(&provider_sources, &provider_model_sources)
             .expect("build catalog from source rows")
     }
 

@@ -34,20 +34,20 @@ pub struct ProviderInfo {
     pub api_type: ProviderType,
 }
 
-/// Source row that maps a provider key to provider metadata.
+/// Source that maps a provider key to provider metadata.
 ///
 /// This wrapper keeps builder input self-documenting and avoids tuple-position
 /// ambiguity at call sites.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct ProviderSourceRow {
+pub struct ProviderSource {
     /// Provider identifier used by lookups (for example, `"openai"`).
     pub provider_key: String,
     /// Provider metadata associated with [`Self::provider_key`].
     pub provider: ProviderInfo,
 }
 
-impl ProviderSourceRow {
-    /// Creates a provider source row.
+impl ProviderSource {
+    /// Creates a provider source.
     ///
     /// # Parameters
     ///
@@ -56,7 +56,7 @@ impl ProviderSourceRow {
     ///
     /// # Returns
     ///
-    /// A new [`ProviderSourceRow`].
+    /// A new [`ProviderSource`].
     #[inline]
     pub fn new(provider_key: impl Into<String>, provider: ProviderInfo) -> Self {
         Self {
@@ -66,7 +66,7 @@ impl ProviderSourceRow {
     }
 }
 
-impl From<(String, ProviderInfo)> for ProviderSourceRow {
+impl From<(String, ProviderInfo)> for ProviderSource {
     #[inline]
     fn from((provider_key, provider): (String, ProviderInfo)) -> Self {
         Self {
@@ -76,12 +76,12 @@ impl From<(String, ProviderInfo)> for ProviderSourceRow {
     }
 }
 
-/// Source row that maps a model under a specific provider to model metadata.
+/// Source that maps a model under a specific provider to model metadata.
 ///
 /// This wrapper keeps builder input self-documenting and avoids tuple-position
 /// ambiguity at call sites.
 #[derive(Debug, Clone, PartialEq)]
-pub struct ProviderModelSourceRow {
+pub struct ProviderModelSource {
     /// Provider identifier used by lookups (for example, `"openai"`).
     pub provider_key: String,
     /// Model identifier used by lookups (for example, `"gpt-4"`).
@@ -90,8 +90,8 @@ pub struct ProviderModelSourceRow {
     pub model: ModelInfo,
 }
 
-impl ProviderModelSourceRow {
-    /// Creates a provider model source row.
+impl ProviderModelSource {
+    /// Creates a provider model source.
     ///
     /// # Parameters
     ///
@@ -101,7 +101,7 @@ impl ProviderModelSourceRow {
     ///
     /// # Returns
     ///
-    /// A new [`ProviderModelSourceRow`].
+    /// A new [`ProviderModelSource`].
     #[inline]
     pub fn new(
         provider_key: impl Into<String>,
@@ -116,7 +116,7 @@ impl ProviderModelSourceRow {
     }
 }
 
-impl From<(String, String, ModelInfo)> for ProviderModelSourceRow {
+impl From<(String, String, ModelInfo)> for ProviderModelSource {
     #[inline]
     fn from((provider_key, model_key, model): (String, String, ModelInfo)) -> Self {
         Self {
@@ -172,12 +172,12 @@ pub enum ModelCatalogBuildError {
         /// Maximum supported env vars for one provider.
         max: usize,
     },
-    /// A provider model row references a provider key that does not exist.
-    #[error("provider model row references unknown provider_key={provider_key:?} for model_key={model_key:?}")]
+    /// A provider model source references a provider key that does not exist.
+    #[error("provider model source references unknown provider_key={provider_key:?} for model_key={model_key:?}")]
     ProviderKeyNotFoundForModel {
-        /// Provider key from the provider model row.
+        /// Provider key from the provider model source.
         provider_key: String,
-        /// Model key from the provider model row.
+        /// Model key from the provider model source.
         model_key: String,
     },
     /// Model output token limit exceeds packed-entry capacity.

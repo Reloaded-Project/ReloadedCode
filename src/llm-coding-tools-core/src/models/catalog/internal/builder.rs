@@ -5,7 +5,7 @@ use crate::models::catalog::internal::{
     MAX_ENV_START, MAX_INPUT_TOKENS, MAX_MODEL_CONFIG_COUNT, MAX_OUTPUT_TOKENS, MAX_PROVIDER_COUNT,
 };
 use crate::models::catalog::public::builder_types::{
-    LookupTableKind, ModelCatalogBuildError, ProviderModelSourceRow, ProviderSourceRow,
+    LookupTableKind, ModelCatalogBuildError, ProviderModelSource, ProviderSource,
 };
 use crate::models::catalog::public::ProviderIdx;
 use crate::models::catalog::ModelCatalog;
@@ -62,15 +62,15 @@ fn build_state_with_capacity(
     }
 }
 
-/// Builds a catalog from provider and provider-model source rows.
+/// Builds a catalog from provider and provider-model sources.
 ///
 /// This is an internal construction path used by [`ModelCatalog::build`].
 #[inline]
 pub(crate) fn build_from_source(
-    providers: &[ProviderSourceRow],
-    provider_models: &[ProviderModelSourceRow],
+    providers: &[ProviderSource],
+    provider_models: &[ProviderModelSource],
 ) -> Result<ModelCatalog, ModelCatalogBuildError> {
-    let provider_stats = analyze_provider_rows(providers)?;
+    let provider_stats = analyze_provider_sources(providers)?;
     let mut state = build_state_with_capacity(provider_stats.provider_count, provider_models.len());
 
     loop {
@@ -89,38 +89,38 @@ pub(crate) fn build_from_source(
 #[inline]
 fn populate_tables_once(
     state: &mut BuildState,
-    providers: &[ProviderSourceRow],
-    provider_models: &[ProviderModelSourceRow],
+    providers: &[ProviderSource],
+    provider_models: &[ProviderModelSource],
 ) -> Result<(), ModelCatalogBuildError> {
     let mut env_start: u16 = 0;
     let mut provider_idx_by_key: AHashMap<&str, ProviderIdx> =
         AHashMap::with_capacity(providers.len());
 
-    for provider_row in providers {
-        let provider_info = &provider_row.provider;
+    for provider in providers {
+        let provider_info = &provider.provider;
         let env_count = provider_info.env_vars.len() as u8;
-        let provider_idx = insert_provider_row(
+        let provider_idx = insert_provider(
             state,
-            &provider_row.provider_key,
+            &provider.provider_key,
             env_start,
             env_count,
             provider_info.api_type,
         )?;
-        provider_idx_by_key.insert(provider_row.provider_key.as_str(), provider_idx);
+        provider_idx_by_key.insert(provider.provider_key.as_str(), provider_idx);
 
-        // SAFETY: analyze_provider_rows bounds env_start and env_count (<= 3).
+        // SAFETY: analyze_provider_sources bounds env_start and env_count (<= 3).
         env_start += u16::from(env_count);
     }
 
-    for provider_model_row in provider_models {
-        insert_provider_model_row(state, &provider_idx_by_key, provider_model_row)?;
+    for provider_model in provider_models {
+        insert_provider_model(state, &provider_idx_by_key, provider_model)?;
     }
 
     Ok(())
 }
 
 #[inline]
-fn insert_provider_row(
+fn insert_provider(
     state: &mut BuildState,
     provider_key: &str,
     env_start: u16,
@@ -160,19 +160,19 @@ fn insert_provider_row(
 }
 
 #[inline]
-fn insert_provider_model_row(
+fn insert_provider_model(
     state: &mut BuildState,
     provider_idx_by_key: &AHashMap<&str, ProviderIdx>,
-    provider_model_row: &ProviderModelSourceRow,
+    provider_model: &ProviderModelSource,
 ) -> Result<(), ModelCatalogBuildError> {
-    if !provider_idx_by_key.contains_key(provider_model_row.provider_key.as_str()) {
+    if !provider_idx_by_key.contains_key(provider_model.provider_key.as_str()) {
         return Err(ModelCatalogBuildError::ProviderKeyNotFoundForModel {
-            provider_key: provider_model_row.provider_key.clone(),
-            model_key: provider_model_row.model_key.clone(),
+            provider_key: provider_model.provider_key.clone(),
+            model_key: provider_model.model_key.clone(),
         });
     }
 
-    let info = provider_model_row.model;
+    let info = provider_model.model;
 
     if info.max_output > MAX_OUTPUT_TOKENS {
         return Err(ModelCatalogBuildError::MaxOutputTokensOutOfRange {
@@ -213,8 +213,8 @@ fn insert_provider_model_row(
 
     let key = hash_provider_model_key(
         &state.hash_state,
-        &provider_model_row.provider_key,
-        &provider_model_row.model_key,
+        &provider_model.provider_key,
+        &provider_model.model_key,
     );
     let hash48 = PackedProviderModelTableEntry::truncate_hash48(key.as_u64());
 
@@ -270,7 +270,7 @@ fn clear_entries(state: &mut BuildState) {
 #[inline]
 fn finish_with_source(
     mut state: BuildState,
-    providers: &[ProviderSourceRow],
+    providers: &[ProviderSource],
     provider_stats: ProviderSourceStats,
 ) -> Result<ModelCatalog, ModelCatalogBuildError> {
     state
@@ -300,8 +300,8 @@ fn finish_with_source(
 }
 
 #[inline]
-fn analyze_provider_rows(
-    providers: &[ProviderSourceRow],
+fn analyze_provider_sources(
+    providers: &[ProviderSource],
 ) -> Result<ProviderSourceStats, ModelCatalogBuildError> {
     let provider_count = providers.len();
     if provider_count > MAX_PROVIDER_COUNT {
@@ -317,7 +317,7 @@ fn analyze_provider_rows(
     let max_env_start = usize::from(MAX_ENV_START);
     let max_env_count = usize::from(MAX_ENV_RANGE_COUNT);
 
-    for provider_row in providers {
+    for provider in providers {
         // SAFETY: total_env_keys is the start index for this provider.
         // It must fit the 14-bit PackedEnvRange start field.
         if total_env_keys > max_env_start {
@@ -327,7 +327,7 @@ fn analyze_provider_rows(
             });
         }
 
-        let provider_info = &provider_row.provider;
+        let provider_info = &provider.provider;
         let env_count = provider_info.env_vars.len();
         // SAFETY: per-provider count must fit the 2-bit count field.
         if env_count > max_env_count {
@@ -356,7 +356,7 @@ fn analyze_provider_rows(
 
 #[inline]
 fn build_provider_api_url_table(
-    providers: &[ProviderSourceRow],
+    providers: &[ProviderSource],
     stats: ProviderSourceStats,
 ) -> Result<StringTable<u32, ProviderIdx>, ModelCatalogBuildError> {
     let mut builder = StringTableBuilder::<u32, ProviderIdx>::with_capacity_in(
@@ -365,9 +365,9 @@ fn build_provider_api_url_table(
         Global,
     );
 
-    for provider_row in providers {
+    for provider in providers {
         builder
-            .try_push(&provider_row.provider.api_url)
+            .try_push(&provider.provider.api_url)
             .map_err(|e| ModelCatalogBuildError::StringTableCapacityExceeded(e.to_string()))?;
     }
 
@@ -376,7 +376,7 @@ fn build_provider_api_url_table(
 
 #[inline]
 fn build_provider_env_key_table(
-    providers: &[ProviderSourceRow],
+    providers: &[ProviderSource],
     stats: ProviderSourceStats,
 ) -> Result<StringTable<u32, ProviderIdx>, ModelCatalogBuildError> {
     let mut builder = StringTableBuilder::<u32, ProviderIdx>::with_capacity_in(
@@ -385,8 +385,8 @@ fn build_provider_env_key_table(
         Global,
     );
 
-    for provider_row in providers {
-        for env_key in &provider_row.provider.env_vars {
+    for provider in providers {
+        for env_key in &provider.provider.env_vars {
             builder
                 .try_push(env_key)
                 .map_err(|e| ModelCatalogBuildError::StringTableCapacityExceeded(e.to_string()))?;
@@ -400,8 +400,8 @@ fn build_provider_env_key_table(
 mod tests {
     use super::{build_from_source, MAX_SEED};
     use crate::models::catalog::{
-        Modality, ModelCatalogBuildError, ModelInfo, ProviderInfo, ProviderModelSourceRow,
-        ProviderSourceRow,
+        Modality, ModelCatalogBuildError, ModelInfo, ProviderInfo, ProviderModelSource,
+        ProviderSource,
     };
     use crate::models::ProviderType;
 
@@ -423,21 +423,21 @@ mod tests {
         }
     }
 
-    fn provider_row(provider_key: &str, provider: ProviderInfo) -> ProviderSourceRow {
-        ProviderSourceRow::new(provider_key, provider)
+    fn provider_source(provider_key: &str, provider: ProviderInfo) -> ProviderSource {
+        ProviderSource::new(provider_key, provider)
     }
 
-    fn provider_model_row(
+    fn provider_model_source(
         provider_key: &str,
         model_key: &str,
         model: ModelInfo,
-    ) -> ProviderModelSourceRow {
-        ProviderModelSourceRow::new(provider_key, model_key, model)
+    ) -> ProviderModelSource {
+        ProviderModelSource::new(provider_key, model_key, model)
     }
 
-    fn source_rows() -> (Vec<ProviderSourceRow>, Vec<ProviderModelSourceRow>) {
+    fn test_sources() -> (Vec<ProviderSource>, Vec<ProviderModelSource>) {
         (
-            vec![provider_row(
+            vec![provider_source(
                 "alpha",
                 provider(
                     "https://alpha.example",
@@ -445,13 +445,13 @@ mod tests {
                     ProviderType::OpenAiCompletions,
                 ),
             )],
-            vec![provider_model_row("alpha", "m1", info(4096, 512))],
+            vec![provider_model_source("alpha", "m1", info(4096, 512))],
         )
     }
 
     #[test]
     fn build_from_source_builds_catalog() {
-        let (providers, provider_models) = source_rows();
+        let (providers, provider_models) = test_sources();
         let catalog =
             build_from_source(&providers, &provider_models).expect("source build should succeed");
 
@@ -463,16 +463,16 @@ mod tests {
     #[test]
     fn duplicate_provider_keys_exhaust_reseed_attempts() {
         let providers = vec![
-            provider_row(
+            provider_source(
                 "alpha",
                 provider("https://alpha.example", &["ALPHA_KEY"], ProviderType::Azure),
             ),
-            provider_row(
+            provider_source(
                 "alpha",
                 provider("https://beta.example", &["BETA_KEY"], ProviderType::Azure),
             ),
         ];
-        let provider_models = vec![provider_model_row("alpha", "m1", info(4096, 512))];
+        let provider_models = vec![provider_model_source("alpha", "m1", info(4096, 512))];
 
         match build_from_source(&providers, &provider_models) {
             Err(err) => {
@@ -489,13 +489,13 @@ mod tests {
 
     #[test]
     fn duplicate_provider_model_keys_exhaust_reseed_attempts() {
-        let providers = vec![provider_row(
+        let providers = vec![provider_source(
             "alpha",
             provider("https://alpha.example", &["ALPHA_KEY"], ProviderType::Azure),
         )];
         let provider_models = vec![
-            provider_model_row("alpha", "m1", info(4096, 512)),
-            provider_model_row("alpha", "m1", info(4096, 512)),
+            provider_model_source("alpha", "m1", info(4096, 512)),
+            provider_model_source("alpha", "m1", info(4096, 512)),
         ];
 
         match build_from_source(&providers, &provider_models) {
@@ -514,17 +514,17 @@ mod tests {
     #[test]
     fn model_entries_are_deduplicated_by_info_and_config() {
         let providers = vec![
-            provider_row(
+            provider_source(
                 "alpha",
                 provider("https://alpha.example", &["ALPHA_KEY"], ProviderType::Azure),
             ),
-            provider_row(
+            provider_source(
                 "beta",
                 provider("https://beta.example", &["BETA_KEY"], ProviderType::Azure),
             ),
         ];
         let provider_models = vec![
-            provider_model_row(
+            provider_model_source(
                 "alpha",
                 "m1",
                 ModelInfo {
@@ -535,7 +535,7 @@ mod tests {
                     top_p: Some(0.9),
                 },
             ),
-            provider_model_row(
+            provider_model_source(
                 "beta",
                 "m2",
                 ModelInfo {
@@ -556,12 +556,12 @@ mod tests {
     }
 
     #[test]
-    fn provider_model_row_with_unknown_provider_returns_error() {
-        let providers = vec![provider_row(
+    fn provider_model_source_with_unknown_provider_returns_error() {
+        let providers = vec![provider_source(
             "alpha",
             provider("https://alpha.example", &["ALPHA_KEY"], ProviderType::Azure),
         )];
-        let provider_models = vec![provider_model_row("beta", "m1", info(4096, 512))];
+        let provider_models = vec![provider_model_source("beta", "m1", info(4096, 512))];
 
         match build_from_source(&providers, &provider_models) {
             Err(err) => {
@@ -573,13 +573,13 @@ mod tests {
                     }
                 );
             }
-            Ok(_) => panic!("provider-model row with unknown provider should fail"),
+            Ok(_) => panic!("provider-model source with unknown provider should fail"),
         }
     }
 
     #[test]
     fn too_many_provider_env_vars_returns_error() {
-        let providers = vec![provider_row(
+        let providers = vec![provider_source(
             "alpha",
             provider(
                 "https://alpha.example",
@@ -587,7 +587,7 @@ mod tests {
                 ProviderType::Azure,
             ),
         )];
-        let provider_models = vec![provider_model_row("alpha", "m1", info(4096, 512))];
+        let provider_models = vec![provider_model_source("alpha", "m1", info(4096, 512))];
 
         match build_from_source(&providers, &provider_models) {
             Err(err) => {
@@ -605,9 +605,9 @@ mod tests {
 
     #[test]
     fn max_output_tokens_out_of_range_returns_error() {
-        let (providers, _) = source_rows();
+        let (providers, _) = test_sources();
         let max_output = super::MAX_OUTPUT_TOKENS;
-        let provider_models = vec![provider_model_row(
+        let provider_models = vec![provider_model_source(
             "alpha",
             "m1",
             info(4096, max_output.saturating_add(1)),
@@ -629,9 +629,9 @@ mod tests {
 
     #[test]
     fn max_input_tokens_out_of_range_returns_error() {
-        let (providers, _) = source_rows();
+        let (providers, _) = test_sources();
         let max_input = super::MAX_INPUT_TOKENS;
-        let provider_models = vec![provider_model_row(
+        let provider_models = vec![provider_model_source(
             "alpha",
             "m1",
             info(max_input.saturating_add(1), 512),
@@ -657,7 +657,7 @@ mod tests {
         // a start index of 16386, which exceeds MAX_ENV_START (16383).
         let mut providers = Vec::new();
         for i in 0..5463usize {
-            providers.push(provider_row(
+            providers.push(provider_source(
                 &format!("provider_{}", i),
                 provider(
                     "https://example.com",
@@ -666,7 +666,7 @@ mod tests {
                 ),
             ));
         }
-        let provider_models = vec![provider_model_row("provider_0", "m1", info(4096, 512))];
+        let provider_models = vec![provider_model_source("provider_0", "m1", info(4096, 512))];
 
         match build_from_source(&providers, &provider_models) {
             Err(err) => {
@@ -688,7 +688,7 @@ mod tests {
         // contributes 3 keys at indices 16383, 16384, and 16385.
         let mut providers = Vec::new();
         for i in 0..5462usize {
-            providers.push(provider_row(
+            providers.push(provider_source(
                 &format!("provider_{}", i),
                 provider(
                     "https://example.com",
@@ -698,7 +698,7 @@ mod tests {
             ));
         }
         let last_provider_key = format!("provider_{}", 5461usize);
-        let provider_models = vec![provider_model_row(
+        let provider_models = vec![provider_model_source(
             &last_provider_key,
             "m1",
             info(4096, 512),
