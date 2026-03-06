@@ -739,10 +739,10 @@ mod tests {
 
         let catalog =
             build_from_source(&providers, &provider_models).expect("boundary case should pass");
-        let entry = catalog
+        let (provider, _) = catalog
             .lookup(&last_provider_key, "m1")
             .expect("last provider should be addressable");
 
-        assert_eq!(entry.env_vars.len(), 3);
+        assert_eq!(provider.env_vars(), &["VAR1", "VAR2", "VAR3"]);
     }
 }

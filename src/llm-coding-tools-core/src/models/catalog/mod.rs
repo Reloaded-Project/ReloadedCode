@@ -9,7 +9,7 @@
 //! Model: `hf:moonshotai/Kimi-K2.5`
 //!
 //! Internally the providers and models are stored in separate hash tables,
-//! with friendly APIs to return them combined when needed:
+//! with friendly APIs to return them separately or combined when needed:
 //!
 //! - `ProviderTable`: `hash(provider_key) -> provider_idx`
 //! - `ProviderModelTable`: `hash(provider_key + 0xFF + model_key) -> model_config_idx`
@@ -34,12 +34,14 @@
 //!
 //! ## Querying a Catalog
 //!
+//! - [`ModelCatalog::lookup_provider`] - Provider-only lookup
+//! - [`ModelCatalog::lookup_provider_model`] - Provider-scoped model lookup
 //! - [`ModelCatalog::lookup`] - Combined provider + model lookup
 //! - [`ModelCatalog::provider_count`] - Total providers
 //! - [`ModelCatalog::providers`] - Iterate all providers
 //! - [`ModelCatalog::provider_model_count`] - Total provider-model entries
 //! - [`ModelCatalog::model_config_count`] - Unique deduplicated model configs
-//! - [`Provider`] / [`Model`] / [`CatalogEntry`] - Lookup return types
+//! - [`Provider`] / [`Model`] - Lookup return types
 //!
 //! ## Error Handling
 //!
@@ -366,7 +368,21 @@ impl ModelCatalog {
         self.provider_table.is_empty() && self.provider_model_table.is_empty()
     }
 
-    /// Looks up both provider and model and returns a combined entry.
+    /// Looks up one provider.
+    ///
+    /// # Parameters
+    ///
+    /// * `provider_key` - Provider identifier (for example, `"openai"`).
+    ///
+    /// # Returns
+    ///
+    /// A [`Provider`] if the requested provider exists, otherwise `None`.
+    #[inline]
+    pub fn lookup_provider(&self, provider_key: &str) -> Option<Provider<'_>> {
+        self.lookup_provider_hash(hash_provider_key(&self.hash_state, provider_key))
+    }
+
+    /// Looks up one model for a specific provider.
     ///
     /// This performs exact per-provider model lookup. The `model_key` must
     /// exist under the specified `provider_key`; the same model name under
@@ -379,29 +395,37 @@ impl ModelCatalog {
     ///
     /// # Returns
     ///
-    /// A [`CatalogEntry`] if the requested provider and model combination
-    /// exists, otherwise `None`.
+    /// A [`Model`] if the requested provider and model combination exists,
+    /// otherwise `None`.
     #[inline]
-    pub fn lookup(&self, provider_key: &str, model_key: &str) -> Option<CatalogEntry<'_>> {
-        let provider =
-            self.lookup_provider_hash(hash_provider_key(&self.hash_state, provider_key))?;
-        let model = self.lookup_provider_model_hash(hash_provider_model_key(
+    pub fn lookup_provider_model(&self, provider_key: &str, model_key: &str) -> Option<Model> {
+        self.lookup_provider_model_hash(hash_provider_model_key(
             &self.hash_state,
             provider_key,
             model_key,
-        ))?;
+        ))
+    }
 
-        Some(CatalogEntry::new(
-            provider.provider_idx,
-            provider.api_url,
-            provider.env_vars,
-            provider.api_type,
-            model.model_config_idx,
-            model.modalities,
-            model.max_input,
-            model.max_output,
-            model.temperature_fixed(),
-            model.top_p_fixed(),
+    /// Looks up both provider and model and returns them as a pair.
+    ///
+    /// This performs exact per-provider model lookup. The `model_key` must
+    /// exist under the specified `provider_key`; the same model name under
+    /// another provider does not match.
+    ///
+    /// # Parameters
+    ///
+    /// * `provider_key` - Provider identifier (for example, `"openai"`).
+    /// * `model_key` - Model identifier within that provider.
+    ///
+    /// # Returns
+    ///
+    /// A `(`[`Provider`], [`Model`]`)` pair if the requested provider and model
+    /// combination exists, otherwise `None`.
+    #[inline]
+    pub fn lookup(&self, provider_key: &str, model_key: &str) -> Option<(Provider<'_>, Model)> {
+        Some((
+            self.lookup_provider(provider_key)?,
+            self.lookup_provider_model(provider_key, model_key)?,
         ))
     }
 
@@ -445,27 +469,23 @@ impl ModelCatalog {
         let api_url = self.provider_api_urls.get(StringId::new(provider_idx))?;
         let range = self.provider_env_ranges.get(provider_idx_usize)?;
         let start = range.start();
-        let count = range.count();
+        let count = range.count() as usize;
 
-        let env_vars: Vec<&str> = if count == 0 {
-            Vec::new()
-        } else {
-            let mut vars = Vec::with_capacity(usize::from(count));
-            for i in 0..count {
-                let idx = ProviderIdx::new(start + u16::from(i));
-                if let Some(s) = self.provider_env_keys.get(StringId::new(idx)) {
-                    vars.push(s);
-                }
-            }
-            vars
-        };
+        let mut env_vars = ["", "", ""];
+        #[allow(clippy::needless_range_loop)]
+        for x in 0..count {
+            env_vars[x] = self
+                .provider_env_keys
+                .get(StringId::new(ProviderIdx::new(start + x as u16)))?;
+        }
 
-        Some(Provider {
+        Some(Provider::new(
             provider_idx,
             api_url,
             env_vars,
+            count as u8,
             api_type,
-        })
+        ))
     }
 
     /// Looks up a model by its configuration index.
@@ -575,13 +595,33 @@ mod tests {
             ],
         );
 
-        let alpha = catalog.lookup("alpha", "m1").expect("alpha/m1 exists");
-        let beta = catalog.lookup("beta", "m1").expect("beta/m1 exists");
+        let alpha_provider = catalog.lookup_provider("alpha").expect("alpha exists");
+        let beta_provider = catalog.lookup_provider("beta").expect("beta exists");
+        let alpha_model = catalog
+            .lookup_provider_model("alpha", "m1")
+            .expect("alpha/m1 exists");
+        let beta_model = catalog
+            .lookup_provider_model("beta", "m1")
+            .expect("beta/m1 exists");
+        let (alpha_provider_lookup, alpha_lookup_model) =
+            catalog.lookup("alpha", "m1").expect("alpha/m1 exists");
+        let (beta_provider_lookup, beta_lookup_model) =
+            catalog.lookup("beta", "m1").expect("beta/m1 exists");
 
-        assert_eq!(alpha.api_url, "https://alpha.example");
-        assert_eq!(alpha.max_output, 1024);
-        assert_eq!(beta.api_url, "https://beta.example");
-        assert_eq!(beta.max_output, 2_048);
+        assert_eq!(alpha_provider.api_url, "https://alpha.example");
+        assert_eq!(alpha_provider.api_type, ProviderType::OpenAiCompletions);
+        assert_eq!(alpha_provider.env_vars(), &["ALPHA_KEY"]);
+        assert_eq!(beta_provider.api_url, "https://beta.example");
+        assert_eq!(beta_provider.api_type, ProviderType::Azure);
+        assert_eq!(beta_provider.env_vars(), &["BETA_KEY"]);
+        assert_eq!(alpha_model.max_output, 1024);
+        assert_eq!(beta_model.max_output, 2_048);
+        assert_eq!(alpha_provider_lookup.api_url, "https://alpha.example");
+        assert_eq!(alpha_provider_lookup.env_vars(), &["ALPHA_KEY"]);
+        assert_eq!(alpha_lookup_model.max_output, 1024);
+        assert_eq!(beta_provider_lookup.api_url, "https://beta.example");
+        assert_eq!(beta_provider_lookup.env_vars(), &["BETA_KEY"]);
+        assert_eq!(beta_lookup_model.max_output, 2_048);
     }
 
     #[test]
@@ -603,6 +643,10 @@ mod tests {
             ],
         );
 
+        assert!(catalog.lookup_provider("missing").is_none());
+        assert!(catalog.lookup_provider_model("alpha", "m2").is_none());
+        assert!(catalog.lookup_provider_model("beta", "m1").is_none());
+        assert!(catalog.lookup_provider_model("missing", "m2").is_none());
         assert!(catalog.lookup("alpha", "m2").is_none());
         assert!(catalog.lookup("beta", "m1").is_none());
         assert!(catalog.lookup("missing", "m2").is_none());
@@ -670,8 +714,8 @@ mod tests {
             vec![("alpha", "m1", info(4096, 512))],
         );
 
-        let joined = catalog.lookup("alpha", "m1").expect("joined lookup exists");
-        assert_eq!(joined.temperature(), None);
-        assert_eq!(joined.top_p(), None);
+        let (_, model) = catalog.lookup("alpha", "m1").expect("lookup exists");
+        assert_eq!(model.temperature(), None);
+        assert_eq!(model.top_p(), None);
     }
 }

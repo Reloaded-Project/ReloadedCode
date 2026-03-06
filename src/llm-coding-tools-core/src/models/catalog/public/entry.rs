@@ -1,6 +1,6 @@
 //! Lookup result types for provider and model queries.
 //!
-//! These are the flattened types returned by [`ModelCatalog`] lookup methods.
+//! These are the result types returned by [`ModelCatalog`] lookup methods.
 //! For builder input types, see [`ProviderSource`],
 //! [`ProviderModelSource`], [`ProviderInfo`],
 //! and [`ModelInfo`].
@@ -23,9 +23,37 @@ pub struct Provider<'a> {
     /// Provider base URL.
     pub api_url: &'a str,
     /// Candidate environment variables used to resolve API keys.
-    pub env_vars: Vec<&'a str>,
+    env_vars: [&'a str; 3],
+    /// Number of valid entries in `env_vars`.
+    env_vars_count: u8,
     /// Type of API used by the provider.
     pub api_type: ProviderType,
+}
+
+impl<'a> Provider<'a> {
+    /// Creates a new Provider with the given parameters.
+    #[inline]
+    pub(crate) fn new(
+        provider_idx: ProviderIdx,
+        api_url: &'a str,
+        env_vars: [&'a str; 3],
+        env_vars_count: u8,
+        api_type: ProviderType,
+    ) -> Self {
+        Self {
+            provider_idx,
+            api_url,
+            env_vars,
+            env_vars_count,
+            api_type,
+        }
+    }
+
+    /// Returns the candidate environment variables used to resolve API keys.
+    #[inline]
+    pub fn env_vars(&self) -> &[&'a str] {
+        &self.env_vars[..self.env_vars_count as usize]
+    }
 }
 
 /// Model lookup result.
@@ -55,83 +83,6 @@ impl Model {
         top_p: Fixed4,
     ) -> Self {
         Self {
-            model_config_idx,
-            modalities,
-            max_input,
-            max_output,
-            temperature,
-            top_p,
-        }
-    }
-
-    /// Returns the raw temperature fixed4 value (may be sentinel).
-    #[inline]
-    pub(crate) const fn temperature_fixed(&self) -> Fixed4 {
-        self.temperature
-    }
-
-    /// Returns the raw top_p fixed4 value (may be sentinel).
-    #[inline]
-    pub(crate) const fn top_p_fixed(&self) -> Fixed4 {
-        self.top_p
-    }
-
-    /// Returns temperature as an `f32`, or `None` if not specified.
-    #[inline]
-    pub fn temperature(&self) -> Option<f32> {
-        self.temperature.value()
-    }
-
-    /// Returns top_p as an `f32`, or `None` if not specified.
-    #[inline]
-    pub fn top_p(&self) -> Option<f32> {
-        self.top_p.value()
-    }
-}
-
-/// Joined provider + model lookup result.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct CatalogEntry<'a> {
-    /// Index into provider metadata tables.
-    pub provider_idx: ProviderIdx,
-    /// Provider base URL.
-    pub api_url: &'a str,
-    /// Candidate environment variables used to resolve API keys.
-    pub env_vars: Vec<&'a str>,
-    /// Type of API used by the provider.
-    pub api_type: ProviderType,
-    /// Index into model metadata/config sidecar tables.
-    pub model_config_idx: ModelIdx,
-    /// Content modalities this model can handle as input and/or output.
-    pub modalities: Modality,
-    /// Max input tokens.
-    pub max_input: u32,
-    /// Max output tokens.
-    pub max_output: u32,
-    temperature: Fixed4,
-    top_p: Fixed4,
-}
-
-impl<'a> CatalogEntry<'a> {
-    /// Creates a new CatalogEntry with the given parameters.
-    #[allow(clippy::too_many_arguments)]
-    pub(crate) fn new(
-        provider_idx: ProviderIdx,
-        api_url: &'a str,
-        env_vars: Vec<&'a str>,
-        api_type: ProviderType,
-        model_config_idx: ModelIdx,
-        modalities: Modality,
-        max_input: u32,
-        max_output: u32,
-        temperature: Fixed4,
-        top_p: Fixed4,
-    ) -> Self {
-        Self {
-            provider_idx,
-            api_url,
-            env_vars,
-            api_type,
             model_config_idx,
             modalities,
             max_input,

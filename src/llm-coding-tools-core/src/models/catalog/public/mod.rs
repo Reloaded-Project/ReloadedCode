@@ -6,7 +6,7 @@
 //! [`ModelCatalog`]: crate::models::catalog::ModelCatalog
 
 pub use builder_types::{LookupTableKind, ModelInfo, ProviderInfo};
-pub use entry::{CatalogEntry, Model, Provider};
+pub use entry::{Model, Provider};
 pub use modality::Modality;
 pub use model_idx::ModelIdx;
 pub use provider_idx::ProviderIdx;
