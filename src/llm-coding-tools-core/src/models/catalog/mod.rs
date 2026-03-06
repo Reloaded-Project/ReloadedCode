@@ -286,11 +286,6 @@ impl ModelCatalog {
     /// * `providers` - [`ProviderSource`] values keyed by provider identifier.
     /// * `provider_models` - [`ProviderModelSource`] values keyed by provider and model.
     ///
-    /// # Type Parameters
-    ///
-    /// * `P` - Iterator over provider sources.
-    /// * `M` - Iterator over provider model sources.
-    ///
     /// # Errors
     ///
     /// Returns [`ModelCatalogBuildError`] when:
