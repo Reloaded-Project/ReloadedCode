@@ -1,8 +1,21 @@
+//! Loading a model catalog from cached on-disk data.
+//!
+//! This module handles the offline half of catalog loading: it decompresses the
+//! stored payload, decodes the serialized rows, and rebuilds a
+//! [`ModelCatalog`](llm_coding_tools_core::models::ModelCatalog).
+
 use crate::cache::format::CacheFileData;
 use crate::cache::payload::{catalog_from_cache_payload, decode_cache_payload};
 use crate::catalog::load_result::{CatalogLoadResult, CatalogLoadSource};
 use crate::error::{CatalogError, CatalogResult};
 
+/// Decompresses cache file data and rebuilds a catalog from it.
+///
+/// # Errors
+///
+/// Returns [`CatalogError`] when zstd decompression fails, the decompressed
+/// length does not match the cache metadata, the serialized payload cannot be
+/// decoded, or catalog reconstruction fails.
 pub(crate) fn load_catalog_from_cache_file_data(
     cache_file: &CacheFileData,
     source: CatalogLoadSource,

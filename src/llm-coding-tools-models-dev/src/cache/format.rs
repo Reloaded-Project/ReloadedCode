@@ -20,6 +20,14 @@
 //! one pre-sized allocation, then parse/slice into `prelude`, `etag`, and
 //! `payload` views without additional copying.
 //!
+//! ## Performance
+//!
+//! models.dev changes infrequently, so cache hits are expected to be common.
+//! [`crate::cache::payload`] documents typical compressed payload sizes of about
+//! 23-32 kB, which keeps the whole container small enough that a single
+//! sequential read is generally the faster, simpler hot path on modern
+//! NVMe-backed systems.
+//!
 //! ## Safety
 //!
 //! Not a 'safe' parser. We assume the file was created by the user.
@@ -122,9 +130,18 @@ impl CacheFileData {
 
 /// Reads a cache container from disk.
 ///
-/// This reads only the prelude + raw blocks and does not decompress payload.
+/// This reads the entire cache file into memory in one shot, then parses only
+/// the prelude + raw blocks and does not decompress payload.
 /// Compressed payload length is validated against prelude metadata to catch
 /// unexpected truncation or trailing bytes before decode.
+///
+/// # Performance
+///
+/// This intentionally performs one whole-file read. models.dev changes
+/// infrequently, so cache hits are expected to be common, and
+/// [`crate::cache::payload`] documents typical compressed payload sizes of about
+/// 23-32 kB. That is generally faster in practice than a streaming path while
+/// remaining effectively negligible on modern NVMe-backed systems.
 ///
 /// # Errors
 ///

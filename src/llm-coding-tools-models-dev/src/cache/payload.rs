@@ -1,5 +1,9 @@
 //! Cache payload serialization for models.dev catalog data.
 //!
+//! The payload is stored as simple owned rows so it can be encoded compactly
+//! with bitcode and rebuilt into a [`ModelCatalog`](llm_coding_tools_core::models::ModelCatalog)
+//! without reparsing the original JSON.
+//!
 //! ## Compression Benchmark
 //!
 //! Using a 1.26 MB `api.json` snapshot (models.dev), converted to bitcode
@@ -42,39 +46,68 @@ use llm_coding_tools_core::models::{
     ProviderSource, ProviderType,
 };
 
+/// Serializable cache representation of the models.dev catalog.
 #[derive(Debug, Clone, PartialEq, bitcode::Encode, bitcode::Decode)]
 pub(crate) struct CatalogCachePayload {
+    /// Provider rows in catalog order.
     pub(crate) providers: Vec<CachedProviderRow>,
+    /// Model rows that reference providers by index.
     pub(crate) models: Vec<CachedModelRow>,
 }
 
+/// Serializable provider row stored in the cache payload.
 #[derive(Debug, Clone, PartialEq, Eq, bitcode::Encode, bitcode::Decode)]
 pub(crate) struct CachedProviderRow {
+    /// Stable provider lookup key.
     pub(crate) provider_key: String,
+    /// Base API URL for requests to this provider.
     pub(crate) api_url: String,
+    /// Environment variables that can supply credentials.
     pub(crate) env_vars: Vec<String>,
+    /// Provider protocol or API shape.
     pub(crate) api_type: ProviderType,
 }
 
+/// Serializable model row stored in the cache payload.
 #[derive(Debug, Clone, PartialEq, bitcode::Encode, bitcode::Decode)]
 pub(crate) struct CachedModelRow {
+    /// Index into [`CatalogCachePayload::providers`].
     pub(crate) provider_idx: ProviderIdx,
+    /// Stable model lookup key within the provider.
     pub(crate) model_key: String,
+    /// Serialized [`Modality`] bitflags.
     pub(crate) modalities_bits: u8,
+    /// Maximum supported input tokens.
     pub(crate) max_input: u32,
+    /// Maximum supported output tokens.
     pub(crate) max_output: u32,
+    /// Optional default temperature.
     pub(crate) temperature: Option<f32>,
+    /// Optional default top-p value.
     pub(crate) top_p: Option<f32>,
 }
 
+/// Encodes a cache payload into bitcode bytes.
 pub(crate) fn encode_cache_payload(payload: &CatalogCachePayload) -> Vec<u8> {
     bitcode::encode(payload)
 }
 
+/// Decodes bitcode bytes into an owned cache payload.
+///
+/// # Errors
+///
+/// Returns [`CatalogError::BitcodeDecode`] when the bytes are not a valid cache
+/// payload encoding.
 pub(crate) fn decode_cache_payload(bytes: &[u8]) -> CatalogResult<CatalogCachePayload> {
     bitcode::decode(bytes).map_err(|error| CatalogError::BitcodeDecode(error.to_string()))
 }
 
+/// Rebuilds a [`ModelCatalog`] from decoded cache rows.
+///
+/// # Errors
+///
+/// Returns [`CatalogError`] when any cached row data cannot be used to build a
+/// valid catalog, such as when a model references an out-of-range provider.
 pub(crate) fn catalog_from_cache_payload(
     payload: CatalogCachePayload,
 ) -> CatalogResult<ModelCatalog> {

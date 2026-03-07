@@ -1,3 +1,11 @@
+//! Catalog synchronization against the remote models.dev API.
+//!
+//! This module owns the online-first load path used by
+//! [`ModelsDevCatalog`](crate::catalog::ModelsDevCatalog). It reads any cached
+//! container in one shot, sends a conditional request with the cached ETag when
+//! available, refreshes the cache on `200 OK`, reuses it on `304 Not Modified`,
+//! and falls back to cached data when the request fails.
+
 use crate::api::catalog_sources::cache_payload_from_api_json_bytes;
 use crate::cache::format::{read_cache_file, write_cache_file, CacheFileData, CacheWriteInput};
 use crate::cache::payload::{catalog_from_cache_payload, encode_cache_payload};
@@ -10,16 +18,19 @@ use std::borrow::Cow;
 use std::io::ErrorKind;
 use std::path::Path;
 
+/// Default production endpoint for the models.dev catalog snapshot.
 const MODELS_DEV_API_URL: &str = "https://models.dev/api.json";
 
 #[cfg(test)]
 static TEST_MODELS_DEV_API_URL: std::sync::Mutex<Option<String>> = std::sync::Mutex::new(None);
 
 #[cfg(test)]
+/// Overrides the remote catalog URL for sync tests.
 pub(crate) fn set_test_models_dev_api_url(url: Option<String>) {
     *TEST_MODELS_DEV_API_URL.lock().unwrap() = url;
 }
 
+/// Returns the active catalog endpoint, including the test override when set.
 fn models_dev_api_url() -> Cow<'static, str> {
     #[cfg(test)]
     if let Some(url) = TEST_MODELS_DEV_API_URL.lock().unwrap().clone() {
@@ -29,6 +40,10 @@ fn models_dev_api_url() -> Cow<'static, str> {
     Cow::Borrowed(MODELS_DEV_API_URL)
 }
 
+/// Resolves the result to return after a request failure.
+///
+/// Cached data takes precedence over surfacing the request error so callers can
+/// continue with the last known-good catalog when possible.
 fn load_after_request_failure(
     request_error: reqwest::Error,
     cache_file: Option<&CacheFileData>,
@@ -46,12 +61,40 @@ fn load_after_request_failure(
 }
 
 #[maybe_async::maybe_async]
+/// Loads the catalog at `path` using the default models.dev endpoint.
+///
+/// # Errors
+///
+/// Returns the same errors as [`load_catalog_from_url`] while targeting the
+/// default production URL.
 pub(crate) async fn load_catalog_at_path(path: &Path) -> CatalogResult<CatalogLoadResult> {
     let url = models_dev_api_url();
     load_catalog_from_url(path, url.as_ref()).await
 }
 
 #[maybe_async::maybe_async]
+/// Synchronizes the cache at `path` against `url` and returns a catalog.
+///
+/// The sync flow is:
+/// - read any existing cache file in one whole-file read
+/// - send `If-None-Match` when the cache includes an ETag
+/// - on `200 OK`, decode the response and rewrite the cache
+/// - on `304 Not Modified`, load the existing cache
+/// - on request failure, fall back to cache when available
+///
+/// # Performance
+///
+/// Cache probing performs one up-front whole-file read through
+/// [`read_cache_file`]. models.dev changes infrequently, so cache hits are
+/// expected to be common, and [`crate::cache::payload`] documents typical
+/// compressed payload sizes of about 23-32 kB. That makes a single sequential
+/// read generally the faster hot path on modern NVMe-backed systems.
+///
+/// # Errors
+///
+/// Returns [`CatalogError`] when cache I/O fails without a usable fallback,
+/// response data cannot be decoded, the cache cannot be written, or the server
+/// responds with an unexpected status.
 pub(crate) async fn load_catalog_from_url(
     path: &Path,
     url: &str,
