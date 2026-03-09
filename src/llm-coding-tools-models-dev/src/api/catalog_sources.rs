@@ -8,8 +8,8 @@
 //! - model modalities are mapped from `modalities.input[]`/`modalities.output[]`
 //!   into directional [`Modality`] flags;
 //! - unknown npm package identifiers map to [`ProviderType::Unknown`];
-//! - unknown modality labels are ignored; if nothing maps, modalities default to
-//!   [`Modality::TEXT`];
+//! - unknown modality labels are ignored; if nothing maps, modalities remain
+//!   [`Modality::empty()`];
 //! - model rows remain provider-scoped; shared configurations are deduplicated by
 //!   core during catalog build.
 
