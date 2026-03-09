@@ -85,7 +85,7 @@ maybe-async = "0.2"
 tokio = { version = "1.49", features = ["fs", "io-util", "process", "time"], optional = true }
 
 # Cross-platform process tree management (Job Objects on Windows, process groups on Unix)
-process-wrap = { version = "9.0", default-features = false }
+process-wrap = { version = "9.1", default-features = false }
 
 [dev-dependencies]
 tempfile = "3.25"
