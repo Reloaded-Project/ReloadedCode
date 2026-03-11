@@ -82,7 +82,7 @@ reqwest = { version = "0.13", default-features = false, features = [
 maybe-async = "0.2"
 
 # Async file I/O, process execution, and timeouts
-tokio = { version = "1.49", features = ["fs", "io-util", "process", "time"], optional = true }
+tokio = { version = "1.50", features = ["fs", "io-util", "process", "time"], optional = true }
 
 # Cross-platform process tree management (Job Objects on Windows, process groups on Unix)
 process-wrap = { version = "9.0", default-features = false }
@@ -90,7 +90,7 @@ process-wrap = { version = "9.0", default-features = false }
 [dev-dependencies]
 tempfile = "3.25"
 # For async tests (when async feature enabled)
-tokio = { version = "1.49", features = ["rt", "macros"] }
+tokio = { version = "1.50", features = ["rt", "macros"] }
 wiremock = "0.6"
 indoc = "2"
 criterion = "0.8"
