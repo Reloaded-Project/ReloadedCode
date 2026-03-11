@@ -21,6 +21,9 @@ use std::path::Path;
 /// Default production endpoint for the models.dev catalog snapshot.
 const MODELS_DEV_API_URL: &str = "https://models.dev/api.json";
 
+/// Timeout for HTTP connections and requests in seconds.
+const REQUEST_TIMEOUT_SECS: u64 = 30;
+
 #[cfg(test)]
 static TEST_MODELS_DEV_API_URL: std::sync::Mutex<Option<String>> = std::sync::Mutex::new(None);
 
@@ -108,9 +111,17 @@ pub(crate) async fn load_catalog_from_url(
     }
 
     #[cfg(feature = "tokio")]
-    let client = reqwest::Client::new();
+    let client = reqwest::Client::builder()
+        .connect_timeout(std::time::Duration::from_secs(REQUEST_TIMEOUT_SECS))
+        .timeout(std::time::Duration::from_secs(REQUEST_TIMEOUT_SECS))
+        .build()
+        .expect("client builder should not fail with valid config");
     #[cfg(feature = "blocking")]
-    let client = reqwest::blocking::Client::new();
+    let client = reqwest::blocking::Client::builder()
+        .connect_timeout(std::time::Duration::from_secs(REQUEST_TIMEOUT_SECS))
+        .timeout(std::time::Duration::from_secs(REQUEST_TIMEOUT_SECS))
+        .build()
+        .expect("client builder should not fail with valid config");
 
     let mut request = client.get(url);
     if let Some(etag) = cache_file.as_ref().and_then(|file| file.etag_bytes()) {
