@@ -14,6 +14,10 @@ llm-coding-tools-core = { version = "0.2.0", path = "../llm-coding-tools-core", 
     "tokio",
 ] }
 
+# Runtime foundation dependencies
+llm-coding-tools-agents = { version = "0.1.0", path = "../llm-coding-tools-agents" }
+llm-coding-tools-models-dev = { version = "0.1.0", path = "../llm-coding-tools-models-dev" }
+
 # serdes-ai provides Tool trait, ToolDefinition, RunContext
 serdes-ai = "0.2.6"
 serdes-ai-models = { version = "0.2.6", features = ["openrouter"] }
