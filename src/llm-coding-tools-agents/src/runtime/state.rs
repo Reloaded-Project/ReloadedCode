@@ -1,4 +1,9 @@
 //! Holds your loaded agents, default settings, and available tools.
+//!
+//! ## Public API
+//!
+//! - [`AgentRuntime`] — Container for loaded agents, defaults, and tools.
+//! - [`AgentDefaults`] — Fallback settings when an agent doesn't specify them.
 
 use super::tool_catalog::ToolCatalogEntry;
 use crate::AgentCatalog;
