@@ -31,6 +31,7 @@ impl ToolCatalogEntry {
 
 /// The tools your agents can use.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum ToolCatalogKind {
     /// Read file contents.
     Read,

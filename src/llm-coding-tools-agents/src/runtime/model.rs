@@ -65,6 +65,7 @@ impl ResolvedModel {
 
 /// Errors when picking or validating a model.
 #[derive(Debug)]
+#[non_exhaustive]
 pub enum ModelResolutionError {
     /// Model string is malformed (missing `/` or empty parts).
     MalformedModelIdentifier {
