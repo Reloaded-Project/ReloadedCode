@@ -68,7 +68,7 @@ let runtime = AgentRuntimeBuilder::new()
         temperature: Some(0.2),
         top_p: Some(0.95),
     })
-    // .tools(my_custom_tools)  // optional; defaults to read/write/edit/glob/grep/bash/webfetch/todo
+    // .tools(my_custom_tools)  // optional; defaults to read/write/edit/glob/grep/bash/webfetch/todoread/todowrite
     .build();
 
 // Pass `runtime` to your framework adapter to build agents by name
