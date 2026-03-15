@@ -31,7 +31,7 @@ impl ResolvedSerdesModel {
     {
         let mut spec = String::with_capacity(provider_name.len() + model_name.len() + 1);
         spec.push_str(provider_name);
-        spec.push_str(":");
+        spec.push(':');
         spec.push_str(model_name);
         Self {
             model: Arc::new(model),
