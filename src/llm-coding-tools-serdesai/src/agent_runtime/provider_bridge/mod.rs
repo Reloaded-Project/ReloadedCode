@@ -442,7 +442,9 @@ fn build_google(
     #[cfg(not(any(feature = "google", feature = "gemini")))]
     {
         let _ = (provider_key, model_name, api_url, env_vars);
-        Err(feature_disabled_error("google or gemini", "google"))
+        Err(ModelError::configuration(
+            "provider `google` is not enabled in llm-coding-tools-serdesai; rebuild with `--features google` or `--features gemini`"
+        ))
     }
 }
 
