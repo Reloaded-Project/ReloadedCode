@@ -92,7 +92,7 @@ Use `SystemPromptBuilder` to track tools and generate context-aware prompts. Con
 
 ## Agent Runtime
 
-For catalog-based agent configuration, use `AgentRuntimeExt` to build agents from an [`AgentRuntime`](https://docs.rs/llm-coding-tools-agents/latest/llm_coding_tools_agents/struct.AgentRuntime.html):
+For OpenCode-style agent support, use `AgentRuntimeExt` to build agents from an [`AgentRuntime`](https://docs.rs/llm-coding-tools-agents/latest/llm_coding_tools_agents/struct.AgentRuntime.html):
 
 ```rust,no_run
 use llm_coding_tools_serdesai::AgentRuntimeExt;
@@ -111,6 +111,42 @@ let _agent = runtime.build("planner", &catalog, &credentials)?;
 
 This requires the `llm-coding-tools-agents` crate, a `ModelCatalog` for model resolution, and an application-owned credential resolver.
 
+### Task Tool
+
+Use [`AgentRuntimeTaskExt::build_with_task`] to build an agent that can delegate one-shot work to subagents via the Task tool.
+
+```rust,no_run
+use llm_coding_tools_agents::{AgentCatalog, AgentLoader, AgentRuntimeBuilder};
+use llm_coding_tools_core::CredentialResolver;
+use llm_coding_tools_models_dev::ModelsDevCatalog;
+use llm_coding_tools_serdesai::{AgentDefaults, AgentRuntimeTaskExt};
+use std::{path::PathBuf, sync::Arc};
+
+# #[tokio::main]
+# async fn main() -> Result<(), Box<dyn std::error::Error>> {
+let examples_root = PathBuf::from("/path/to/your/project/examples");
+let load_result = ModelsDevCatalog::load().await?;
+
+let mut catalog = AgentCatalog::new();
+AgentLoader::new().add_directory(&mut catalog, &examples_root)?;
+
+let runtime = AgentRuntimeBuilder::new()
+    .catalog(catalog)
+    .defaults(AgentDefaults::with_model("synthetic/hf:zai-org/GLM-4.7"))
+    .build();
+
+let credentials = Arc::new(CredentialResolver::new());
+let agent = runtime.build_with_task(
+    "orchestrator",
+    Arc::new(load_result.catalog),
+    credentials,
+)?;
+# Ok(())
+# }
+```
+
+Each Task call builds and runs the subagent once; `session_id` is rejected. Use [`build_agent_with_credentials_and_task`] for the lower-level helper. See [examples/serdesai-task.rs](examples/serdesai-task.rs).
+
 ## Examples
 
 ```bash
@@ -119,6 +155,12 @@ cargo run --example serdesai-basic -p llm-coding-tools-serdesai
 
 # Sandboxed file access with allowed::* tools
 cargo run --example serdesai-sandboxed -p llm-coding-tools-serdesai
+
+# Markdown agent runtime (no delegation)
+cargo run --example serdesai-agents -p llm-coding-tools-serdesai
+
+# Stateless single-hop Task delegation
+cargo run --example serdesai-task -p llm-coding-tools-serdesai
 ```
 
 ## License
