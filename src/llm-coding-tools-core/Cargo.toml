@@ -54,7 +54,7 @@ hashbrown = "0.16"
 
 # Inline string storage for patterns
 tinyvec_string = { version = "0.3", features = ["alloc"] }
-tinyvec = { version = "1.10", features = ["alloc"] }
+tinyvec = { version = "1.11", features = ["alloc"] }
 
 # Efficient immutable string table for provider URLs and env vars
 lite-strtab = "0.2"
