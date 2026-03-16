@@ -11,10 +11,6 @@ use llm_coding_tools_core::{
     CredentialLookup, CredentialResolver, TaskInput, TaskOutput, tool_names,
 };
 use serdes_ai::tools::ToolError;
-use serdes_ai::{
-    ModelRequest, ModelRequestPart, ModelResponse, ModelResponsePart, RunOptions, ToolCallPart,
-    ToolReturnPart,
-};
 use std::sync::Arc;
 
 /// Shared Task executor used by the concrete SerdesAI tool.
@@ -111,40 +107,9 @@ where
                 target_name
             ))
         })?;
-        let task_args =
-            serde_json::to_value(&input).expect("TaskInput serialization should never fail");
-
-        let tool_call_id = "task_call";
-
-        let mut assistant_response = ModelResponse::new();
-        assistant_response.add_part(ModelResponsePart::ToolCall(
-            ToolCallPart::new(tool_names::TASK, task_args).with_tool_call_id(tool_call_id),
-        ));
-
-        let mut assistant_req = ModelRequest::new();
-        assistant_req.add_part(ModelRequestPart::ModelResponse(Box::new(
-            assistant_response,
-        )));
-
-        let mut return_req = ModelRequest::new();
-        return_req.add_part(ModelRequestPart::ToolReturn(
-            ToolReturnPart::new(tool_names::TASK, input.prompt.as_str())
-                .with_tool_call_id(tool_call_id),
-        ));
-
-        let options = RunOptions::default()
-            .message_history(vec![assistant_req, return_req])
-            .skip_user_prompt(true);
-
-        let response = agent
-            .run_with_options("", (), options)
-            .await
-            .map_err(|err| {
-                ToolError::execution_failed(format!(
-                    "delegated agent `{}` failed: {err}",
-                    target_name
-                ))
-            })?;
+        let response = agent.run(input.prompt.as_str(), ()).await.map_err(|err| {
+            ToolError::execution_failed(format!("delegated agent `{}` failed: {err}", target_name))
+        })?;
         Ok(TaskOutput::new(response.into_output()))
     }
 
