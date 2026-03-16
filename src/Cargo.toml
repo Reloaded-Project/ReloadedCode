@@ -3,6 +3,15 @@
 resolver = "2"
 members = ["llm-coding-tools-core", "llm-coding-tools-serdesai", "llm-coding-tools-agents", "llm-coding-tools-models-dev"]
 
+[patch.crates-io]
+serdes-ai = { path = "../serdesAI/serdes-ai" }
+serdes-ai-agent = { path = "../serdesAI/serdes-ai-agent" }
+serdes-ai-core = { path = "../serdesAI/serdes-ai-core" }
+serdes-ai-models = { path = "../serdesAI/serdes-ai-models" }
+serdes-ai-providers = { path = "../serdesAI/serdes-ai-providers" }
+serdes-ai-streaming = { path = "../serdesAI/serdes-ai-streaming" }
+serdes-ai-tools = { path = "../serdesAI/serdes-ai-tools" }
+
 # Profile Build
 [profile.profile]
 inherits = "release"

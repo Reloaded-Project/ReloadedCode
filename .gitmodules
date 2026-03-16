@@ -1,0 +1,3 @@
+[submodule "serdesAI"]
+	path = serdesAI
+	url = https://github.com/Sewer56/serdesAI.git

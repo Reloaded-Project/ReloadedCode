@@ -3065,8 +3065,6 @@ dependencies = [
 [[package]]
 name = "serdes-ai"
 version = "0.2.6"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "62dcf7d035a43aab94b8fed2925faa6f845d49de27066b2c9b07e339b3048a85"
 dependencies = [
  "futures",
  "serdes-ai-agent",
@@ -3085,8 +3083,6 @@ dependencies = [
 [[package]]
 name = "serdes-ai-agent"
 version = "0.2.6"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "95fd65311bcd469934e9cf5b4d10b6296fd9bde944aa2e232b0fedd37cca4aee"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -3108,8 +3104,6 @@ dependencies = [
 [[package]]
 name = "serdes-ai-core"
 version = "0.2.6"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8c75900724c512454172492ffdd9ae24f8ccc5569e812c258a79d4151cd8934c"
 dependencies = [
  "anyhow",
  "base64",
@@ -3128,8 +3122,6 @@ dependencies = [
 [[package]]
 name = "serdes-ai-macros"
 version = "0.2.6"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8bd2f1e7f4f1f9a0a9f8b31ea0bb24b13271dd46817c8b656821701d1e1d4a40"
 dependencies = [
  "darling",
  "proc-macro2",
@@ -3140,8 +3132,6 @@ dependencies = [
 [[package]]
 name = "serdes-ai-models"
 version = "0.2.6"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "cbca6da3265b8d1fce6255c4aee81b02ac9d2dba6e93829e09eaf1bc29d2886e"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -3170,8 +3160,6 @@ dependencies = [
 [[package]]
 name = "serdes-ai-output"
 version = "0.2.6"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7c73a180c99d702c59282057d6f993332c8150834017110051f56e272133c54f"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -3191,8 +3179,6 @@ dependencies = [
 [[package]]
 name = "serdes-ai-providers"
 version = "0.2.6"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8d857c9fc39b9c370eb7321fecb253c07a7892a3646c7455968a123da6df5a1d"
 dependencies = [
  "async-trait",
  "base64",
@@ -3213,8 +3199,6 @@ dependencies = [
 [[package]]
 name = "serdes-ai-retries"
 version = "0.2.6"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ebf2449d534d7ce2df7d743e61de516df945384aa50024965246ef5dfc638b93"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -3229,8 +3213,6 @@ dependencies = [
 [[package]]
 name = "serdes-ai-streaming"
 version = "0.2.6"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "159b5dfda85e1a886793e0962c6d40581044bb3ca008665b53f75ecb62eb3f74"
 dependencies = [
  "async-trait",
  "bytes",
@@ -3249,8 +3231,6 @@ dependencies = [
 [[package]]
 name = "serdes-ai-tools"
 version = "0.2.6"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ae4c635d97827560acaa8d3af32a78fc50fece538d1e4638c889c7588f490777"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -3269,8 +3249,6 @@ dependencies = [
 [[package]]
 name = "serdes-ai-toolsets"
 version = "0.2.6"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "85e7ab76a1546ce6aa858c7a0fd438dd4235b3927fcf5a907bec26bacb6f2588"
 dependencies = [
  "async-trait",
  "indexmap",
