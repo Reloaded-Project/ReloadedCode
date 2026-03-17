@@ -65,7 +65,7 @@ let runtime = AgentRuntimeBuilder::new()
     .catalog(catalog)
     .defaults(AgentDefaults::with_model("openai/gpt-4o-mini"))
     // .max_task_depth(5)  // optional; defaults to 3 Task hops
-    // .tools(my_custom_tools)  // optional; defaults to read/write/edit/glob/grep/bash/webfetch/todoread/todowrite
+    // .tools(my_custom_tools)  // optional; defaults to read/write/edit/glob/grep/bash/webfetch/todoread/todowrite/task
     .build();
 
 // Pass `runtime` to your framework adapter to build agents by name
