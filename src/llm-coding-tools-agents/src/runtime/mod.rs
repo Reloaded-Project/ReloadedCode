@@ -14,7 +14,7 @@
 //! Tools:
 //! - [`ToolCatalogEntry`] - One tool the runtime can provide to agents
 //! - [`ToolCatalogKind`] - Which tools are available
-//! - [`default_tools()`] - The standard tool set (read, write, edit, glob, grep, bash, webfetch, todo)
+//! - [`default_tools()`] - The standard tool set (read, write, edit, glob, grep, bash, webfetch, todo, task)
 //!
 //! Task delegation:
 //! - [`summarize_callable_targets()`] - Builds target summaries with names and descriptions
