@@ -138,6 +138,10 @@ where
             ));
         }
 
+        // `validate_target` only applies `Ruleset` filtering when `caller.permission`
+        // explicitly defines `tool_names::TASK`; without that opt-in, non-Primary
+        // targets remain callable for compatibility, while `AgentMode::Primary`
+        // targets are always denied above.
         let has_explicit_task_permission = caller.permission.contains_key(tool_names::TASK);
         if has_explicit_task_permission
             && !Ruleset::from_permission_config(&caller.permission)
