@@ -1,4 +1,4 @@
-Use `gh ` via `bash` for GitHub tasks. If the user gives a GitHub URL, inspect it with `gh`.
+Use `gh` via `bash` for GitHub tasks. If the user gives a GitHub URL, inspect it with `gh`.
 - For a pull request, first gather state with `git status`, `git diff`, upstream tracking info, and `git log` plus `git diff [base]...HEAD`.
 - Summarize everything in the pull request, not just the latest commit.
 - Create or push the branch if needed, then run `gh pr create` with a title and body. Use a HEREDOC for multi-line bodies.
