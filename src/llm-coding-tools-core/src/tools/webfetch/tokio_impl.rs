@@ -111,13 +111,9 @@ mod tests {
             .await;
 
         let client = test_client();
-        let result = fetch_url(
-            &client,
-            &format!("{}/text", server.uri()),
-            5_000,
-        )
-        .await
-        .unwrap();
+        let result = fetch_url(&client, &format!("{}/text", server.uri()), 5_000)
+            .await
+            .unwrap();
 
         assert!(result.content.contains("Hello, world!"));
         assert!(result.content_type.contains("text/plain"));
@@ -137,13 +133,9 @@ mod tests {
             .await;
 
         let client = test_client();
-        let result = fetch_url(
-            &client,
-            &format!("{}/html", server.uri()),
-            5_000,
-        )
-        .await
-        .unwrap();
+        let result = fetch_url(&client, &format!("{}/html", server.uri()), 5_000)
+            .await
+            .unwrap();
 
         assert!(result.content.contains("Hello"));
         assert!(!result.content.contains("<h1>"));
@@ -161,13 +153,9 @@ mod tests {
             .await;
 
         let client = test_client();
-        let result = fetch_url(
-            &client,
-            &format!("{}/json", server.uri()),
-            5_000,
-        )
-        .await
-        .unwrap();
+        let result = fetch_url(&client, &format!("{}/json", server.uri()), 5_000)
+            .await
+            .unwrap();
 
         assert!(result.content.contains("\"key\""));
     }
@@ -182,12 +170,7 @@ mod tests {
             .await;
 
         let client = test_client();
-        let result = fetch_url(
-            &client,
-            &format!("{}/notfound", server.uri()),
-            5_000,
-        )
-        .await;
+        let result = fetch_url(&client, &format!("{}/notfound", server.uri()), 5_000).await;
 
         assert!(matches!(result, Err(ToolError::Http(_))));
     }
