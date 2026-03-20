@@ -174,4 +174,18 @@ mod tests {
 
         assert!(matches!(result, Err(ToolError::Http(_))));
     }
+
+    #[tokio::test]
+    async fn rejects_timeout_zero() {
+        let client = test_client();
+        let result = fetch_url(&client, "http://localhost:1", 0).await;
+        assert!(matches!(result, Err(ToolError::Validation(_))));
+    }
+
+    #[tokio::test]
+    async fn rejects_timeout_exceeding_max() {
+        let client = test_client();
+        let result = fetch_url(&client, "http://localhost:1", MAX_TIMEOUT_MS + 1).await;
+        assert!(matches!(result, Err(ToolError::Validation(_))));
+    }
 }

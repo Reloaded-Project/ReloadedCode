@@ -127,4 +127,18 @@ mod tests {
             assert!(matches!(e, ToolError::Http(_)));
         }
     }
+
+    #[test]
+    fn rejects_timeout_zero() {
+        let client = test_client();
+        let result = fetch_url(&client, "http://localhost:1", 0);
+        assert!(matches!(result, Err(ToolError::Validation(_))));
+    }
+
+    #[test]
+    fn rejects_timeout_exceeding_max() {
+        let client = test_client();
+        let result = fetch_url(&client, "http://localhost:1", MAX_TIMEOUT_MS + 1);
+        assert!(matches!(result, Err(ToolError::Validation(_))));
+    }
 }
