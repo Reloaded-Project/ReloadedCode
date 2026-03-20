@@ -2,12 +2,11 @@
 
 use crate::error::{ToolError, ToolResult};
 use crate::path::PathResolver;
+use crate::tool_metadata::glob::MAX_RESULTS;
 use globset::Glob;
 use ignore::WalkBuilder;
 use serde::Serialize;
 use std::time::SystemTime;
-
-const MAX_RESULTS: usize = 1000;
 
 /// Output from glob file matching.
 #[derive(Debug, Serialize)]

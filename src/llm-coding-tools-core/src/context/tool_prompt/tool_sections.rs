@@ -3,8 +3,10 @@
 //! Each helper in this module writes one tool's guidance text, which keeps the
 //! top-level renderer small and easy to follow.
 
+use const_format::formatcp;
+
 use super::{push_block, push_line, write_tool_list, PathMode, ToolPrompt, ToolPromptFacts};
-use crate::tool_metadata::{glob, grep, read};
+use crate::tool_metadata::{bash, edit, glob, grep, read, webfetch};
 
 pub(super) fn render_tool(prompt: ToolPrompt, output: &mut String, facts: ToolPromptFacts) {
     match prompt {
@@ -31,11 +33,14 @@ pub(super) fn render_tool(prompt: ToolPrompt, output: &mut String, facts: ToolPr
 fn write_bash_section(output: &mut String) {
     push_block(
         output,
-        "Runs one shell command in a fresh shell process.\n\
-- Use it for terminal work (`git`, package managers, test runners, docker`) and shell-native search/filter jobs the specialized tools do not handle well.\n\
-- Output includes stdout, stderr under `[stderr]`, and non-zero exit codes as `[exit code: N]`.\n\
-- For independent commands, make parallel `bash` calls. For dependent commands, use one call with `&&`.\n\
-- Quote paths that contain spaces.\n",
+        formatcp!(
+            "Runs one shell command in a fresh shell process.\n\
+            - Use it for terminal work (git, package managers, test runners, docker) and shell-native search/filter jobs the specialized tools do not handle well.\n\
+            - Output includes stdout, stderr under `[stderr]`, and non-zero exit codes as `[exit code: N]`.\n\
+            - For independent commands, make parallel `{}` calls. For dependent commands, use one call with `&&`.\n\
+            - Quote paths that contain spaces.\n",
+            bash::NAME,
+        ),
     );
 }
 
@@ -56,25 +61,42 @@ fn write_read_section(
     if line_numbers {
         push_line(
             output,
-            "- Returns `L{n}: ...` text. Lines over `2000` chars are truncated.",
+            formatcp!(
+                "- Returns `{}` text. Lines over `{}` chars are truncated.",
+                read::LINE_PREFIX_DISPLAY,
+                read::MAX_LINE_LENGTH,
+            ),
         );
     } else {
         push_line(
             output,
-            "- Returns raw text. Lines over `2000` chars are truncated.",
+            formatcp!(
+                "- Returns raw text. Lines over `{}` chars are truncated.",
+                read::MAX_LINE_LENGTH,
+            ),
         );
     }
 
     match (facts.has_glob, facts.has_bash) {
         (true, true) => push_line(
             output,
-            "- Reads files, not directories. Use `glob` to find files or `bash` for directory listings.",
+            formatcp!(
+                "- Reads files, not directories. Use `{}` to find files or `{}` for directory listings.",
+                glob::NAME,
+                bash::NAME,
+            ),
         ),
         (true, false) => {
-            push_line(output, "- Reads files, not directories. Use `glob` to find files.")
+            push_line(
+                output,
+                formatcp!("- Reads files, not directories. Use `{}` to find files.", glob::NAME),
+            )
         }
         (false, true) => {
-            push_line(output, "- Reads files, not directories. Use `bash` for directory listings.")
+            push_line(
+                output,
+                formatcp!("- Reads files, not directories. Use `{}` for directory listings.", bash::NAME),
+            )
         }
         (false, false) => push_line(output, "- Reads files, not directories."),
     }
@@ -122,13 +144,22 @@ fn write_edit_section(output: &mut String, facts: ToolPromptFacts, path_mode: Pa
     if !facts.has_read {
         push_line(
             output,
-            "- `old_string` must match the existing file text exactly.",
+            formatcp!(
+                "- `{}` must match the existing file text exactly.",
+                edit::param::OLD_STRING.name
+            ),
         );
     }
     push_block(
         output,
-        "- Without `replace_all`, the edit fails if `old_string` is missing or appears more than once.\n\
-- The edit also fails if `old_string` is empty or equal to `new_string`.\n",
+        formatcp!(
+            "- Without `{}` the edit fails if `{}` is missing or appears more than once.\n\
+            - The edit also fails if `{}` is empty or equal to `{}`.\n",
+            edit::param::REPLACE_ALL.name,
+            edit::param::OLD_STRING.name,
+            edit::param::OLD_STRING.name,
+            edit::param::NEW_STRING.name,
+        ),
     );
 }
 
@@ -145,9 +176,13 @@ fn write_glob_section(output: &mut String, facts: ToolPromptFacts, path_mode: Pa
 
     push_block(
         output,
-        "- Supports `*`, `**`, `?`, `[abc]`, and `{a,b}`.\n\
-- Returns matching file paths relative to `path`.\n\
-- Results are capped at `1000`; large result sets are returned with `truncated: true`.\n",
+        formatcp!(
+            "- Supports `*`, `**`, `?`, `[abc]`, and `{{a,b}}`.\n\
+            - Returns matching file paths relative to `{}`.\n\
+            - Results are capped at `{}`; large result sets are returned with `truncated: true`.\n",
+            glob::param::PATH_ABSOLUTE.name,
+            glob::MAX_RESULTS,
+        ),
     );
     if !facts.has_grep {
         push_line(output, "- Use it for file-name search, not content search.");
@@ -168,8 +203,11 @@ fn write_grep_section(output: &mut String, facts: ToolPromptFacts, path_mode: Pa
 
     push_block(
         output,
-        "- `pattern` must not be empty. Search is single-line only; there is no multiline matching.\n\
-- Returns matches grouped by file.\n",
+        formatcp!(
+            "- `{}` must not be empty. Search is single-line only; there is no multiline matching.\n\
+            - Returns matches grouped by file.\n",
+            grep::param::PATTERN.name,
+        ),
     );
     if facts.has_bash {
         push_line(output, "- Use this instead of shell `grep`/`rg`.");
@@ -185,10 +223,13 @@ fn write_grep_section(output: &mut String, facts: ToolPromptFacts, path_mode: Pa
 fn write_webfetch_section(output: &mut String) {
     push_block(
         output,
-        "Fetches one URL.\n\
-- Output starts with `[content-type - bytes]`.\n\
-- Maximum response size is `5 MiB`.\n\
-- Use this for known URLs, not web search. Prefer a more specialized web tool when one exists.\n",
+        formatcp!(
+            "Fetches one URL.\n\
+            - Output starts with `[content-type - bytes]`.\n\
+            - Maximum response size is `{}` MiB.\n\
+            - Use this for known URLs, not web search. Prefer a more specialized web tool when one exists.\n",
+            webfetch::MAX_RESPONSE_SIZE_MIB,
+        ),
     );
 }
 
@@ -204,20 +245,27 @@ fn write_todo_read_section(output: &mut String) {
 fn write_todo_write_section(output: &mut String) {
     push_block(
         output,
-        "Replaces the session todo list.\n\
-- Use it for multi-step or non-trivial work, or when the user asks for task tracking. Skip it for a single small task.\n\
-- Send the full desired list each time; this tool replaces the whole list.\n\
-- `id` and `content` must not be empty.\n\
-- Keep task text short and imperative. Update statuses as you work; keep one `in_progress` task when practical.\n",
+        formatcp!(
+            "Replaces the session todo list.\n\
+            - Use it for multi-step or non-trivial work, or when the user asks for task tracking. Skip it for a single small task.\n\
+            - Send the full desired list each time; this tool replaces the whole list.\n\
+            - `{}` and `{}` must not be empty.\n\
+            - Keep task text short and imperative. Update statuses as you work; keep one `in_progress` task when practical.\n",
+            crate::tool_metadata::todo_write::param::ID.name,
+            crate::tool_metadata::todo_write::param::CONTENT.name,
+        ),
     );
 }
 
 fn write_task_section(output: &mut String, facts: ToolPromptFacts) {
     push_block(
         output,
-        "Delegate a focused job to another agent.\n\
-- This runtime is stateless. Do not pass `session_id`.\n\
-- Use it for real delegation, custom slash commands, or independent sub-work you can run in parallel.\n",
+        formatcp!(
+            "Delegate a focused job to another agent.\n\
+            - This runtime is stateless. Do not pass `{}`.\n\
+            - Use it for real delegation, custom slash commands, or independent sub-work you can run in parallel.\n",
+            crate::tool_metadata::task::param::SESSION_ID.name,
+        ),
     );
 
     let mut tools = [""; 3];

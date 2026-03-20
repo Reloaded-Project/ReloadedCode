@@ -11,6 +11,15 @@ pub const DEFAULT_OFFSET: usize = 1;
 /// Default maximum lines to return.
 pub const DEFAULT_LIMIT: usize = 2000;
 
+/// Maximum characters per output line before truncation.
+pub const MAX_LINE_LENGTH: usize = 2000;
+
+/// Format prefix for line-numbered output (e.g. `L42: ...`).
+pub const LINE_PREFIX_FORMAT: &str = "L{}: ";
+
+/// Display hint for the line-number prefix in prompts.
+pub const LINE_PREFIX_DISPLAY: &str = "L{n}: ";
+
 /// Serde-friendly default offset helper.
 #[must_use]
 pub const fn default_offset() -> usize {
@@ -48,7 +57,8 @@ pub mod description {
 
 /// Parameter metadata.
 pub mod param {
-    use super::ParamMetadata;
+    use super::{ParamMetadata, DEFAULT_LIMIT};
+    use const_format::formatcp;
 
     /// `file_path` in absolute-path mode.
     pub const FILE_PATH_ABSOLUTE: ParamMetadata =
@@ -66,6 +76,9 @@ pub mod param {
         ParamMetadata::new("offset", "1-based start line. Default 1.", false);
 
     /// `limit` parameter metadata.
-    pub const LIMIT: ParamMetadata =
-        ParamMetadata::new("limit", "Maximum lines to return. Default 2000.", false);
+    pub const LIMIT: ParamMetadata = ParamMetadata::new(
+        "limit",
+        formatcp!("Maximum lines to return. Default {}.", DEFAULT_LIMIT),
+        false,
+    );
 }

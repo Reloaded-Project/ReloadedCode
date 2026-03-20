@@ -4,12 +4,11 @@ use crate::error::{ToolError, ToolResult};
 use crate::fs;
 use crate::output::ToolOutput;
 use crate::path::PathResolver;
+use crate::tool_metadata::read::MAX_LINE_LENGTH;
 use crate::util::{truncate_line, ESTIMATED_CHARS_PER_LINE};
 use memchr::memchr;
 use std::borrow::Cow;
 use std::fmt::Write;
-
-const MAX_LINE_LENGTH: usize = 2000;
 
 /// Strips trailing CR from a line (for CRLF handling).
 #[inline]

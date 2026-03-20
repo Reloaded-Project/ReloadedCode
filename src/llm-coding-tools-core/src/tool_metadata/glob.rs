@@ -5,6 +5,9 @@ use super::ParamMetadata;
 /// Canonical tool name.
 pub const NAME: &str = "glob";
 
+/// Maximum number of results returned.
+pub const MAX_RESULTS: usize = 1000;
+
 /// Tool descriptions.
 pub mod description {
     /// Absolute-path variant.

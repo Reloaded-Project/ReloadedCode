@@ -16,7 +16,8 @@ pub const DESCRIPTION: &str = "Run a shell command in a fresh process.";
 
 /// Parameter metadata.
 pub mod param {
-    use super::ParamMetadata;
+    use super::{ParamMetadata, DEFAULT_TIMEOUT_MS, MAX_TIMEOUT_MS};
+    use const_format::formatcp;
 
     /// `command` parameter metadata.
     pub const COMMAND: ParamMetadata = ParamMetadata::new("command", "Shell command to run.", true);
@@ -31,7 +32,11 @@ pub mod param {
     /// `timeout_ms` parameter metadata.
     pub const TIMEOUT_MS: ParamMetadata = ParamMetadata::new(
         "timeout_ms",
-        "Timeout in milliseconds. Default 120000, max 600000.",
+        formatcp!(
+            "Timeout in milliseconds. Default {}, max {}.",
+            DEFAULT_TIMEOUT_MS,
+            MAX_TIMEOUT_MS
+        ),
         false,
     );
 }

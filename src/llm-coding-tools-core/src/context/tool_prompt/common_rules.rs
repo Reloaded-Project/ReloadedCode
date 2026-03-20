@@ -3,8 +3,10 @@
 //! These helpers add rules that apply to more than one tool. Each rule is only
 //! included when the matching tools are present.
 
+use const_format::formatcp;
+
 use super::{push_line, write_tool_list, ToolPromptFacts};
-use crate::tool_metadata::{edit, glob, grep, read, write};
+use crate::tool_metadata::{bash, edit, glob, grep, read, write};
 
 /// Writes the shared rules for the current built-in tools.
 pub(super) fn write_common_rules(facts: ToolPromptFacts, output: &mut String) {
@@ -59,7 +61,10 @@ fn append_bash_rule(facts: ToolPromptFacts, output: &mut String) {
 
     output.push_str("- Prefer ");
     write_tool_list(output, &tools[..len]);
-    push_line(output, " over `bash` for ordinary file work.");
+    push_line(
+        output,
+        formatcp!(" over `{}` for ordinary file work.", bash::NAME),
+    );
 }
 
 /// Adds the rule that separates file search, content search, and full reads.
@@ -67,19 +72,24 @@ fn append_search_rule(facts: ToolPromptFacts, output: &mut String) {
     match (facts.has_glob, facts.has_grep, facts.has_read) {
         (true, true, true) => push_line(
             output,
-            "- Use `glob` for file-name search, `grep` for content search, and `read` for full-file inspection.",
+            formatcp!(
+                "- Use `{}` for file-name search, `{}` for content search, and `{}` for full-file inspection.",
+                glob::NAME,
+                grep::NAME,
+                read::NAME,
+            ),
         ),
         (true, true, false) => push_line(
             output,
-            "- Use `glob` for file-name search and `grep` for content search.",
+            formatcp!("- Use `{}` for file-name search and `{}` for content search.", glob::NAME, grep::NAME),
         ),
         (true, false, true) => push_line(
             output,
-            "- Use `glob` to find files and `read` for full-file inspection.",
+            formatcp!("- Use `{}` to find files and `{}` for full-file inspection.", glob::NAME, read::NAME),
         ),
         (false, true, true) => push_line(
             output,
-            "- Use `grep` for content search and `read` for full-file inspection.",
+            formatcp!("- Use `{}` for content search and `{}` for full-file inspection.", grep::NAME, read::NAME),
         ),
         _ => {}
     }
@@ -90,7 +100,11 @@ fn append_write_rule(facts: ToolPromptFacts, output: &mut String) {
     if facts.has_edit && facts.has_write {
         push_line(
             output,
-            "- Prefer `edit` for targeted changes and `write` for new files or full rewrites.",
+            formatcp!(
+                "- Prefer `{}` for targeted changes and `{}` for new files or full rewrites.",
+                edit::NAME,
+                write::NAME
+            ),
         );
     }
 }
@@ -100,22 +114,44 @@ fn append_read_before_edit_rule(facts: ToolPromptFacts, output: &mut String) {
     match (facts.has_read, facts.has_edit, facts.has_write, facts.read_line_numbers) {
         (true, true, true, true) => push_line(
             output,
-            "- Read a file before `edit` or overwriting it with `write`; for `edit`, copy exact text from `read` and omit any `L{n}: ` prefixes.",
+            formatcp!(
+                "- Read a file before `{}` or overwriting it with `{}`; for `{}`, copy exact text from `{}` and omit any `{}` prefixes.",
+                edit::NAME,
+                write::NAME,
+                edit::NAME,
+                read::NAME,
+                read::LINE_PREFIX_DISPLAY,
+            ),
         ),
         (true, true, true, false) => push_line(
             output,
-            "- Read a file before `edit` or overwriting it with `write`; for `edit`, copy exact text from `read`.",
+            formatcp!(
+                "- Read a file before `{}` or overwriting it with `{}`; for `{}`, copy exact text from `{}`.",
+                edit::NAME,
+                write::NAME,
+                edit::NAME,
+                read::NAME,
+            ),
         ),
         (true, true, false, true) => push_line(
             output,
-            "- Read a file before `edit`, then copy exact text from `read` and omit any `L{n}: ` prefixes.",
+            formatcp!(
+                "- Read a file before `{}`, then copy exact text from `{}` and omit any `{}` prefixes.",
+                edit::NAME,
+                read::NAME,
+                read::LINE_PREFIX_DISPLAY,
+            ),
         ),
         (true, true, false, false) => push_line(
             output,
-            "- Read a file before `edit`, then copy exact text from `read`.",
+            formatcp!(
+                "- Read a file before `{}`, then copy exact text from `{}`.",
+                edit::NAME,
+                read::NAME,
+            ),
         ),
         (true, false, true, _) => {
-            push_line(output, "- Read a file before overwriting it with `write`.")
+            push_line(output, formatcp!("- Read a file before overwriting it with `{}`.", write::NAME))
         }
         _ => {}
     }

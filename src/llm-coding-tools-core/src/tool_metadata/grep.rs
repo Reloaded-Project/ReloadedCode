@@ -36,7 +36,8 @@ pub mod description {
 
 /// Parameter metadata.
 pub mod param {
-    use super::ParamMetadata;
+    use super::{ParamMetadata, DEFAULT_LIMIT, MAX_LIMIT};
+    use const_format::formatcp;
 
     /// `pattern` parameter metadata.
     pub const PATTERN: ParamMetadata = ParamMetadata::new("pattern", "Regex to search for.", true);
@@ -62,7 +63,11 @@ pub mod param {
     /// `limit` parameter metadata.
     pub const LIMIT: ParamMetadata = ParamMetadata::new(
         "limit",
-        "Maximum matches to return. Default 100, max 2000.",
+        formatcp!(
+            "Maximum matches to return. Default {}, max {}.",
+            DEFAULT_LIMIT,
+            MAX_LIMIT
+        ),
         false,
     );
 }

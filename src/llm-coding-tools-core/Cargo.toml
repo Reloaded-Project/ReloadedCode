@@ -90,6 +90,8 @@ tokio = { version = "1.50", features = ["fs", "io-util", "process", "time"], opt
 
 # Cross-platform process tree management (Job Objects on Windows, process groups on Unix)
 process-wrap = { version = "9.1", default-features = false }
+# Compile-time string formatting for prompt text and parameter descriptions
+const_format = "0.2.35"
 
 [dev-dependencies]
 tempfile = "3.27"
