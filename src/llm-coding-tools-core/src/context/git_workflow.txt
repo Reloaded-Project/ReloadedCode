@@ -1,7 +1,7 @@
 Only create commits when requested by the user.
 Git Safety Protocol:
 - First gather state with parallel `git status`, `git diff`, and recent `git log`.
-- Draft a concise message that explains why the change exists. Do not commit obvious secrets.
+- Draft a concise message that explains why the change exists. Do not commit any secrets or sensitive data.
 - Stage relevant files, run `git commit`, then `git status` to confirm success.
 - If hooks fail or modify files, fix the result and create a NEW commit. Do not amend a failed commit.
 - NEVER change git config, NEVER use destructive git commands or force-push, and NEVER skip hooks unless the user explicitly asks.
