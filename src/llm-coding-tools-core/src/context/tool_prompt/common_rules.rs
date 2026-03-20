@@ -4,6 +4,7 @@
 //! included when the matching tools are present.
 
 use super::{push_line, write_tool_list, ToolPromptFacts};
+use crate::tool_metadata::{edit, glob, grep, read, write};
 
 /// Writes the shared rules for the current built-in tools.
 pub(super) fn write_common_rules(facts: ToolPromptFacts, output: &mut String) {
@@ -26,8 +27,6 @@ fn append_allowed_path_rule(facts: ToolPromptFacts, output: &mut String) {
 
 /// Adds the rule that prefers file tools over `bash`.
 fn append_bash_rule(facts: ToolPromptFacts, output: &mut String) {
-    use crate::tool_metadata::{edit, glob, grep, read, write};
-
     if !facts.has_bash {
         return;
     }
