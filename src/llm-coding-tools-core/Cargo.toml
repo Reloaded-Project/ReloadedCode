@@ -76,7 +76,7 @@ ignore = "0.4.25"        # Respects .gitignore when walking directories
 memchr = "2.8.0"         # Fast newline detection in read_file
 
 # Webfetch tool converts HTML to markdown for LLM-friendly output
-html-to-markdown-rs = "2.28"
+html-to-markdown-rs = "2.29"
 reqwest = { version = "0.13", default-features = false, features = [
     "rustls",
     "rustls-native-certs",
