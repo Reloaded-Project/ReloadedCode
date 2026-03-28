@@ -15,6 +15,13 @@ pub mod webfetch;
 /// Re-export core types for convenience.
 pub use llm_coding_tools_core::{ToolError, ToolOutput, ToolResult};
 
+/// Re-export bash execution mode and mode-aware execution.
+pub use llm_coding_tools_core::{BashExecutionMode, execute_command_with_mode};
+
+/// Re-export preferred Linux bubblewrap profile types
+#[cfg(all(feature = "linux-bubblewrap", target_os = "linux"))]
+pub use llm_coding_tools_bubblewrap::profile;
+
 /// Re-export context module and [`ToolContext`] trait for convenience.
 pub use llm_coding_tools_core::ToolContext;
 pub use llm_coding_tools_core::context;

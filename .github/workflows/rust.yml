@@ -10,146 +10,206 @@ on:
   workflow_dispatch:
 
 jobs:
-  build-and-test-async:
-    name: Build and Test (Async/Tokio)
+  ci:
+    name: ${{ matrix.label }}
     strategy:
+      fail-fast: false
       matrix:
         include:
-          - os: ubuntu-latest
-            target: x86_64-unknown-linux-gnu
-            use-cross: false
-          - os: windows-latest
-            target: x86_64-pc-windows-msvc
-            use-cross: false
-          - os: macos-latest
-            target: aarch64-apple-darwin
-            use-cross: false
+          - { label: "Async Linux", os: ubuntu-latest, target: x86_64-unknown-linux-gnu, mode: async, linux_bwrap: true }
+          - { label: "Async Windows", os: windows-latest, target: x86_64-pc-windows-msvc, mode: async, linux_bwrap: false }
+          - { label: "Async macOS", os: macos-latest, target: aarch64-apple-darwin, mode: async, linux_bwrap: false }
+          - { label: "Blocking Linux", os: ubuntu-latest, target: x86_64-unknown-linux-gnu, mode: blocking, linux_bwrap: true }
+          - { label: "Blocking Windows", os: windows-latest, target: x86_64-pc-windows-msvc, mode: blocking, linux_bwrap: false }
+          - { label: "Blocking macOS", os: macos-latest, target: aarch64-apple-darwin, mode: blocking, linux_bwrap: false }
 
     runs-on: ${{ matrix.os }}
 
     steps:
       - uses: actions/checkout@v6
 
-      - name: Run Tests (Async Mode) and Upload Coverage
+      - name: Run tests (Async) and upload coverage
+        if: matrix.mode == 'async'
         uses: Reloaded-Project/devops-rust-test-and-coverage@v1
         with:
           rust-project-path: ./src
           upload-coverage: true
           codecov-token: ${{ secrets.CODECOV_TOKEN }}
+          codecov-flags: async
+          codecov-name: ${{ matrix.label }}
           target: ${{ matrix.target }}
-          use-cross: ${{ matrix.use-cross }}
+          packages: |
+            llm-coding-tools-core
+            llm-coding-tools-agents
+            llm-coding-tools-serdesai
+            llm-coding-tools-models-dev
 
-      # Note: The GitHub Runner Images will contain an up to date Rust Stable Toolchain
-      #       thus as per recommendation of cargo-semver-checks, we're using stable here.
-      #
-      # Note to reader. If adding this to a new repo, please clear cache.
-      - name: Run cargo-semver-checks
-        if: github.event_name == 'pull_request' || startsWith(github.ref, 'refs/tags/')
-        working-directory: src
-        shell: bash
-        run: |
-          # Note: binstall is available after devops-rust-test-and-coverage@v1 call
-          cargo +stable binstall --no-confirm cargo-semver-checks --force
-          rustup +stable target add ${{ matrix.target }}
-
-          for CRATE in "llm-coding-tools-core" "llm-coding-tools-agents" "llm-coding-tools-serdesai" "llm-coding-tools-models-dev"; do
-            SEARCH_RESULT=$(cargo search "^${CRATE}$" --limit 1)
-            if echo "$SEARCH_RESULT" | grep -q "^${CRATE} "; then
-              echo "Running semver checks for ${CRATE}..."
-              # Note: llm-coding-tools-core has mutually exclusive async/blocking features,
-              # so we must use --only-explicit-features to avoid enabling all features.
-              # llm-coding-tools-serdesai is async-only. models-dev supports both tokio and blocking.
-              if [ "${CRATE}" = "llm-coding-tools-core" ]; then
-                cargo +stable semver-checks -p "${CRATE}" --target ${{ matrix.target }} --only-explicit-features --features tokio
-              else
-                cargo +stable semver-checks -p "${CRATE}" --target ${{ matrix.target }}
-              fi
-            else
-              echo "No previous version of ${CRATE} found on crates.io. Skipping semver checks."
-            fi
-          done
-
-      - name: Check documentation is valid
-        if: github.event_name == 'pull_request' || startsWith(github.ref, 'refs/tags/')
-        working-directory: src
-        env:
-          RUSTDOCFLAGS: "-D warnings"
-        # Note: Can't use --all-features at workspace level because tokio/blocking are mutually exclusive
-        run: |
-          cargo doc -p llm-coding-tools-core --features tokio --document-private-items --no-deps --target ${{ matrix.target }}
-          cargo doc -p llm-coding-tools-agents --document-private-items --no-deps --target ${{ matrix.target }}
-          cargo doc -p llm-coding-tools-serdesai --document-private-items --no-deps --target ${{ matrix.target }}
-          cargo doc -p llm-coding-tools-models-dev --document-private-items --no-deps --target ${{ matrix.target }}
-
-      - name: Run linter
-        if: github.event_name == 'pull_request' || startsWith(github.ref, 'refs/tags/')
-        working-directory: src
-        # Note: Can't use --all-features at workspace level because tokio/blocking are mutually exclusive
-        run: |
-          cargo clippy -p llm-coding-tools-core --features tokio --target ${{ matrix.target }} -- -D warnings
-          cargo clippy -p llm-coding-tools-agents --target ${{ matrix.target }} -- -D warnings
-          cargo clippy -p llm-coding-tools-serdesai --target ${{ matrix.target }} -- -D warnings
-          cargo clippy -p llm-coding-tools-models-dev --target ${{ matrix.target }} -- -D warnings
-
-      - name: Run formatter check
-        uses: actions-rust-lang/rustfmt@v1
-        if: github.event_name == 'pull_request' || startsWith(github.ref, 'refs/tags/')
-        with:
-          manifest-path: src/Cargo.toml
-
-  build-and-test-blocking:
-    name: Build and Test (Blocking)
-    strategy:
-      matrix:
-        include:
-          - os: ubuntu-latest
-            target: x86_64-unknown-linux-gnu
-            use-cross: false
-          - os: windows-latest
-            target: x86_64-pc-windows-msvc
-            use-cross: false
-          - os: macos-latest
-            target: aarch64-apple-darwin
-            use-cross: false
-
-    runs-on: ${{ matrix.os }}
-
-    steps:
-      - uses: actions/checkout@v6
-
-      - name: Run Tests (Blocking Mode) and Upload Coverage
+      - name: Run tests (Blocking) and upload coverage
+        if: matrix.mode == 'blocking'
         uses: Reloaded-Project/devops-rust-test-and-coverage@v1
         with:
           rust-project-path: ./src
           upload-coverage: true
           codecov-token: ${{ secrets.CODECOV_TOKEN }}
+          codecov-flags: blocking
+          codecov-name: ${{ matrix.label }}
           target: ${{ matrix.target }}
-          use-cross: ${{ matrix.use-cross }}
           packages: |
             llm-coding-tools-core
             llm-coding-tools-models-dev
           no-default-features: true
           features: "blocking"
 
+      - name: Run Linux-only async feature coverage
+        if: matrix.mode == 'async' && matrix.linux_bwrap
+        working-directory: src
+        shell: bash
+        run: |
+          cargo test -p llm-coding-tools-bubblewrap
+          cargo test -p llm-coding-tools-core --features linux-bubblewrap
+          cargo test -p llm-coding-tools-serdesai --features linux-bubblewrap
+
+      - name: Run Linux-only blocking feature coverage
+        if: matrix.mode == 'blocking' && matrix.linux_bwrap
+        working-directory: src
+        shell: bash
+        run: |
+          cargo test -p llm-coding-tools-bubblewrap --no-default-features --features blocking
+          cargo test -p llm-coding-tools-core --no-default-features --features blocking,linux-bubblewrap
+
+      - name: Run cargo-semver-checks
+        # Run semver checks only on Linux rows.
+        # Linux is the only target with additional exported APIs in this workspace
+        # (`linux-bubblewrap` and the bubblewrap crate itself); current Windows/macOS
+        # `cfg(...)` usage is implementation-only. Blocking mode still changes public
+        # signatures via maybe-async, so the Blocking Linux row checks that surface too.
+        if: (github.event_name == 'pull_request' || startsWith(github.ref, 'refs/tags/')) && matrix.linux_bwrap
+        working-directory: src
+        shell: bash
+        run: |
+          cargo +stable binstall --no-confirm cargo-semver-checks --force
+          rustup +stable target add ${{ matrix.target }}
+
+          case "${{ matrix.mode }}" in
+            async)
+              for CRATE in "llm-coding-tools-core" "llm-coding-tools-agents" "llm-coding-tools-serdesai" "llm-coding-tools-models-dev"; do
+                SEARCH_RESULT=$(cargo search "^${CRATE}$" --limit 1)
+                if echo "$SEARCH_RESULT" | grep -q "^${CRATE} "; then
+                  echo "Running semver checks for ${CRATE}..."
+                  if [ "${CRATE}" = "llm-coding-tools-core" ]; then
+                    cargo +stable semver-checks -p "${CRATE}" --target ${{ matrix.target }} --only-explicit-features --features tokio
+                    cargo +stable semver-checks -p "${CRATE}" --target ${{ matrix.target }} --only-explicit-features --features tokio,linux-bubblewrap
+                  elif [ "${CRATE}" = "llm-coding-tools-serdesai" ]; then
+                    cargo +stable semver-checks -p "${CRATE}" --target ${{ matrix.target }} --only-explicit-features --features full
+                    cargo +stable semver-checks -p "${CRATE}" --target ${{ matrix.target }} --only-explicit-features --features full,linux-bubblewrap
+                  else
+                    cargo +stable semver-checks -p "${CRATE}" --target ${{ matrix.target }}
+                  fi
+                else
+                  echo "No previous version of ${CRATE} found on crates.io. Skipping semver checks."
+                fi
+              done
+
+              SEARCH_RESULT=$(cargo search "^llm-coding-tools-bubblewrap$" --limit 1)
+              if echo "$SEARCH_RESULT" | grep -q "^llm-coding-tools-bubblewrap "; then
+                echo "Running semver checks for llm-coding-tools-bubblewrap..."
+                cargo +stable semver-checks -p llm-coding-tools-bubblewrap --target ${{ matrix.target }} --only-explicit-features
+                cargo +stable semver-checks -p llm-coding-tools-bubblewrap --target ${{ matrix.target }} --only-explicit-features --features tokio
+                cargo +stable semver-checks -p llm-coding-tools-bubblewrap --target ${{ matrix.target }} --only-explicit-features --features blocking
+              else
+                echo "No previous version of llm-coding-tools-bubblewrap found on crates.io. Skipping semver checks."
+              fi
+              ;;
+            blocking)
+              for CRATE in "llm-coding-tools-core" "llm-coding-tools-models-dev"; do
+                SEARCH_RESULT=$(cargo search "^${CRATE}$" --limit 1)
+                if echo "$SEARCH_RESULT" | grep -q "^${CRATE} "; then
+                  echo "Running semver checks for ${CRATE}..."
+                  if [ "${CRATE}" = "llm-coding-tools-core" ]; then
+                    cargo +stable semver-checks -p "${CRATE}" --target ${{ matrix.target }} --only-explicit-features --features blocking
+                    cargo +stable semver-checks -p "${CRATE}" --target ${{ matrix.target }} --only-explicit-features --features blocking,linux-bubblewrap
+                  else
+                    cargo +stable semver-checks -p "${CRATE}" --target ${{ matrix.target }} --only-explicit-features --features blocking
+                  fi
+                else
+                  echo "No previous version of ${CRATE} found on crates.io. Skipping semver checks."
+                fi
+              done
+              ;;
+          esac
+
       - name: Check documentation is valid
         if: github.event_name == 'pull_request' || startsWith(github.ref, 'refs/tags/')
         working-directory: src
+        shell: bash
         env:
           RUSTDOCFLAGS: "-D warnings"
         run: |
-          cargo doc -p llm-coding-tools-core --no-default-features --features blocking --document-private-items --no-deps --target ${{ matrix.target }}
-          cargo doc -p llm-coding-tools-models-dev --no-default-features --features blocking --document-private-items --no-deps --target ${{ matrix.target }}
+          case "${{ matrix.mode }}:${{ matrix.linux_bwrap }}" in
+            async:true)
+              cargo doc -p llm-coding-tools-bubblewrap --document-private-items --no-deps --target ${{ matrix.target }}
+              cargo doc -p llm-coding-tools-core --features linux-bubblewrap --document-private-items --no-deps --target ${{ matrix.target }}
+              cargo doc -p llm-coding-tools-agents --document-private-items --no-deps --target ${{ matrix.target }}
+              cargo doc -p llm-coding-tools-serdesai --features linux-bubblewrap --document-private-items --no-deps --target ${{ matrix.target }}
+              cargo doc -p llm-coding-tools-models-dev --document-private-items --no-deps --target ${{ matrix.target }}
+              ;;
+            async:false)
+              cargo doc -p llm-coding-tools-core --document-private-items --no-deps --target ${{ matrix.target }}
+              cargo doc -p llm-coding-tools-agents --document-private-items --no-deps --target ${{ matrix.target }}
+              cargo doc -p llm-coding-tools-serdesai --document-private-items --no-deps --target ${{ matrix.target }}
+              cargo doc -p llm-coding-tools-models-dev --document-private-items --no-deps --target ${{ matrix.target }}
+              ;;
+            blocking:true)
+              cargo doc -p llm-coding-tools-bubblewrap --no-default-features --features blocking --document-private-items --no-deps --target ${{ matrix.target }}
+              cargo doc -p llm-coding-tools-core --no-default-features --features blocking,linux-bubblewrap --document-private-items --no-deps --target ${{ matrix.target }}
+              cargo doc -p llm-coding-tools-models-dev --no-default-features --features blocking --document-private-items --no-deps --target ${{ matrix.target }}
+              ;;
+            blocking:false)
+              cargo doc -p llm-coding-tools-core --no-default-features --features blocking --document-private-items --no-deps --target ${{ matrix.target }}
+              cargo doc -p llm-coding-tools-models-dev --no-default-features --features blocking --document-private-items --no-deps --target ${{ matrix.target }}
+              ;;
+          esac
 
-      - name: Run linter (Blocking)
+      - name: Run linter
         if: github.event_name == 'pull_request' || startsWith(github.ref, 'refs/tags/')
         working-directory: src
+        shell: bash
         run: |
-          cargo clippy -p llm-coding-tools-core --no-default-features --features blocking --target ${{ matrix.target }} -- -D warnings
-          cargo clippy -p llm-coding-tools-models-dev --no-default-features --features blocking --target ${{ matrix.target }} -- -D warnings
+          case "${{ matrix.mode }}:${{ matrix.linux_bwrap }}" in
+            async:true)
+              cargo clippy -p llm-coding-tools-bubblewrap --target ${{ matrix.target }} -- -D warnings
+              cargo clippy -p llm-coding-tools-core --features linux-bubblewrap --target ${{ matrix.target }} -- -D warnings
+              cargo clippy -p llm-coding-tools-agents --target ${{ matrix.target }} -- -D warnings
+              cargo clippy -p llm-coding-tools-serdesai --features linux-bubblewrap --target ${{ matrix.target }} -- -D warnings
+              cargo clippy -p llm-coding-tools-models-dev --target ${{ matrix.target }} -- -D warnings
+              ;;
+            async:false)
+              cargo clippy -p llm-coding-tools-core --target ${{ matrix.target }} -- -D warnings
+              cargo clippy -p llm-coding-tools-agents --target ${{ matrix.target }} -- -D warnings
+              cargo clippy -p llm-coding-tools-serdesai --target ${{ matrix.target }} -- -D warnings
+              cargo clippy -p llm-coding-tools-models-dev --target ${{ matrix.target }} -- -D warnings
+              ;;
+            blocking:true)
+              cargo clippy -p llm-coding-tools-bubblewrap --no-default-features --features blocking --target ${{ matrix.target }} -- -D warnings
+              cargo clippy -p llm-coding-tools-core --no-default-features --features blocking,linux-bubblewrap --target ${{ matrix.target }} -- -D warnings
+              cargo clippy -p llm-coding-tools-models-dev --no-default-features --features blocking --target ${{ matrix.target }} -- -D warnings
+              ;;
+            blocking:false)
+              cargo clippy -p llm-coding-tools-core --no-default-features --features blocking --target ${{ matrix.target }} -- -D warnings
+              cargo clippy -p llm-coding-tools-models-dev --no-default-features --features blocking --target ${{ matrix.target }} -- -D warnings
+              ;;
+          esac
+
+  format:
+    name: Format
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v6
 
       - name: Run formatter check
-        uses: actions-rust-lang/rustfmt@v1
         if: github.event_name == 'pull_request' || startsWith(github.ref, 'refs/tags/')
+        uses: actions-rust-lang/rustfmt@v1
         with:
           manifest-path: src/Cargo.toml
 
@@ -157,8 +217,7 @@ jobs:
     permissions:
       contents: write
 
-    needs: [build-and-test-async, build-and-test-blocking]
-    # Publish only on tags
+    needs: [ci, format]
     if: startsWith(github.ref, 'refs/tags/')
     runs-on: ubuntu-latest
     steps:
@@ -167,6 +226,7 @@ jobs:
         with:
           rust-crates-io-token: ${{ secrets.CRATES_IO_TOKEN }}
           rust-cargo-project-paths: |
+            src/llm-coding-tools-bubblewrap
             src/llm-coding-tools-core
             src/llm-coding-tools-agents
             src/llm-coding-tools-serdesai

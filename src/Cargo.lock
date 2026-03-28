@@ -1994,6 +1994,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "llm-coding-tools-bubblewrap"
+version = "0.1.0"
+dependencies = [
+ "parking_lot",
+ "process-wrap",
+ "serial_test",
+ "tempfile",
+ "thiserror 2.0.18",
+ "tokio",
+]
+
+[[package]]
 name = "llm-coding-tools-core"
 version = "0.2.0"
 dependencies = [
@@ -2011,6 +2023,7 @@ dependencies = [
  "ignore",
  "indoc",
  "lite-strtab",
+ "llm-coding-tools-bubblewrap",
  "maybe-async",
  "memchr",
  "parking_lot",
@@ -2019,6 +2032,7 @@ dependencies = [
  "schemars",
  "serde",
  "serde_json",
+ "serial_test",
  "temp-env",
  "tempfile",
  "thiserror 2.0.18",
@@ -2057,6 +2071,7 @@ dependencies = [
  "futures",
  "indexmap",
  "llm-coding-tools-agents",
+ "llm-coding-tools-bubblewrap",
  "llm-coding-tools-core",
  "llm-coding-tools-models-dev",
  "reqwest 0.13.1",
@@ -2065,6 +2080,7 @@ dependencies = [
  "serdes-ai",
  "serdes-ai-models",
  "serdes-ai-streaming",
+ "serial_test",
  "temp-env",
  "tempfile",
  "thiserror 2.0.18",

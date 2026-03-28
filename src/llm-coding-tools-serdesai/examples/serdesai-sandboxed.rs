@@ -21,7 +21,7 @@ use std::fmt::Write;
 // Set your OpenAI API key here or via OPENAI_API_KEY environment variable.
 /// Fallback API key if env var is not set. Leave empty to require env var.
 const OPENAI_API_KEY: &str = "";
-const OPENAI_MODEL: &str = "hf:zai-org/GLM-4.7";
+const OPENAI_MODEL: &str = "hf:zai-org/GLM-4.7-Flash";
 const OPENAI_BASE_URL: &str = "https://api.synthetic.new/openai/v1";
 
 fn get_openai_api_key() -> String {

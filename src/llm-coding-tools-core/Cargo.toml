@@ -17,6 +17,7 @@ tokio = [
     "async",
     "dep:tokio",
     "dep:reqwest",
+    "llm-coding-tools-bubblewrap?/tokio",
     "process-wrap/tokio1",
     "process-wrap/job-object",
     "process-wrap/process-group",
@@ -27,10 +28,13 @@ blocking = [
     "maybe-async/is_sync",
     "dep:reqwest",
     "reqwest?/blocking",
+    "llm-coding-tools-bubblewrap?/blocking",
     "process-wrap/std",
     "process-wrap/job-object",
     "process-wrap/process-group",
 ]
+# Linux sandbox API support - only exposes types on Linux targets.
+linux-bubblewrap = ["dep:llm-coding-tools-bubblewrap"]
 
 [dependencies]
 # Tool outputs (BashOutput, GrepOutput, etc.) serialize to JSON for LLM consumption
@@ -93,7 +97,11 @@ process-wrap = { version = "9.1", default-features = false }
 # Compile-time string formatting for prompt text and parameter descriptions
 const_format = "0.2.35"
 
+# Linux sandbox types and runtime
+llm-coding-tools-bubblewrap = { version = "0.1.0", path = "../llm-coding-tools-bubblewrap", optional = true, default-features = false }
+
 [dev-dependencies]
+serial_test = "3"
 tempfile = "3.27"
 # For async tests (when async feature enabled)
 tokio = { version = "1.50", features = ["rt", "macros"] }

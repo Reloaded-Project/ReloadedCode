@@ -35,7 +35,22 @@ pub enum ToolPrompt {
     /// Uses a fixed guidance string as-is.
     Static(&'static str),
     /// Writes guidance for `bash`.
-    Bash,
+    Bash {
+        /// Whether network access is disabled for the bash execution.
+        ///
+        /// When `true`, the rendered prompt includes a note that network access
+        /// is disabled inside the sandbox. This is only meaningful when
+        /// `sandboxed` is also `true` - a host-level bash session cannot
+        /// restrict networking, so the default is `false`.
+        network_disabled: bool,
+        /// Whether the bash execution is confined to a Linux sandbox (e.g. bubblewrap).
+        ///
+        /// When `true`, the rendered prompt notes that commands run inside a Linux
+        /// sandbox. Defaults to `false` (unrestricted host execution). Can be
+        /// combined with `network_disabled`; setting `network_disabled` without
+        /// `sandboxed` has no effect.
+        sandboxed: bool,
+    },
     /// Writes guidance for `read`.
     Read {
         path_mode: PathMode,
@@ -114,7 +129,7 @@ impl ToolPromptFacts {
     fn record(&mut self, prompt: ToolPrompt) {
         match prompt {
             ToolPrompt::Static(_) => {}
-            ToolPrompt::Bash => self.has_bash = true,
+            ToolPrompt::Bash { .. } => self.has_bash = true,
             ToolPrompt::Read {
                 path_mode,
                 line_numbers,

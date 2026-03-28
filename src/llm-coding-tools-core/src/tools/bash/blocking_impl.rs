@@ -1,10 +1,12 @@
 //! Blocking shell command execution.
 
 use super::{
-    timeout_error_with_kill_failure, timeout_message_with_buffered_output, BashOutput,
-    PIPE_BUFFER_CAPACITY,
+    timeout_error_with_kill_failure, timeout_message_with_buffered_output, validate_workdir,
+    BashExecutionMode, BashOutput, PIPE_BUFFER_CAPACITY,
 };
 use crate::error::{ToolError, ToolResult};
+#[cfg(all(feature = "linux-bubblewrap", target_os = "linux"))]
+use llm_coding_tools_bubblewrap::wrap::blocking as linux_bwrap_wrap;
 use process_wrap::std::*;
 use std::io::Read;
 use std::path::Path;
@@ -28,49 +30,45 @@ pub fn execute_command(
     workdir: Option<&Path>,
     timeout: Duration,
 ) -> ToolResult<BashOutput> {
-    if let Some(dir) = workdir {
-        if !dir.is_absolute() {
-            return Err(ToolError::InvalidPath(format!(
-                "working directory must be an absolute path: {}",
-                dir.display()
-            )));
-        }
-        if !dir.is_dir() {
-            return Err(ToolError::InvalidPath(format!(
-                "working directory does not exist: {}",
-                dir.display()
-            )));
-        }
-    }
+    execute_command_with_mode(&BashExecutionMode::Host, command, workdir, timeout)
+}
 
-    #[cfg(windows)]
-    let mut wrap = CommandWrap::with_new("cmd", |cmd| {
-        cmd.args(["/C", command]);
-        if let Some(dir) = workdir {
-            cmd.current_dir(dir);
+/// Executes a shell command with explicit mode selection.
+///
+/// # Arguments
+/// - `mode` - The execution mode (host or Linux sandbox).
+/// - `command` - The shell command to execute.
+/// - `workdir` - Optional working directory (must be absolute if provided).
+/// - `timeout` - Maximum time to wait for command completion.
+///
+/// # Errors
+/// - Returns [`ToolError::InvalidPath`] if workdir is not absolute or doesn't exist.
+/// - Returns [`ToolError::Execution`] for sandbox mode when bwrap is missing or unusable.
+/// - Returns [`ToolError::Timeout`] or [`ToolError::TimeoutWithKillFailure`] on timeout.
+pub fn execute_command_with_mode(
+    mode: &BashExecutionMode,
+    command: &str,
+    workdir: Option<&Path>,
+    timeout: Duration,
+) -> ToolResult<BashOutput> {
+    let wrap = match mode {
+        BashExecutionMode::Host => build_host_wrap(command, workdir),
+        #[cfg(all(feature = "linux-bubblewrap", target_os = "linux"))]
+        BashExecutionMode::LinuxBwrap(config) => {
+            linux_bwrap_wrap::build_command_wrap(config, command, workdir)
+                .map_err(super::map_linux_bwrap_error)
         }
-        cmd.stdin(Stdio::null())
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped());
-    });
+    }?;
+    run_wrapped_command(wrap, timeout)
+}
 
-    #[cfg(not(windows))]
-    let mut wrap = CommandWrap::with_new("bash", |cmd| {
-        cmd.args(["-c", command]);
-        if let Some(dir) = workdir {
-            cmd.current_dir(dir);
-        }
-        cmd.stdin(Stdio::null())
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped());
-    });
-
-    // Add platform-specific process tree management
-    #[cfg(windows)]
-    wrap.wrap(JobObject);
-    #[cfg(unix)]
-    wrap.wrap(ProcessGroup::leader());
-
+/// Runs a wrapped command with timeout, concurrent pipe draining, and proper cleanup.
+///
+/// This is the shared implementation for both host and sandbox execution in blocking mode.
+pub(in crate::tools::bash) fn run_wrapped_command(
+    mut wrap: CommandWrap,
+    timeout: Duration,
+) -> ToolResult<BashOutput> {
     let mut child = wrap
         .spawn()
         .map_err(|e| ToolError::Execution(e.to_string()))?;
@@ -137,6 +135,39 @@ pub fn execute_command(
         )),
         WaitOutcome::WaitError(e) => Err(ToolError::Execution(e.to_string())),
     }
+}
+
+fn build_host_wrap(command: &str, workdir: Option<&Path>) -> ToolResult<CommandWrap> {
+    validate_workdir(workdir)?;
+
+    #[cfg(windows)]
+    let mut wrap = CommandWrap::with_new("cmd", |cmd| {
+        cmd.args(["/C", command]);
+        if let Some(dir) = workdir {
+            cmd.current_dir(dir);
+        }
+        cmd.stdin(Stdio::null())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped());
+    });
+
+    #[cfg(not(windows))]
+    let mut wrap = CommandWrap::with_new("bash", |cmd| {
+        cmd.args(["-c", command]);
+        if let Some(dir) = workdir {
+            cmd.current_dir(dir);
+        }
+        cmd.stdin(Stdio::null())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped());
+    });
+
+    #[cfg(windows)]
+    wrap.wrap(JobObject);
+    #[cfg(unix)]
+    wrap.wrap(ProcessGroup::leader());
+
+    Ok(wrap)
 }
 
 #[cfg(test)]

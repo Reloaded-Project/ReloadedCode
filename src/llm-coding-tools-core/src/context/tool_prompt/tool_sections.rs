@@ -19,7 +19,10 @@ use crate::tool_metadata::{bash, edit, glob, grep, read, webfetch};
 pub(super) fn render_tool(prompt: ToolPrompt, output: &mut String, facts: ToolPromptFacts) {
     match prompt {
         ToolPrompt::Static(text) => output.push_str(text),
-        ToolPrompt::Bash => write_bash_section(output),
+        ToolPrompt::Bash {
+            network_disabled,
+            sandboxed,
+        } => write_bash_section(output, network_disabled, sandboxed),
         ToolPrompt::Read {
             path_mode: _,
             line_numbers,
@@ -38,17 +41,23 @@ pub(super) fn render_tool(prompt: ToolPrompt, output: &mut String, facts: ToolPr
     }
 }
 
-fn write_bash_section(output: &mut String) {
+fn write_bash_section(output: &mut String, network_disabled: bool, sandboxed: bool) {
     push_block(
         output,
         formatcp!(
             "- Use it for terminal work (git, package managers, test runners, docker) and shell-native search/filter jobs the specialized tools do not handle well.\n\
-            - Output includes stdout, stderr under `[stderr]`, and non-zero exit codes as `[exit code: N]`.\n\
-            - For independent commands, make parallel `{}` calls. For dependent commands, use one call with `&&`.\n\
-            - Quote paths that contain spaces.\n",
+             - Output includes stdout, stderr under `[stderr]`, and non-zero exit codes as `[exit code: N]`.\n\
+             - For independent commands, make parallel `{}` calls. For dependent commands, use one call with `&&`.\n\
+             - Quote paths that contain spaces.\n",
             bash::NAME,
         ),
     );
+    if sandboxed {
+        push_line(output, "- Commands run inside a Linux sandbox.");
+    }
+    if network_disabled {
+        push_line(output, "- Network access is disabled in this sandbox.");
+    }
 }
 
 fn write_read_section(output: &mut String, facts: ToolPromptFacts, line_numbers: bool) {

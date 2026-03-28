@@ -161,7 +161,10 @@ impl ToolContext for MockBashTool {
     const NAME: &'static str = tool_metadata::bash::NAME;
 
     fn context(&self) -> ToolPrompt {
-        ToolPrompt::Bash
+        ToolPrompt::Bash {
+            network_disabled: false,
+            sandboxed: false,
+        }
     }
 }
 

@@ -1,10 +1,65 @@
-//! Shell command execution operation.
+//! Run shell commands on the host or inside a Linux bubblewrap sandbox.
+//!
+//! # Public API
+//! - [`execute_command`] / [`execute_command_with_mode`] - Run a shell command with host or sandbox mode.
+//! - [`BashExecutionMode`] - Select `Host` or `LinuxBwrap` execution.
+//! - [`BashOutput`] - Captured stdout, stderr, and exit code.
+//!
+//! # Linux Sandbox
+#![cfg_attr(
+    all(feature = "linux-bubblewrap", target_os = "linux"),
+    doc = "Enable the `linux-bubblewrap` feature on Linux to wrap commands in a bubblewrap sandbox."
+)]
+#![cfg_attr(
+    all(feature = "linux-bubblewrap", target_os = "linux"),
+    doc = "Build a profile with `linux_bwrap_profile::Builder`:"
+)]
+#![cfg_attr(
+    all(feature = "linux-bubblewrap", target_os = "linux"),
+    doc = "- `Builder::public_bot` for untrusted input (no network, filtered mounts, cleared env)."
+)]
+#![cfg_attr(
+    all(feature = "linux-bubblewrap", target_os = "linux"),
+    doc = "- `Builder::trusted_maintenance` for trusted jobs (network enabled, read-only host rootfs)."
+)]
+//!
+//! See <https://github.com/Sewer56/llm-coding-tools/blob/main/SANDBOX-PROFILES.md>
+//! for the full operator guide.
+//!
+//! # Errors
+//! - [`ToolError::InvalidPath`] when the working directory is not absolute or does not exist.
+//! - [`ToolError::Execution`] when the process cannot start, or when `bwrap` is missing or unusable in sandbox mode.
+//! - [`ToolError::Timeout`] / [`ToolError::TimeoutWithKillFailure`] when the command exceeds the deadline.
 
-use crate::error::ToolError;
+use crate::error::{ToolError, ToolResult};
 use crate::ToolOutput;
 use core::fmt::Write;
 use serde::Serialize;
+use std::path::Path;
 use std::time::Duration;
+#[cfg(feature = "tokio")]
+mod tokio_impl;
+#[cfg(feature = "tokio")]
+pub use tokio_impl::{execute_command, execute_command_with_mode};
+
+#[cfg(all(feature = "blocking", not(feature = "tokio")))]
+mod blocking_impl;
+#[cfg(all(feature = "blocking", not(feature = "tokio")))]
+pub use blocking_impl::{execute_command, execute_command_with_mode};
+
+#[cfg(all(feature = "linux-bubblewrap", target_os = "linux"))]
+pub use llm_coding_tools_bubblewrap::profile as linux_bwrap_profile;
+#[cfg(all(feature = "linux-bubblewrap", target_os = "linux"))]
+use llm_coding_tools_bubblewrap::profile::Profile;
+
+/// Execution mode for bash commands.
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub enum BashExecutionMode {
+    #[default]
+    Host,
+    #[cfg(all(feature = "linux-bubblewrap", target_os = "linux"))]
+    LinuxBwrap(std::sync::Arc<Profile>),
+}
 
 /// Default buffer capacity for stdout/stderr pipe reads.
 /// 32KB covers typical command output without reallocations.
@@ -47,6 +102,27 @@ fn timeout_error_with_kill_failure(message: String, kill_error: Option<String>) 
         },
         None => ToolError::Timeout(message),
     }
+}
+
+#[inline]
+fn validate_workdir(workdir: Option<&Path>) -> ToolResult<()> {
+    if let Some(dir) = workdir {
+        if !dir.is_absolute() {
+            return Err(ToolError::InvalidPath(format!(
+                "working directory must be an absolute path: {}",
+                dir.display()
+            )));
+        }
+        if !dir.is_dir() {
+            let msg = if dir.exists() {
+                format!("working directory is not a directory: {}", dir.display())
+            } else {
+                format!("working directory does not exist: {}", dir.display())
+            };
+            return Err(ToolError::InvalidPath(msg));
+        }
+    }
+    Ok(())
 }
 
 /// Result of shell command execution.
@@ -97,12 +173,30 @@ impl BashOutput {
     }
 }
 
-#[cfg(feature = "tokio")]
-mod tokio_impl;
-#[cfg(feature = "tokio")]
-pub use tokio_impl::execute_command;
+#[cfg(all(feature = "linux-bubblewrap", target_os = "linux"))]
+#[inline]
+fn map_linux_bwrap_error(error: llm_coding_tools_bubblewrap::LinuxBwrapError) -> ToolError {
+    use llm_coding_tools_bubblewrap::LinuxBwrapError;
+    match error {
+        LinuxBwrapError::InvalidPath(message) => ToolError::InvalidPath(message),
+        LinuxBwrapError::Execution(message) => ToolError::Execution(message),
+    }
+}
 
-#[cfg(all(feature = "blocking", not(feature = "tokio")))]
-mod blocking_impl;
-#[cfg(all(feature = "blocking", not(feature = "tokio")))]
-pub use blocking_impl::execute_command;
+#[cfg(all(test, feature = "linux-bubblewrap", target_os = "linux"))]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn bwrap_error_mapping_preserves_variants() {
+        let mapped = map_linux_bwrap_error(
+            llm_coding_tools_bubblewrap::LinuxBwrapError::Execution("bwrap missing".to_string()),
+        );
+        assert!(matches!(mapped, ToolError::Execution(m) if m.contains("bwrap")));
+
+        let mapped = map_linux_bwrap_error(
+            llm_coding_tools_bubblewrap::LinuxBwrapError::InvalidPath("bad path".to_string()),
+        );
+        assert!(matches!(mapped, ToolError::InvalidPath(m) if m.contains("bad")));
+    }
+}

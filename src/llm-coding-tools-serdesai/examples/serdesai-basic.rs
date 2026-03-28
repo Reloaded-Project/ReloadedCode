@@ -7,6 +7,9 @@
 //! - Running the agent with tools
 //!
 //! Run: cargo run --example serdesai-basic -p llm-coding-tools-serdesai
+//!
+//! Please note; Sandboxing is not enabled here, the agents are not restricted.
+//! See `serdesai-sandbox` example for a more 'sandboxed' approach.
 
 use futures::StreamExt;
 use llm_coding_tools_serdesai::absolute::{GlobTool, GrepTool, ReadTool};
@@ -19,7 +22,7 @@ use std::fmt::Write;
 // Set your OpenAI API key here or via OPENAI_API_KEY environment variable.
 /// Fallback API key if env var is not set. Leave empty to require env var.
 const OPENAI_API_KEY: &str = "";
-const OPENAI_MODEL: &str = "hf:zai-org/GLM-4.7";
+const OPENAI_MODEL: &str = "hf:zai-org/GLM-4.7-Flash";
 const OPENAI_BASE_URL: &str = "https://api.synthetic.new/openai/v1";
 
 fn get_openai_api_key() -> String {
@@ -45,7 +48,7 @@ async fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
         .tool(pb.track(GlobTool::new()))
         .tool(pb.track(GrepTool::<true>::new()))
         // Shell execution
-        .tool(pb.track(BashTool::new()))
+        .tool(pb.track(BashTool::host()))
         // Web content fetching
         .tool(pb.track(WebFetchTool::new()))
         // Todo tools with shared state

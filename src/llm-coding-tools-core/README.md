@@ -15,6 +15,7 @@ Framework-agnostic core library of standard tools used by coding agents - headle
   - [Tools, context, and integration](#tools-context-and-integration)
     - [Standard tools](#standard-tools)
     - [Path safety and sandboxing](#path-safety-and-sandboxing)
+      - [Linux shell sandboxing](#linux-shell-sandboxing)
     - [Context and wrapper mapping](#context-and-wrapper-mapping)
   - [System prompt builder](#system-prompt-builder)
     - [Typical wrapper integration (serdesAI)](#typical-wrapper-integration-serdesai)
@@ -36,6 +37,7 @@ llm-coding-tools-core = { version = "0.2", default-features = false, features = 
 - `tokio` (default): async runtime support
 - `blocking`: sync/blocking mode
 - `async`: internal base async feature (enabled by runtimes, not directly)
+- `linux-bubblewrap`: Sandboxing support for Linux, by leveraging `bwrap` tool.
 
 `tokio` and `blocking` are mutually exclusive.
 
@@ -83,6 +85,28 @@ fn demo() -> ToolResult<()> {
     Ok(())
 }
 ```
+
+#### Linux shell sandboxing
+
+Enable the `linux-bubblewrap` feature flag to sandbox [`bash`] ([`execute_command`])
+via Linux `bwrap`. This limits visible filesystem, environment, and network
+access for executed commands.
+
+Two profiles are available:
+
+- **Public Bot** (`Profile::public_bot_defaults`)
+  Strictest containment for hostile input. No host filesystem access, synthetic
+  home, memory-backed `/tmp`, network disabled.
+
+- **Trusted Maintenance** (`Profile::trusted_maintenance_defaults`)
+  Broader profile for builds and repairs in a more trusted environment.
+  Read-only host `/` with writable overlays, disk-backed `/tmp`, network enabled.
+
+We default to the **Public Bot** profile when sandboxing is enabled. In either
+case, evaluate whether the chosen profile fits your security needs.
+
+See [SANDBOX-PROFILES.md](https://github.com/Sewer56/llm-coding-tools/blob/main/SANDBOX-PROFILES.md) for the full operator
+guide and checklist.
 
 ### Context and wrapper mapping
 
@@ -191,7 +215,7 @@ let agent = AgentBuilder::<(), String>::new(model)
     .tool(pb.track(ReadTool::<true>::new()))
     .tool(pb.track(GlobTool::new()))
     .tool(pb.track(GrepTool::<true>::new()))
-    .tool(pb.track(BashTool::new()))
+    .tool(pb.track(BashTool::host()))
     .system_prompt(pb.build())
     .build();
 # }

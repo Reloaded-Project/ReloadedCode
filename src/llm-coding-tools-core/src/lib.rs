@@ -31,10 +31,15 @@ pub use system_prompt::SystemPromptBuilder;
 
 // Re-export tools (always available, sync or async based on runtime feature)
 pub use tools::{
-    edit_file, execute_command, glob_files, grep_search, read_file, read_todos, write_file,
-    write_todos, BashOutput, EditError, GlobOutput, GrepFileMatches, GrepLineMatch, GrepOutput,
-    TaskInput, TaskOutput, TaskSettings, Todo, TodoPriority, TodoState, TodoStatus,
+    edit_file, execute_command, execute_command_with_mode, glob_files, grep_search, read_file,
+    read_todos, write_file, write_todos, BashExecutionMode, BashOutput, EditError, GlobOutput,
+    GrepFileMatches, GrepLineMatch, GrepOutput, TaskInput, TaskOutput, TaskSettings, Todo,
+    TodoPriority, TodoState, TodoStatus,
 };
+
+// Re-export Linux sandbox types (Linux-only, requires linux-bubblewrap feature)
+#[cfg(all(feature = "linux-bubblewrap", target_os = "linux"))]
+pub use tools::linux_bwrap_profile;
 
 // Re-export webfetch tools (requires tokio or blocking feature)
 #[cfg(any(feature = "tokio", feature = "blocking"))]

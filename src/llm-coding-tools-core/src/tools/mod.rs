@@ -14,7 +14,9 @@ pub mod task;
 pub mod todo;
 pub mod write;
 
-pub use bash::{execute_command, BashOutput};
+#[cfg(all(feature = "linux-bubblewrap", target_os = "linux"))]
+pub use bash::linux_bwrap_profile;
+pub use bash::{execute_command, execute_command_with_mode, BashExecutionMode, BashOutput};
 pub use edit::{edit_file, EditError};
 pub use glob::{glob_files, GlobOutput};
 pub use grep::{grep_search, GrepFileMatches, GrepLineMatch, GrepOutput, DEFAULT_MAX_LINE_LENGTH};

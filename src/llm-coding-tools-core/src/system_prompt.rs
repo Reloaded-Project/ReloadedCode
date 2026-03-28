@@ -465,7 +465,14 @@ mod tests {
     built_in_path_tool!(BuiltInEditTool, edit::NAME, Edit);
     built_in_path_tool!(BuiltInGlobTool, glob::NAME, Glob);
     built_in_path_tool_with_line_numbers!(BuiltInGrepTool, grep::NAME, Grep);
-    built_in_tool!(BuiltInBashTool, bash::NAME, ToolPrompt::Bash);
+    built_in_tool!(
+        BuiltInBashTool,
+        bash::NAME,
+        ToolPrompt::Bash {
+            network_disabled: false,
+            sandboxed: false
+        }
+    );
     built_in_tool!(BuiltInTaskTool, task::NAME, ToolPrompt::Task);
 
     fn assert_no_triple_newlines(preamble: &str) {
@@ -1186,5 +1193,52 @@ mod tests {
         assert!(preamble.contains("Do not use it when `read` on one or a few files is enough."));
         assert!(!preamble.contains("`glob` on one or a few files is enough"));
         assert!(!preamble.contains("`grep` on one or a few files is enough"));
+    }
+
+    #[test]
+    fn bash_section_conditional_lines() {
+        struct SandboxedBashTool;
+
+        impl ToolContext for SandboxedBashTool {
+            const NAME: &'static str = bash::NAME;
+            fn context(&self) -> ToolPrompt {
+                ToolPrompt::Bash {
+                    network_disabled: true,
+                    sandboxed: true,
+                }
+            }
+        }
+
+        struct HostBashTool;
+
+        impl ToolContext for HostBashTool {
+            const NAME: &'static str = bash::NAME;
+            fn context(&self) -> ToolPrompt {
+                ToolPrompt::Bash {
+                    network_disabled: false,
+                    sandboxed: false,
+                }
+            }
+        }
+
+        let mut pb = SystemPromptBuilder::new().working_directory("/home/user/project");
+        let _ = pb.track(SandboxedBashTool);
+        let sandboxed = pb.build();
+
+        let mut pb = SystemPromptBuilder::new().working_directory("/home/user/project");
+        let _ = pb.track(HostBashTool);
+        let host = pb.build();
+
+        // Sandboxed: both conditional lines present, network line exactly once.
+        let network_lines: Vec<_> = sandboxed
+            .lines()
+            .filter(|l| l.contains("Network access is disabled in this sandbox."))
+            .collect();
+        assert_eq!(network_lines.len(), 1);
+        assert!(sandboxed.contains("Commands run inside a Linux sandbox."));
+
+        // Host: neither conditional line present.
+        assert!(!host.contains("Network access is disabled"));
+        assert!(!host.contains("Commands run inside a Linux sandbox"));
     }
 }

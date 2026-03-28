@@ -43,12 +43,21 @@ huggingface = ["serdes-ai-models/huggingface"]
 mistral = ["serdes-ai-models/mistral"]
 ollama = ["serdes-ai-models/ollama"]
 openrouter = ["serdes-ai-models/openrouter"]
+# Sandbox feature - enables bubblewrap sandboxing
+linux-bubblewrap = [
+    "dep:llm-coding-tools-bubblewrap",
+    "llm-coding-tools-core/linux-bubblewrap",
+]
 
 [dependencies]
 # Core tool operations (file read/write/edit, glob, grep, bash, etc.)
 llm-coding-tools-core = { version = "0.2.0", path = "../llm-coding-tools-core", features = [
     "tokio",
 ] }
+
+# Linux sandboxing via bubblewrap.
+# Provides sandbox profiles, presets, and sandbox availability detection.
+llm-coding-tools-bubblewrap = { version = "0.1.0", path = "../llm-coding-tools-bubblewrap", optional = true }
 
 # Generic agent runtime dependencies
 llm-coding-tools-agents = { version = "0.1.0", path = "../llm-coding-tools-agents" }
@@ -76,6 +85,7 @@ reqwest = { version = "0.13", default-features = false, features = [
 ] }
 
 [dev-dependencies]
+serial_test = "3"
 tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
 tempfile = "3"
 wiremock = "0.6"

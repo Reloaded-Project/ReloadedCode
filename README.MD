@@ -18,6 +18,8 @@ LLM agents:
   OpenCode agent markdown loader and typed catalogue
 - **[llm-coding-tools-serdesai](./src/llm-coding-tools-serdesai/)**:
   serdesAI framework-specific Tool implementations
+- **[llm-coding-tools-bubblewrap](./src/llm-coding-tools-bubblewrap/)**:
+  Sandboxing for Bash tool on Linux based on `bwrap` tool
 - **[llm-coding-tools-models-dev](./src/llm-coding-tools-models-dev/)**:
   models.dev catalog sync with cached fallback and ETag refresh
 
@@ -25,7 +27,7 @@ LLM agents:
 
 - **File Operations**: Read, write, edit files with line-numbered output
 - **Search**: Glob pattern matching and regex content search  
-- **Shell**: Cross-platform command execution with timeout
+- **Shell**: Cross-platform command execution with timeout; with optional sandboxing on Linux.
 - **Web**: URL fetching with HTML-to-markdown conversion
 - **Path Security**: Choose between unrestricted or sandboxed file access
 - **OpenCode Agents**: Support for OpenCode-style agents
@@ -38,6 +40,7 @@ LLM agents:
 
 - `tokio` (default): Async mode with tokio runtime
 - `blocking`: Sync/blocking mode, mutually exclusive with `async`
+- `linux-bubblewrap`: Sandboxing for `bash` tool via Linux `bwrap` tool
 
 ## Quick Start
 
@@ -49,6 +52,7 @@ llm-coding-tools-core = "0.2"         # Framework-agnostic tool implementations
 llm-coding-tools-agents = "0.1"       # OpenCode agent markdown loader
 llm-coding-tools-models-dev = "0.1"   # models.dev catalog sync and cache
 llm-coding-tools-serdesai = "0.2"     # serdesAI integration
+llm-coding-tools-bubblewrap = "0.1"   # Linux Bubblewrap profile and wrapper helpers
 ```
 
 For a runnable agent setup, start with `llm-coding-tools-serdesai` and the
@@ -75,7 +79,9 @@ cargo run --example serdesai-task -p llm-coding-tools-serdesai
 - [llm-coding-tools-core README](./src/llm-coding-tools-core/README.md)
 - [llm-coding-tools-agents README](./src/llm-coding-tools-agents/README.md)
 - [llm-coding-tools-serdesai README](./src/llm-coding-tools-serdesai/README.md)
+- [llm-coding-tools-bubblewrap README](./src/llm-coding-tools-bubblewrap/README.md)
 - [llm-coding-tools-models-dev README](./src/llm-coding-tools-models-dev/README.md)
+- [Sandbox profiles and operator checklist](./SANDBOX-PROFILES.md)
 - [Developer Guidelines](./src/AGENTS.md)
 
 ## Contributing

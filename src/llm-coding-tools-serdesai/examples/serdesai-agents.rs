@@ -16,7 +16,7 @@ use llm_coding_tools_serdesai::{AgentDefaults, AgentRuntimeExt};
 use std::path::PathBuf;
 
 const AGENT_NAME: &str = "basic/file-reader";
-const MODEL_ID: &str = "synthetic/hf:zai-org/GLM-4.7";
+const MODEL_ID: &str = "synthetic/hf:zai-org/GLM-4.7-Flash";
 const API_KEY_NAME: &str = "SYNTHETIC_API_KEY";
 const API_KEY_VALUE: &str = ""; // <-- Set your API key here
 

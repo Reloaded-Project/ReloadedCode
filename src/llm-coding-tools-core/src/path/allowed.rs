@@ -25,11 +25,8 @@ use std::sync::Arc;
 /// (e.g., `cat /etc/passwd`, `rm -rf /`, `curl ... | sh`).
 ///
 /// This resolver only restricts the structured file operations (`read`, `write`, `edit`,
-/// `glob`, `grep`). If your threat model requires actual filesystem sandboxing, you must
-/// either:
-///
-/// - Disable the bash tool entirely, or
-/// - Run the process in an OS-level sandbox (containers, seccomp, landlock, etc.)
+/// `glob`, `grep`). It does not make shell execution safe.
+/// See `SANDBOX-PROFILES.md` for details on sandboxing on Linux.
 #[derive(Debug, Clone)]
 pub struct AllowedPathResolver {
     /// Canonicalized allowed base directories.

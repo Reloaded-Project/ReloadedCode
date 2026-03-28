@@ -2,18 +2,7 @@
 
 [![Crates.io](https://img.shields.io/crates/v/llm-coding-tools-serdesai.svg)](https://crates.io/crates/llm-coding-tools-serdesai) [![Docs.rs](https://docs.rs/llm-coding-tools-serdesai/badge.svg)](https://docs.rs/llm-coding-tools-serdesai)
 
-Lightweight, high-performance serdesAI framework Tool implementations for coding tools.
-
-## Features
-
-- **File operations** - Read, write, edit, glob, grep with two access modes:
-  - `absolute::*` - Unrestricted filesystem access
-  - `allowed::*` - Sandboxed to configured directories
-- **Shell execution** - Cross-platform command execution with timeout
-- **Web fetching** - URL content retrieval with format conversion
-- **Todo management** - Shared-state todo list tracking
-- **Context strings** - LLM guidance text for tool usage (re-exported from core)
-- **Schema builders** - Composable helpers for custom tool definitions
+Lightweight, high-performance serdesAI implementation for [llm-coding-tools].
 
 ## Installation
 
@@ -29,9 +18,9 @@ llm-coding-tools-serdesai = "0.2"
 Minimal runnable agent (requires `OPENAI_API_KEY`):
 
 ```rust,no_run
-use llm_coding_tools_serdesai::absolute::{GlobTool, GrepTool, ReadTool};
+use llm_coding_tools_serdesai::absolute::{EditTool, GlobTool, GrepTool, ReadTool};
 use llm_coding_tools_serdesai::agent_ext::AgentBuilderExt;
-use llm_coding_tools_serdesai::{BashTool, SystemPromptBuilder, create_todo_tools};
+use llm_coding_tools_serdesai::{BashTool, SystemPromptBuilder, WebFetchTool, create_todo_tools};
 use serdes_ai::prelude::*;
 
 #[tokio::main]
@@ -44,7 +33,9 @@ async fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
         .tool(pb.track(ReadTool::<true>::new()))
         .tool(pb.track(GlobTool::new()))
         .tool(pb.track(GrepTool::<true>::new()))
-        .tool(pb.track(BashTool::new()))
+        .tool(pb.track(EditTool::new()))
+        .tool(pb.track(BashTool::host()))
+        .tool(pb.track(WebFetchTool::new()))
         .tool(pb.track(todo_read))
         .tool(pb.track(todo_write))
         .system_prompt(pb.build())  // Last, after tracking all tools
@@ -70,8 +61,8 @@ File tools come in two variants with identical APIs:
 - **`allowed::*`** - Sandboxed to configured directories via `AllowedPathResolver`
 
 ```rust,no_run
-use llm_coding_tools_serdesai::absolute::{ReadTool, WriteTool};
-use llm_coding_tools_serdesai::allowed::{ReadTool as AllowedReadTool, WriteTool as AllowedWriteTool};
+use llm_coding_tools_serdesai::absolute::{EditTool, ReadTool, WriteTool};
+use llm_coding_tools_serdesai::allowed::{EditTool as AllowedEditTool, ReadTool as AllowedReadTool, WriteTool as AllowedWriteTool};
 use llm_coding_tools_serdesai::AllowedPathResolver;
 use std::path::PathBuf;
 
@@ -82,12 +73,33 @@ let read = ReadTool::<true>::new();
 let allowed_paths = vec![PathBuf::from("/home/user/project"), PathBuf::from("/tmp")];
 let resolver = AllowedPathResolver::new(allowed_paths).unwrap();
 let sandboxed_read: AllowedReadTool<true> = AllowedReadTool::new(resolver.clone());
+let sandboxed_edit = AllowedEditTool::new(resolver.clone());
 let sandboxed_write = AllowedWriteTool::new(resolver);
 ```
 
-Other tools: `BashTool`, `WebFetchTool`, `TodoReadTool`, `TodoWriteTool`.
-
 Use `SystemPromptBuilder` to track tools and generate context-aware prompts. Context strings are re-exported in `llm_coding_tools_serdesai::context` (e.g., `BASH`, `READ_ABSOLUTE`).
+
+## Linux shell sandboxing
+
+Enable the `linux-bubblewrap` feature flag to use Linux `bwrap` sandbox profiles:
+
+```toml
+[dependencies]
+llm-coding-tools-serdesai = { version = "0.2", features = ["linux-bubblewrap"] }
+```
+
+Out of the box, 2 profiles are available:
+
+- **Public Bot**: Assumes anyone can call; and thus defaults to the strictest containment. 
+    - No full host filesystem access, synthetic home, memory-backed `/tmp`, network disabled, sanitized system `PATH`.
+- **Trusted Maintenance**: Assumes work in a more trusted environment, e.g. maintaining codebases. 
+    - Read-only host `/` with writable overlays, disk-backed `/tmp`, sanitized host `PATH`, network enabled.
+
+We default to **Public Bot** profile when sandboxing is used.
+In either case, trusted or not, please evaluate whether the solution fits your
+security needs. I can make no guarantees.
+
+More info in [SANDBOX-PROFILES.md](https://github.com/Sewer56/llm-coding-tools/blob/main/SANDBOX-PROFILES.md).
 
 ## Agent Runtime
 
@@ -164,6 +176,9 @@ cargo run --example serdesai-basic -p llm-coding-tools-serdesai
 # Sandboxed file access with allowed::* tools
 cargo run --example serdesai-sandboxed -p llm-coding-tools-serdesai
 
+# Execution with Sandboxed `bash`
+cargo run --example serdesai-sandboxed-bash --features linux-bubblewrap -p llm-coding-tools-serdesai
+
 # Markdown agent runtime (no delegation)
 cargo run --example serdesai-agents -p llm-coding-tools-serdesai
 
@@ -174,3 +189,5 @@ cargo run --example serdesai-task -p llm-coding-tools-serdesai
 ## License
 
 Apache 2.0
+
+[llm-coding-tools]: https://github.com/Sewer56/llm-coding-tools

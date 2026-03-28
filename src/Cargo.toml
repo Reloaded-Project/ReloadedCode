@@ -1,7 +1,13 @@
 
 [workspace]
 resolver = "2"
-members = ["llm-coding-tools-core", "llm-coding-tools-serdesai", "llm-coding-tools-agents", "llm-coding-tools-models-dev"]
+members = [
+    "llm-coding-tools-core",
+    "llm-coding-tools-serdesai",
+    "llm-coding-tools-agents",
+    "llm-coding-tools-models-dev",
+    "llm-coding-tools-bubblewrap",
+]
 
 # Profile Build
 [profile.profile]
