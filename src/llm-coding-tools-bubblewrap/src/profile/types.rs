@@ -222,7 +222,7 @@ impl FileMount {
 /// as `/etc/shadow` or `/etc/hostname`.
 ///
 /// # Validation
-/// - The source must be an absolute regular file on the host.
+/// - The source must be an absolute path that exists on the host.
 /// - The destination must be an absolute path.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct FileOverlay {
