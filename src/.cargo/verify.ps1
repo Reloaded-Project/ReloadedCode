@@ -65,7 +65,7 @@ try {
     Write-Host "Testing linux-bubblewrap feature..."
     if ($onLinux) {
         Invoke-LoggedCommand "cargo" @("test", "-p", "llm-coding-tools-bubblewrap", "--features", "tokio", "--quiet")
-        Invoke-LoggedCommand "cargo" @("test", "-p", "llm-coding-tools-bubblewrap", "--features", "blocking", "--quiet")
+        Invoke-LoggedCommand "cargo" @("test", "-p", "llm-coding-tools-bubblewrap", "--no-default-features", "--features", "blocking", "--quiet")
         Invoke-LoggedCommand "cargo" @("test", "-p", "llm-coding-tools-core", "--features", "linux-bubblewrap", "--quiet")
         Invoke-LoggedCommand "cargo" @("test", "-p", "llm-coding-tools-core", "--no-default-features", "--features", "blocking,linux-bubblewrap", "--quiet")
         Invoke-LoggedCommand "cargo" @("test", "-p", "llm-coding-tools-serdesai", "--features", "linux-bubblewrap", "--quiet")

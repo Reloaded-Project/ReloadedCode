@@ -57,7 +57,7 @@ run_cmd cargo clippy -p llm-coding-tools-models-dev --quiet -- -D warnings
 echo "Testing linux-bubblewrap feature..."
 if [ "$IS_LINUX" = true ]; then
   run_cmd cargo test -p llm-coding-tools-bubblewrap --features tokio --quiet
-  run_cmd cargo test -p llm-coding-tools-bubblewrap --features blocking --quiet
+  run_cmd cargo test -p llm-coding-tools-bubblewrap --no-default-features --features blocking --quiet
   run_cmd cargo test -p llm-coding-tools-core --features linux-bubblewrap --quiet
   run_cmd cargo test -p llm-coding-tools-core --no-default-features --features blocking,linux-bubblewrap --quiet
   run_cmd cargo test -p llm-coding-tools-serdesai --features linux-bubblewrap --quiet
