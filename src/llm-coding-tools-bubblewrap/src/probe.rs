@@ -109,7 +109,6 @@ pub(crate) fn find_binary_on_path(name: &str) -> Option<Box<Path>> {
 /// Returns the first shell binary for which `classify` returns [`Some`],
 /// checking `PATH` first then the hardcoded [`SHELL_CANDIDATES`].
 ///
-/// Duplicates (resolved to the same absolute path) are skipped.
 /// On success the host path and the classifier's return value are yielded
 /// together so the caller need not re-classify.
 pub(crate) fn first_shell_candidate_with<F, R>(mut classify: F) -> Option<(Box<Path>, R)>
