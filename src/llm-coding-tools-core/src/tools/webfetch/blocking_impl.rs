@@ -115,11 +115,31 @@ pub fn fetch_url(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use rstest::rstest;
 
     fn test_client() -> reqwest::blocking::Client {
         reqwest::blocking::Client::builder()
             .build()
             .expect("client build failed")
+    }
+
+    /// Verifies that invalid timeout values are rejected before making any
+    /// network request. The URL is intentionally unreachable.
+    #[rstest]
+    #[case::zero_timeout(0, 10_000)]
+    #[case::exceeds_max(11_000, 10_000)]
+    fn rejects_invalid_timeout(#[case] timeout_ms: u32, #[case] max_timeout_ms: u32) {
+        let client = test_client();
+
+        let result = fetch_url(
+            &client,
+            "http://localhost:1",
+            timeout_ms,
+            max_timeout_ms,
+            5 * 1024 * 1024,
+        );
+
+        assert!(matches!(result, Err(ToolError::Validation(_))));
     }
 
     #[test]
@@ -157,25 +177,5 @@ mod tests {
         if let Err(e) = result {
             assert!(matches!(e, ToolError::Http(_)));
         }
-    }
-
-    #[test]
-    fn rejects_timeout_zero() {
-        let client = test_client();
-        let result = fetch_url(&client, "http://localhost:1", 0, 10_000, 5 * 1024 * 1024);
-        assert!(matches!(result, Err(ToolError::Validation(_))));
-    }
-
-    #[test]
-    fn rejects_timeout_exceeding_max() {
-        let client = test_client();
-        let result = fetch_url(
-            &client,
-            "http://localhost:1",
-            11_000,
-            10_000,
-            5 * 1024 * 1024,
-        );
-        assert!(matches!(result, Err(ToolError::Validation(_))));
     }
 }

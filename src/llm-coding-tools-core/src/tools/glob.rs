@@ -130,6 +130,7 @@ pub fn glob_files<R: PathResolver>(
 mod tests {
     use super::*;
     use crate::path::AbsolutePathResolver;
+    use rstest::rstest;
     use std::fs::{self, File, FileTimes};
     use std::io::Write;
     use std::time::{Duration, SystemTime};
@@ -149,20 +150,80 @@ mod tests {
         dir
     }
 
-    #[test]
-    fn glob_matches_pattern() {
+    /// Verifies that glob patterns correctly include or exclude files based on
+    /// both pattern matching and gitignore rules.
+    #[rstest]
+    #[case::matches_rs_extension("**/*.rs", "lib.rs", true)]
+    #[case::excludes_gitignored_target("**/*", "target", false)]
+    fn glob_pattern_includes_or_excludes_files(
+        #[case] pattern: &str,
+        #[case] needle: &str,
+        #[case] should_find: bool,
+    ) {
         let dir = create_test_tree();
         let resolver = AbsolutePathResolver;
-        let result = glob_files(&resolver, "**/*.rs", dir.path().to_str().unwrap(), 1000).unwrap();
-        assert!(result.files.iter().any(|f| f.ends_with("lib.rs")));
+
+        let result = glob_files(&resolver, pattern, dir.path().to_str().unwrap(), 1000).unwrap();
+
+        let found = result.files.iter().any(|f| f.contains(needle));
+
+        assert_eq!(
+            found, should_find,
+            "pattern={pattern}, needle={needle}, files={:?}",
+            result.files
+        );
     }
 
-    #[test]
-    fn glob_respects_gitignore() {
-        let dir = create_test_tree();
-        let resolver = AbsolutePathResolver;
-        let result = glob_files(&resolver, "**/*", dir.path().to_str().unwrap(), 1000).unwrap();
-        assert!(!result.files.iter().any(|f| f.contains("target")));
+    /// Verifies that optional JSON fields are only serialized when they contain
+    /// meaningful data. GlobOutput uses `#[serde(skip_serializing_if)]` to omit
+    /// `partial` when false and `errors` when empty, producing cleaner JSON output.
+    ///
+    /// Test matrix:
+    /// - Case 1: partial=true, has errors → both fields appear in JSON
+    /// - Case 2: partial=false, no errors → neither field appears in JSON
+    ///
+    /// We verify this behaviour specifically to ensure the LLM does not receive
+    /// unnecessary tokens for default values that provide no information.
+    #[rstest]
+    #[case::partial_with_errors(true, vec!["walk error: permission denied"])]
+    #[case::clean_results_no_optional_fields(false, vec![])]
+    fn glob_output_serialization_omits_default_fields(
+        #[case] partial: bool,     // Whether walk encountered errors
+        #[case] errors: Vec<&str>, // Error messages from walk
+    ) {
+        // Save error count before consuming the vec for assertions later
+        let error_count = errors.len();
+
+        // Compute expected field presence from input values
+        let expected_partial_present = partial;
+        let expected_errors_present = !errors.is_empty();
+
+        let output = GlobOutput {
+            files: vec!["src/lib.rs".to_string()],
+            truncated: false,
+            partial,
+            errors: errors.into_iter().map(String::from).collect(),
+        };
+
+        let json = serde_json::to_value(&output).unwrap();
+
+        // Verify presence/absence of optional fields based on their values
+        assert_eq!(
+            json.get("partial").is_some(),
+            expected_partial_present,
+            "partial field presence mismatch in JSON: {json}"
+        );
+        assert_eq!(
+            json.get("errors").is_some(),
+            expected_errors_present,
+            "errors field presence mismatch in JSON: {json}"
+        );
+
+        // When errors are present, verify they serialized correctly
+        if expected_errors_present {
+            let error_values = json.get("errors").unwrap().as_array().unwrap();
+            assert_eq!(error_values.len(), error_count);
+        }
     }
 
     #[test]
@@ -198,6 +259,7 @@ mod tests {
             .position(|path| path.ends_with("older.txt"))
             .unwrap();
 
+        // Newer files should appear before older ones in the results
         assert!(
             newer_index < older_index,
             "expected newer file before older: {:?}",
@@ -212,44 +274,14 @@ mod tests {
         let resolver = AbsolutePathResolver;
         let result = glob_files(&resolver, "**/*.rs", dir.path().to_str().unwrap(), 1000).unwrap();
 
-        // Verify matching works with forward-slash patterns
+        // The only .rs file in our test tree is src/lib.rs
         assert_eq!(result.files.len(), 1);
         assert!(result.files[0].ends_with("lib.rs"));
 
-        // Verify returned paths use forward slashes (critical for Windows)
+        // Returned paths must always use forward slashes (important on Windows)
         for path in &result.files {
             assert!(!path.contains('\\'), "expected forward slashes: {path}");
         }
         assert!(result.files.iter().any(|f| f.contains('/')));
-    }
-
-    #[test]
-    fn glob_output_serializes_partial_metadata() {
-        let output = GlobOutput {
-            files: vec!["src/lib.rs".to_string()],
-            truncated: false,
-            partial: true,
-            errors: vec!["walk error: denied".to_string()],
-        };
-
-        let json = serde_json::to_value(&output).unwrap();
-
-        assert_eq!(json["partial"], true);
-        assert_eq!(json["errors"][0], "walk error: denied");
-    }
-
-    #[test]
-    fn glob_output_omits_partial_metadata_when_not_partial() {
-        let output = GlobOutput {
-            files: vec!["src/lib.rs".to_string()],
-            truncated: false,
-            partial: false,
-            errors: Vec::new(),
-        };
-
-        let json = serde_json::to_value(&output).unwrap();
-
-        assert!(json.get("partial").is_none());
-        assert!(json.get("errors").is_none());
     }
 }

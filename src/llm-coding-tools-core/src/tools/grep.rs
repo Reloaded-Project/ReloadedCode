@@ -264,90 +264,178 @@ mod tests {
     use rstest::rstest;
     use tempfile::tempdir;
 
-    #[test]
-    fn grep_finds_matches() {
+    /// Verifies that grep search returns the expected number of files and matches
+    /// for different file layouts and optional glob filters.
+    #[rstest]
+    #[case::single_file_no_filter(
+        vec![("match.txt", "hello world")], // files: 1 file with 1 match
+        "hello",                            // pattern: matches 1 place
+        None::<&str>,                       // filter: none (search all)
+        1,                                  // expected: 1 file matched
+        1                                   // expected: 1 total match
+    )]
+    #[case::glob_filters_to_rs_only(
+        vec![("match.rs", "hello"), ("match.txt", "hello")], // files: 2 files, same pattern
+        "hello",                                             // pattern: matches 1 place in each
+        Some("*.rs"),                                        // filter: only .rs files
+        1,                                                   // expected: 1 file matched (.rs only)
+        1                                                    // expected: 1 total match
+    )]
+    #[case::no_matches_found(
+        vec![("notes.txt", "goodbye")], // files: 1 file with no match
+        "hello",                        // pattern: matches 0 places
+        None::<&str>,                   // filter: none (search all)
+        0,                              // expected: 0 files matched
+        0                               // expected: 0 total matches
+    )]
+    #[case::multiple_files_multiple_matches(
+        vec![("a.txt", "hello\nworld"), ("b.txt", "hello\nhello")], // files: 2 files
+        "hello",                                                    // pattern: matches 1+2 places
+        None::<&str>,                                               // filter: none (search all)
+        2,                                                          // expected: 2 files matched
+        3                                                           // expected: 3 total matches
+    )]
+    #[case::glob_excludes_everything(
+        vec![("match.rs", "hello")], // files: 1 file that would match
+        "hello",                     // pattern: matches 0 places (file excluded)
+        Some("*.py"),                // filter: only .py files (excludes .rs)
+        0,                           // expected: 0 files matched (all excluded)
+        0                            // expected: 0 total matches
+    )]
+    fn grep_search_finds_expected_matches(
+        #[case] files: Vec<(&str, &str)>,
+        #[case] pattern: &str,
+        #[case] include: Option<&str>,
+        #[case] expected_file_count: usize,
+        #[case] expected_match_count: usize,
+    ) {
         let temp = tempdir().unwrap();
-        std::fs::write(temp.path().join("match.txt"), "hello world").unwrap();
-        let resolver = AbsolutePathResolver;
-
-        let result =
-            grep_search(&resolver, "hello", None, temp.path().to_str().unwrap(), 10).unwrap();
-
-        assert_eq!(result.files.len(), 1);
-        assert_eq!(result.match_count, 1);
-    }
-
-    #[test]
-    fn grep_respects_glob_filter() {
-        let temp = tempdir().unwrap();
-        std::fs::write(temp.path().join("match.rs"), "hello").unwrap();
-        std::fs::write(temp.path().join("match.txt"), "hello").unwrap();
+        for (name, content) in files {
+            std::fs::write(temp.path().join(name), content).unwrap();
+        }
         let resolver = AbsolutePathResolver;
 
         let result = grep_search(
             &resolver,
-            "hello",
-            Some("*.rs"),
+            pattern,
+            include,
             temp.path().to_str().unwrap(),
             10,
         )
         .unwrap();
 
-        assert_eq!(result.files.len(), 1);
-        assert!(result.files[0].path.ends_with(".rs"));
+        assert_eq!(result.files.len(), expected_file_count);
+        assert_eq!(result.match_count, expected_match_count);
+
+        // Verify glob filtering works correctly
+        if let Some(glob) = include {
+            for file in &result.files {
+                assert!(file
+                    .path
+                    .ends_with(glob.trim_start_matches('*').trim_start_matches('.')));
+            }
+        }
     }
 
-    #[test]
-    fn grep_format_includes_partial_marker() {
+    /// Verifies that format output displays correct status markers for different
+    /// combinations of partial results and truncation flags.
+    #[rstest]
+    #[case::partial_only(true, false, true, false)]
+    #[case::truncated_only(false, true, false, true)]
+    #[case::both_flags(true, true, true, true)]
+    #[case::neither_flag(false, false, false, false)]
+    fn grep_format_displays_status_markers(
+        #[case] partial: bool,
+        #[case] truncated: bool,
+        #[case] expect_partial_msg: bool,
+        #[case] expect_truncated_msg: bool,
+    ) {
+        let errors = if partial {
+            vec!["walk error: denied".to_string()]
+        } else {
+            Vec::new()
+        };
+
         let output = GrepOutput {
             files: Vec::new(),
             match_count: 0,
-            truncated: false,
-            partial: true,
-            errors: vec!["walk error: denied".to_string()],
+            truncated,
+            partial,
+            errors,
         };
 
         let formatted = output.format::<true>(10, DEFAULT_MAX_LINE_LENGTH);
 
-        assert!(formatted.contains("Partial results"));
+        assert_eq!(formatted.contains("Partial results"), expect_partial_msg);
+        assert_eq!(
+            formatted.contains("Results truncated"),
+            expect_truncated_msg
+        );
     }
 
-    #[test]
-    fn collect_file_matches_reports_error_for_missing_file() {
+    /// Verifies how collect_file_matches handles various file edge cases like
+    /// missing files and binary content.
+    #[rstest]
+    #[case::missing_file(
+        "missing.txt", // file: does not exist on disk
+        true,          // expect_error: search fails (file not found)
+        0              // expected_match_count: 0 matches (search never ran)
+    )]
+    #[case::binary_file(
+        "binary.bin",  // file: binary with null bytes
+        false,         // expect_error: no error (binary skipped gracefully)
+        0              // expected_match_count: 0 matches (binary not searched)
+    )]
+    fn collect_file_matches_handles_edge_cases(
+        #[case] file_name: &str,
+        #[case] expect_error: bool,
+        #[case] expected_match_count: usize,
+    ) {
         let temp = tempdir().unwrap();
-        let missing = temp.path().join("missing.txt");
+        let target_path = temp.path().join(file_name);
+
+        // Create binary file if testing binary detection
+        if file_name == "binary.bin" {
+            std::fs::write(&target_path, b"hello\x00world").unwrap();
+        }
+
         let matcher = RegexMatcher::new("hello").unwrap();
         let mut searcher = SearcherBuilder::new()
             .binary_detection(BinaryDetection::quit(0))
             .build();
 
-        let result = collect_file_matches(&matcher, &mut searcher, &missing);
+        let result = collect_file_matches(&matcher, &mut searcher, &target_path);
 
-        assert!(result.matches.is_empty());
-        assert!(result.error.is_some());
+        assert_eq!(result.matches.len(), expected_match_count);
+        assert_eq!(result.error.is_some(), expect_error);
     }
 
-    #[test]
-    fn grep_marks_results_partial_when_walker_reports_error() {
-        let temp = tempdir().unwrap();
-        let missing_root = temp.path().join("missing-root");
-        let resolver = AbsolutePathResolver;
-
-        let result =
-            grep_search(&resolver, "hello", None, missing_root.to_str().unwrap(), 10).unwrap();
-
-        assert!(result.partial);
-        assert_eq!(result.match_count, 0);
-        assert!(!result.truncated);
-        assert!(!result.errors.is_empty());
-    }
-
+    /// Verifies that line truncation in formatted output behaves correctly for
+    /// different line lengths and line number settings.
     #[rstest]
-    #[case(true, 6, "L1: abc...")] // With line numbers, truncates to "abc..."
-    #[case(false, 4, "  a...")] // Without line numbers, at min limit "  a..."
-    fn grep_format_truncates_lines_with_ellipsis(
-        #[case] with_line_numbers: bool,
+    #[case::with_line_numbers_short(
+        6,           // max_len: line "abcdefghij" (10 chars) truncated to 6
+        true,        // with_line_numbers: yes, shows "L1: " prefix
+        "L1: abc..." // expected: truncated with line number prefix
+    )]
+    #[case::without_line_numbers_short(
+        4,        // max_len: line truncated to 4 chars
+        false,    // with_line_numbers: no prefix
+        "  a..."  // expected: truncated without line number prefix
+    )]
+    #[case::no_truncation_when_fits(
+        200,             // max_len: larger than line length (10 chars)
+        true,            // with_line_numbers: yes
+        "L1: abcdefghij" // expected: full line preserved, no truncation
+    )]
+    #[case::exact_boundary_no_truncation(
+        10,              // max_len: exactly matches line length (10 chars)
+        true,            // with_line_numbers: yes
+        "L1: abcdefghij" // expected: full line preserved, boundary not exceeded
+    )]
+    fn grep_format_handles_line_truncation(
         #[case] max_len: usize,
+        #[case] with_line_numbers: bool,
         #[case] expected: &str,
     ) {
         let output = GrepOutput {
@@ -370,11 +458,28 @@ mod tests {
         } else {
             output.format::<false>(10, max_len)
         };
+
         assert!(
             formatted.contains(expected),
             "Expected '{}' in:\n{}",
             expected,
             formatted
         );
+    }
+
+    #[test]
+    fn grep_marks_results_partial_when_walker_reports_error() {
+        let temp = tempdir().unwrap();
+        let missing_root = temp.path().join("missing-root");
+        let resolver = AbsolutePathResolver;
+
+        let result =
+            grep_search(&resolver, "hello", None, missing_root.to_str().unwrap(), 10).unwrap();
+
+        // Walker errors should mark results as partial but not truncated
+        assert!(result.partial);
+        assert!(!result.truncated);
+        assert!(!result.errors.is_empty());
+        assert_eq!(result.match_count, 0);
     }
 }

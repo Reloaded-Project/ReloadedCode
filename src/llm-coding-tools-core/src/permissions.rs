@@ -7,7 +7,7 @@
 //! - Evaluation is **last-match-wins**.
 //! - If nothing matches, the result is [`PermissionAction::Deny`].
 //!
-//! Matching behavior:
+//! Matching behaviour:
 //! - Permission key: exact match (case-sensitive), no wildcard expansion.
 //! - Subject pattern: wildcard matching with `*` (many chars) and `?` (one char).
 //!
@@ -296,70 +296,156 @@ fn wildcard_match_impl(input: &[u8], pattern: &[u8]) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use rstest::rstest;
 
-    // ===== Wildcard matching tests =====
-
-    #[test]
-    fn wildcard_star_matches_everything() {
-        assert!(wildcard_match("anything", "*"));
-        assert!(wildcard_match("", "*"));
-        assert!(wildcard_match("a/b/c", "*"));
+    /// Verifies that wildcard patterns match inputs correctly for various
+    /// pattern types: star (*), question mark (?), and combinations.
+    #[rstest]
+    // Star matches any string including empty
+    #[case::star_matches_anything(
+        "anything",  // input: any non-empty string
+        "*",         // pattern: single star matches everything
+        true         // matches: yes
+    )]
+    #[case::star_matches_empty(
+        "",          // input: empty string
+        "*",         // pattern: star matches empty too
+        true         // matches: yes
+    )]
+    // Exact match requires identical strings
+    #[case::exact_match(
+        "bash",      // input: exact string
+        "bash",      // pattern: identical string
+        true         // matches: yes (exact match)
+    )]
+    #[case::exact_mismatch(
+        "bash",      // input: one string
+        "task",      // pattern: different string
+        false        // matches: no (not identical)
+    )]
+    // Prefix patterns match from start
+    #[case::prefix_star(
+        "orchestrator-builder", // input: starts with prefix
+        "orchestrator-*",       // pattern: prefix + star suffix
+        true                    // matches: yes (prefix matches)
+    )]
+    #[case::prefix_star_match_empty_suffix(
+        "orchestrator-",  // input: prefix only, empty suffix
+        "orchestrator-*", // pattern: prefix + star
+        true              // matches: yes (star matches empty)
+    )]
+    #[case::prefix_star_no_match(
+        "other-builder",  // input: different prefix
+        "orchestrator-*", // pattern: specific prefix required
+        false             // matches: no (wrong prefix)
+    )]
+    // Suffix patterns match from end
+    #[case::suffix_star(
+        "pre-bash",  // input: ends with suffix
+        "*-bash",    // pattern: star prefix + suffix
+        true         // matches: yes (suffix matches)
+    )]
+    #[case::suffix_star_match_empty_prefix(
+        "-bash",     // input: suffix only, empty prefix
+        "*-bash",    // pattern: star + suffix
+        true         // matches: yes (star matches empty)
+    )]
+    #[case::suffix_star_no_match(
+        "bash-post", // input: different ending
+        "*-bash",    // pattern: specific suffix required
+        false        // matches: no (wrong suffix)
+    )]
+    // Middle star matches substring
+    #[case::middle_star(
+        "a-middle-z", // input: middle substring present
+        "a-*-z",      // pattern: prefix + star + suffix
+        true          // matches: yes (middle exists)
+    )]
+    #[case::middle_star_empty_middle(
+        "a--z",     // input: empty middle (adjacent delimiters)
+        "a-*-z",    // pattern: prefix + star + suffix
+        true        // matches: yes (star matches empty)
+    )]
+    #[case::middle_star_no_match(
+        "a-middle", // input: missing suffix
+        "a-*-z",    // pattern: requires suffix
+        false       // matches: no (no suffix)
+    )]
+    // Question mark matches exactly one character
+    #[case::question_mark(
+        "test", // input: one char at position 3
+        "te?t", // pattern: te + ? + t
+        true    // matches: yes (s matches ?)
+    )]
+    #[case::question_mark_another(
+        "teat", // input: different char at position 3
+        "te?t", // pattern: te + ? + t
+        true    // matches: yes (a matches ?)
+    )]
+    #[case::question_mark_too_many(
+        "teest", // input: two chars at position 3
+        "te?t",  // pattern: exactly one char required
+        false    // matches: no (too many chars)
+    )]
+    #[case::question_mark_too_few(
+        "tet",  // input: zero chars at position 3
+        "te?t", // pattern: exactly one char required
+        false   // matches: no (too few chars)
+    )]
+    // Multiple stars work together
+    #[case::multiple_stars_path(
+        "a/b/c", // input: path with slash
+        "*/*",   // pattern: two stars match components
+        true     // matches: yes
+    )]
+    #[case::multiple_stars_complex(
+        "abc",   // input: surrounded chars
+        "*a*c*", // pattern: stars on both sides
+        true     // matches: yes
+    )]
+    // Empty input edge cases
+    #[case::empty_input_with_star(
+        "",    // input: empty string
+        "*",   // pattern: star matches empty
+        true   // matches: yes
+    )]
+    #[case::empty_input_with_question(
+        "",    // input: empty string
+        "?",   // pattern: requires one char
+        false  // matches: no (empty has zero)
+    )]
+    #[case::empty_input_with_literal(
+        "",    // input: empty string
+        "a",   // pattern: requires literal "a"
+        false  // matches: no (not equal)
+    )]
+    fn wildcard_pattern_matching(
+        #[case] input: &str,
+        #[case] pattern: &str,
+        #[case] should_match: bool,
+    ) {
+        assert_eq!(wildcard_match(input, pattern), should_match);
     }
 
-    #[test]
-    fn wildcard_exact_match() {
-        assert!(wildcard_match("bash", "bash"));
-        assert!(!wildcard_match("bash", "task"));
-    }
-
-    #[test]
-    fn wildcard_prefix_star() {
-        assert!(wildcard_match("orchestrator-builder", "orchestrator-*"));
-        assert!(wildcard_match("orchestrator-", "orchestrator-*"));
-        assert!(!wildcard_match("other-builder", "orchestrator-*"));
-    }
-
-    #[test]
-    fn wildcard_suffix_star() {
-        assert!(wildcard_match("pre-bash", "*-bash"));
-        assert!(wildcard_match("-bash", "*-bash"));
-        assert!(!wildcard_match("bash-post", "*-bash"));
-    }
-
-    #[test]
-    fn wildcard_middle_star() {
-        assert!(wildcard_match("a-middle-z", "a-*-z"));
-        assert!(wildcard_match("a--z", "a-*-z"));
-        assert!(!wildcard_match("a-middle", "a-*-z"));
-    }
-
-    #[test]
-    fn wildcard_question_mark() {
-        assert!(wildcard_match("test", "te?t"));
-        assert!(wildcard_match("teat", "te?t"));
-        assert!(!wildcard_match("teest", "te?t"));
-        assert!(!wildcard_match("tet", "te?t"));
-    }
-
-    #[test]
-    fn wildcard_multiple_stars() {
-        assert!(wildcard_match("a/b/c", "*/*"));
-        assert!(wildcard_match("abc", "*a*c*"));
-    }
-
-    #[test]
-    fn wildcard_empty_input() {
-        assert!(wildcard_match("", "*"));
-        assert!(!wildcard_match("", "?"));
-        assert!(!wildcard_match("", "a"));
-    }
-
-    // ===== Rule tests =====
-
-    #[test]
-    fn rule_preserves_pattern_casing() {
-        let rule = Rule::new("BASH", "PATTERN", PermissionAction::Allow);
-        assert_eq!(rule.pattern(), "PATTERN");
+    /// Verifies that Rule preserves casing and computes correct hashes.
+    #[rstest]
+    #[case::pattern_casing(
+        "BASH",      // permission: uppercase permission key
+        "PATTERN",   // pattern: uppercase pattern string
+        "PATTERN"    // expected: pattern unchanged (preserves casing)
+    )]
+    #[case::lowercase_pattern(
+        "bash",      // permission: lowercase permission key
+        "pattern",   // pattern: lowercase pattern string
+        "pattern"    // expected: pattern unchanged (preserves casing)
+    )]
+    fn rule_preserves_casing(
+        #[case] permission: &str,
+        #[case] pattern: &str,
+        #[case] expected: &str,
+    ) {
+        let rule = Rule::new(permission, pattern, PermissionAction::Allow);
+        assert_eq!(rule.pattern(), expected);
     }
 
     #[test]
@@ -381,99 +467,144 @@ mod tests {
         assert_eq!(std::mem::size_of::<Rule>(), 32);
     }
 
-    // ===== Ruleset tests =====
-
-    #[test]
-    fn ruleset_evaluate_default_deny() {
-        let ruleset = Ruleset::new();
-        assert_eq!(ruleset.evaluate("bash", "anything"), PermissionAction::Deny);
+    /// Verifies that Ruleset evaluates rules correctly, including default deny
+    /// and last-match-wins behaviour.
+    #[rstest]
+    // Default is deny when no rules match
+    #[case::default_deny(
+        vec![],                // rules: empty ruleset
+        ("bash", "anything"),  // evaluate: permission="bash", subject="anything"
+        PermissionAction::Deny // expected: default deny (no matching rules)
+    )]
+    // Simple allow rule permits matching permission
+    #[case::simple_allow(
+        vec![("bash", "*", PermissionAction::Allow)], // rules: allow all for "bash" permission
+        ("bash", "anything"),                         // evaluate: matches permission="bash"
+        PermissionAction::Allow                       // expected: allow (rule matches)
+    )]
+    // Non-matching permission is still denied
+    #[case::simple_allow_nonmatch(
+        vec![("bash", "*", PermissionAction::Allow)], // rules: allow all for "bash" only
+        ("task", "anything"),                         // evaluate: different permission="task"
+        PermissionAction::Deny                        // expected: deny (no matching rules)
+    )]
+    // Last match wins when multiple rules apply
+    #[case::last_match_wins_allow(
+        vec![
+            ("task", "*", PermissionAction::Deny),              // rules[0]: deny all task
+            ("task", "orchestrator-*", PermissionAction::Allow) // rules[1]: allow orchestrator-*
+        ],
+        ("task", "orchestrator-builder"),                       // evaluate: matches both rules
+        PermissionAction::Allow                                 // expected: allow (rules[1] wins)
+    )]
+    #[case::last_match_wins_deny(
+        vec![
+            ("task", "orchestrator-*", PermissionAction::Allow),  // rules[0]: allow orchestrator-*
+            ("task", "*", PermissionAction::Deny)                 // rules[1]: deny all task
+        ],
+        ("task", "orchestrator-builder"),                         // evaluate: matches both rules
+        PermissionAction::Deny                                    // expected: deny (rules[1] wins)
+    )]
+    // Only first rule applies when second doesn't match
+    #[case::partial_match_first_rule(
+        vec![
+            ("task", "*", PermissionAction::Deny),              // rules[0]: deny all task (matches)
+            ("task", "orchestrator-*", PermissionAction::Allow) // rules[1]: allow orchestrator-* (doesn't match)
+        ],
+        ("task", "random-agent"),                              // evaluate: only matches rules[0]
+        PermissionAction::Deny                                 // expected: deny (only first rule matches)
+    )]
+    fn ruleset_evaluate(
+        #[case] rules: Vec<(&str, &str, PermissionAction)>,
+        #[case] (permission, target): (&str, &str),
+        #[case] expected: PermissionAction,
+    ) {
+        let mut ruleset = Ruleset::new();
+        for (perm, pat, action) in rules {
+            ruleset.push(Rule::new(perm, pat, action));
+        }
+        assert_eq!(ruleset.evaluate(permission, target), expected);
     }
 
-    #[test]
-    fn ruleset_evaluate_simple_allow() {
+    /// Verifies that permission keys and patterns are case-sensitive.
+    #[rstest]
+    #[case::permission_uppercase(
+        vec![("BASH", "*", PermissionAction::Allow)], // rules: allow all for "BASH" permission
+        ("BASH", "test"),                             // evaluate: exact case match
+        PermissionAction::Allow                       // expected: allow (exact case match)
+    )]
+    #[case::permission_lowercase_no_match(
+        vec![("BASH", "*", PermissionAction::Allow)], // rules: allow all for "BASH" only
+        ("bash", "test"),                             // evaluate: different case "bash"
+        PermissionAction::Deny                        // expected: deny (case mismatch)
+    )]
+    #[case::pattern_uppercase(
+        vec![("task", "AGENT-*", PermissionAction::Allow)], // rules: allow AGENT-* pattern
+        ("task", "AGENT-foo"),                              // evaluate: exact case match
+        PermissionAction::Allow                             // expected: allow (exact case match)
+    )]
+    #[case::pattern_lowercase_no_match(
+        vec![("task", "AGENT-*", PermissionAction::Allow)], // rules: allow AGENT-* only
+        ("task", "agent-foo"),                              // evaluate: different case "agent-foo"
+        PermissionAction::Deny                              // expected: deny (case mismatch)
+    )]
+    fn ruleset_evaluate_case_sensitive(
+        #[case] rules: Vec<(&str, &str, PermissionAction)>,
+        #[case] (permission, target): (&str, &str),
+        #[case] expected: PermissionAction,
+    ) {
         let mut ruleset = Ruleset::new();
-        ruleset.push(Rule::new("bash", "*", PermissionAction::Allow));
-
-        assert_eq!(
-            ruleset.evaluate("bash", "anything"),
-            PermissionAction::Allow
-        );
-        assert_eq!(ruleset.evaluate("task", "anything"), PermissionAction::Deny);
+        for (perm, pat, action) in rules {
+            ruleset.push(Rule::new(perm, pat, action));
+        }
+        assert_eq!(ruleset.evaluate(permission, target), expected);
     }
 
-    #[test]
-    fn ruleset_evaluate_last_match_wins() {
+    /// Verifies that wildcards in the first parameter of Rule::new() (permission)
+    /// do NOT match other keys.
+    ///
+    /// The permission field requires exact match only - "*" is treated as a literal
+    /// string, not a wildcard. So a rule with permission="*" only matches when the
+    /// evaluated permission is exactly "*", not "bash" or any other value.
+    ///
+    /// This differs from the second parameter (pattern/target) which does support
+    /// wildcards.
+    #[rstest]
+    #[case::star_permission_not_bash(
+        vec![("*", "*", PermissionAction::Allow)], // rules: allow all for permission="*" only
+        ("bash", "anything"),                      // evaluate: different permission="bash"
+        PermissionAction::Deny                     // expected: deny (no match, must be exact)
+    )]
+    #[case::star_permission_matches_star(
+        vec![("*", "*", PermissionAction::Allow)], // rules: allow all for permission="*"
+        ("*", "anything"),                         // evaluate: exact match on permission="*"
+        PermissionAction::Allow                    // expected: allow (exact permission match)
+    )]
+    #[case::bash_star_permission_not_bash(
+        vec![("bash*", "*", PermissionAction::Allow)], // rules: allow all for permission="bash*"
+        ("bash", "anything"),                          // evaluate: different permission="bash"
+        PermissionAction::Deny                         // expected: deny (must be exact)
+    )]
+    #[case::bash_star_permission_not_bash_extended(
+        vec![("bash*", "*", PermissionAction::Allow)], // rules: allow all for permission="bash*"
+        ("bash-extended", "anything"),                 // evaluate: different permission="bash-extended"
+        PermissionAction::Deny                         // expected: deny (must be exact)
+    )]
+    #[case::bash_star_permission_matches_exact(
+        vec![("bash*", "*", PermissionAction::Allow)], // rules: allow all for permission="bash*"
+        ("bash*", "anything"),                         // evaluate: exact match on permission="bash*"
+        PermissionAction::Allow                        // expected: allow (exact permission match)
+    )]
+    fn ruleset_evaluate_permission_exact_match_only(
+        #[case] rules: Vec<(&str, &str, PermissionAction)>,
+        #[case] (permission, target): (&str, &str),
+        #[case] expected: PermissionAction,
+    ) {
         let mut ruleset = Ruleset::new();
-        ruleset.push(Rule::new("task", "*", PermissionAction::Deny));
-        ruleset.push(Rule::new("task", "orchestrator-*", PermissionAction::Allow));
-
-        // "orchestrator-builder" matches both rules, but last one wins
-        assert_eq!(
-            ruleset.evaluate("task", "orchestrator-builder"),
-            PermissionAction::Allow
-        );
-        // "random-agent" only matches first rule
-        assert_eq!(
-            ruleset.evaluate("task", "random-agent"),
-            PermissionAction::Deny
-        );
-    }
-
-    #[test]
-    fn ruleset_evaluate_case_sensitive() {
-        let mut ruleset = Ruleset::new();
-        ruleset.push(Rule::new("BASH", "*", PermissionAction::Allow));
-
-        assert_eq!(ruleset.evaluate("BASH", "test"), PermissionAction::Allow);
-        assert_eq!(ruleset.evaluate("bash", "test"), PermissionAction::Deny);
-        assert_eq!(ruleset.evaluate("Bash", "test"), PermissionAction::Deny);
-    }
-
-    #[test]
-    fn ruleset_evaluate_pattern_case_sensitive() {
-        let mut ruleset = Ruleset::new();
-        ruleset.push(Rule::new("task", "AGENT-*", PermissionAction::Allow));
-
-        assert_eq!(
-            ruleset.evaluate("task", "AGENT-foo"),
-            PermissionAction::Allow
-        );
-        assert_eq!(
-            ruleset.evaluate("task", "agent-foo"),
-            PermissionAction::Deny
-        );
-        assert_eq!(
-            ruleset.evaluate("task", "Agent-Bar"),
-            PermissionAction::Deny
-        );
-    }
-
-    #[test]
-    fn ruleset_evaluate_permission_exact_match_only() {
-        // Wildcards in permission key should NOT match multiple tools
-        let mut ruleset = Ruleset::new();
-        ruleset.push(Rule::new("*", "*", PermissionAction::Allow));
-
-        // A rule with permission "*" only matches permission key "*", not "bash"
-        assert_eq!(ruleset.evaluate("bash", "anything"), PermissionAction::Deny);
-        assert_eq!(ruleset.evaluate("*", "anything"), PermissionAction::Allow);
-    }
-
-    #[test]
-    fn ruleset_evaluate_permission_no_wildcard_expansion() {
-        // Rule with "bash*" permission should NOT match "bash-extended"
-        let mut ruleset = Ruleset::new();
-        ruleset.push(Rule::new("bash*", "*", PermissionAction::Allow));
-
-        assert_eq!(ruleset.evaluate("bash", "anything"), PermissionAction::Deny);
-        assert_eq!(
-            ruleset.evaluate("bash-extended", "anything"),
-            PermissionAction::Deny
-        );
-        assert_eq!(
-            ruleset.evaluate("bash*", "anything"),
-            PermissionAction::Allow
-        );
+        for (perm, pat, action) in rules {
+            ruleset.push(Rule::new(perm, pat, action));
+        }
+        assert_eq!(ruleset.evaluate(permission, target), expected);
     }
 
     #[test]
@@ -509,27 +640,5 @@ mod tests {
 
         let combined = Ruleset::merged([&r1, &r2]);
         assert_eq!(combined.evaluate("a", "x"), PermissionAction::Allow);
-    }
-
-    #[test]
-    fn ruleset_precedence_specific_overrides_wildcard_when_specific_is_last() {
-        let mut ruleset = Ruleset::new();
-        ruleset.push(Rule::new("task", "*", PermissionAction::Deny));
-        ruleset.push(Rule::new("task", "orchestrator-*", PermissionAction::Allow));
-        assert_eq!(
-            ruleset.evaluate("task", "orchestrator-review"),
-            PermissionAction::Allow
-        );
-    }
-
-    #[test]
-    fn ruleset_precedence_wildcard_overrides_specific_when_wildcard_is_last() {
-        let mut ruleset = Ruleset::new();
-        ruleset.push(Rule::new("task", "orchestrator-*", PermissionAction::Allow));
-        ruleset.push(Rule::new("task", "*", PermissionAction::Deny));
-        assert_eq!(
-            ruleset.evaluate("task", "orchestrator-review"),
-            PermissionAction::Deny
-        );
     }
 }

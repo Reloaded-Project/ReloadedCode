@@ -125,6 +125,7 @@ impl PathResolver for AllowedPathResolver {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use rstest::rstest;
     use std::fs;
     use tempfile::TempDir;
 
@@ -136,64 +137,43 @@ mod tests {
         dir
     }
 
-    #[test]
-    fn resolves_relative_path_in_allowed_dir() {
+    /// Verifies that valid paths resolve successfully, including both existing
+    /// files and new files that don't exist yet (important for write operations).
+    #[rstest]
+    #[case::existing_file_in_root("file.txt", "file.txt")] // exists: created by setup_test_dir()
+    #[case::nested_existing_file("subdir/nested.txt", "nested.txt")] // exists: created by setup_test_dir()
+    #[case::new_file_in_root("new_file.txt", "new_file.txt")] // does NOT exist: tests write path resolution
+    #[case::new_file_in_subdir("subdir/new_file.txt", "new_file.txt")] // does NOT exist: tests write path resolution
+    fn resolves_valid_paths_successfully(
+        #[case] input_path: &str,
+        #[case] expected_filename: &str,
+    ) {
         let dir = setup_test_dir();
         let resolver = AllowedPathResolver::new(vec![dir.path().to_path_buf()]).unwrap();
 
-        let result = resolver.resolve("file.txt");
-        assert!(result.is_ok());
-        assert!(result.unwrap().ends_with("file.txt"));
+        let result = resolver.resolve(input_path);
+        let resolved = result.expect("path should resolve successfully");
+        assert!(
+            resolved.ends_with(expected_filename),
+            "resolved path should end with '{expected_filename}'"
+        );
     }
 
-    #[test]
-    fn resolves_nested_path() {
+    /// Verifies that path traversal attempts are blocked regardless of
+    /// how the escape is constructed.
+    #[rstest]
+    #[case::parent_traversal("../../../etc/passwd")]
+    #[case::nested_parent_traversal("subdir/../../../new_file.txt")]
+    fn rejects_paths_that_escape_allowed_directory(#[case] input_path: &str) {
         let dir = setup_test_dir();
         let resolver = AllowedPathResolver::new(vec![dir.path().to_path_buf()]).unwrap();
 
-        let result = resolver.resolve("subdir/nested.txt");
-        assert!(result.is_ok());
-    }
-
-    #[test]
-    fn rejects_path_traversal() {
-        let dir = setup_test_dir();
-        let resolver = AllowedPathResolver::new(vec![dir.path().to_path_buf()]).unwrap();
-
-        let result = resolver.resolve("../../../etc/passwd");
-        assert!(result.is_err());
-        assert!(result
-            .unwrap_err()
-            .to_string()
-            .contains("not within allowed"));
-    }
-
-    #[test]
-    fn allows_non_existent_path_for_write() {
-        let dir = setup_test_dir();
-        let resolver = AllowedPathResolver::new(vec![dir.path().to_path_buf()]).unwrap();
-
-        let result = resolver.resolve("new_file.txt");
-        assert!(result.is_ok());
-    }
-
-    #[test]
-    fn allows_nested_non_existent_path() {
-        let dir = setup_test_dir();
-        let resolver = AllowedPathResolver::new(vec![dir.path().to_path_buf()]).unwrap();
-
-        let result = resolver.resolve("subdir/new_file.txt");
-        assert!(result.is_ok());
-    }
-
-    #[test]
-    fn rejects_non_existent_path_outside_allowed() {
-        let dir = setup_test_dir();
-        let resolver = AllowedPathResolver::new(vec![dir.path().to_path_buf()]).unwrap();
-
-        // Parent traversal in non-existent path
-        let result = resolver.resolve("subdir/../../../new_file.txt");
-        assert!(result.is_err());
+        let result = resolver.resolve(input_path);
+        let err = result.expect_err("path should be rejected");
+        assert!(
+            err.to_string().contains("not within allowed"),
+            "error should mention 'not within allowed'"
+        );
     }
 
     #[test]
@@ -212,14 +192,15 @@ mod tests {
     }
 
     #[test]
-    fn returns_canonical_path() {
+    fn returns_canonical_path_without_dotdots() {
         let dir = setup_test_dir();
         let resolver = AllowedPathResolver::new(vec![dir.path().to_path_buf()]).unwrap();
 
-        let result = resolver.resolve("subdir/../file.txt");
-        assert!(result.is_ok());
-        // Should resolve to the canonical path without ../
-        let resolved = result.unwrap();
-        assert!(!resolved.to_string_lossy().contains(".."));
+        // Path with ".." should be normalized
+        let resolved = resolver.resolve("subdir/../file.txt").unwrap();
+        assert!(
+            !resolved.to_string_lossy().contains(".."),
+            "canonical path should not contain '..'"
+        );
     }
 }

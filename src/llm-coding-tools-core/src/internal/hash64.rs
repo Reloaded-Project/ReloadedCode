@@ -37,21 +37,22 @@ pub(crate) fn hash_u64_bytes(bytes: &[u8]) -> Hash64 {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use rstest::rstest;
 
-    #[test]
-    fn hash_is_deterministic() {
-        let hash1 = hash_u64("bash");
-        let hash2 = hash_u64("bash");
-        assert_eq!(hash1, hash2);
-    }
-
-    #[test]
-    fn different_inputs_produce_different_hashes() {
-        let h1 = hash_u64("bash");
-        let h2 = hash_u64("read");
-        let h3 = hash_u64("write");
-        assert_ne!(h1, h2);
-        assert_ne!(h1, h3);
-        assert_ne!(h2, h3);
+    /// Verifies that the hash function is deterministic for identical inputs
+    /// and produces different hashes for different inputs.
+    #[rstest]
+    #[case::same_input("bash", "bash", true)]
+    #[case::different_inputs("bash", "read", false)]
+    #[case::different_inputs_2("bash", "write", false)]
+    #[case::different_inputs_3("read", "write", false)]
+    fn hash_properties(#[case] a: &str, #[case] b: &str, #[case] should_equal: bool) {
+        let hash_a = hash_u64(a);
+        let hash_b = hash_u64(b);
+        if should_equal {
+            assert_eq!(hash_a, hash_b);
+        } else {
+            assert_ne!(hash_a, hash_b);
+        }
     }
 }

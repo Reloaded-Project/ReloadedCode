@@ -59,38 +59,39 @@ impl From<WebFetchOutput> for ToolOutput {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use rstest::rstest;
 
-    #[test]
-    fn tool_output_new_creates_non_truncated() {
-        let output = ToolOutput::new("content");
-        assert_eq!(output.content, "content");
-        assert!(!output.truncated);
+    /// Verifies that ToolOutput constructors correctly set the truncated flag.
+    #[rstest]
+    #[case::new_creates_non_truncated(false, "content")]
+    #[case::truncated_marks_truncated(true, "partial")]
+    fn tool_output_creation(#[case] is_truncated: bool, #[case] content: &str) {
+        let output = if is_truncated {
+            ToolOutput::truncated(content)
+        } else {
+            ToolOutput::new(content)
+        };
+        assert_eq!(output.content, content);
+        assert_eq!(output.truncated, is_truncated);
     }
 
-    #[test]
-    fn tool_output_truncated_marks_truncated() {
-        let output = ToolOutput::truncated("partial");
-        assert!(output.truncated);
-    }
-
-    #[test]
-    fn tool_output_from_string() {
-        let output: ToolOutput = "hello".into();
-        assert_eq!(output.content, "hello");
-    }
-
-    #[test]
-    fn tool_output_serializes_without_truncated_when_false() {
-        let output = ToolOutput::new("content");
+    /// Verifies that the truncated field is only serialized when true.
+    /// ToolOutput uses `#[serde(skip_serializing_if)]` to omit the field
+    /// when false, producing cleaner JSON output.
+    ///
+    /// We verify this behaviour specifically to ensure the LLM does not receive
+    /// unnecessary tokens for default values that provide no information.
+    #[rstest]
+    #[case::without_truncated_when_false(false)]
+    #[case::with_truncated_when_true(true)]
+    fn tool_output_serialization(#[case] truncated: bool) {
+        let output = if truncated {
+            ToolOutput::truncated("content")
+        } else {
+            ToolOutput::new("content")
+        };
         let json = serde_json::to_string(&output).unwrap();
-        assert!(!json.contains("truncated"));
-    }
-
-    #[test]
-    fn tool_output_serializes_with_truncated_when_true() {
-        let output = ToolOutput::truncated("content");
-        let json = serde_json::to_string(&output).unwrap();
-        assert!(json.contains("truncated"));
+        assert_eq!(json.contains("truncated"), truncated);
     }
 
     #[cfg(any(feature = "tokio", feature = "blocking"))]

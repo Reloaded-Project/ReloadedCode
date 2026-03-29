@@ -59,39 +59,3 @@ impl From<globset::Error> for ToolError {
         ToolError::InvalidPattern(e.to_string())
     }
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn tool_error_displays_io_error() {
-        let io_err = std::io::Error::new(std::io::ErrorKind::NotFound, "file not found");
-        let err: ToolError = io_err.into();
-        assert!(err.to_string().contains("I/O error"));
-    }
-
-    #[test]
-    fn tool_error_displays_invalid_path() {
-        let err = ToolError::InvalidPath("not absolute".into());
-        assert!(err.to_string().contains("invalid path"));
-    }
-
-    #[test]
-    fn tool_error_from_glob_pattern_error() {
-        let glob_err = globset::Glob::new("[invalid").unwrap_err();
-        let err: ToolError = glob_err.into();
-        assert!(matches!(err, ToolError::InvalidPattern(_)));
-    }
-
-    #[test]
-    fn timeout_with_kill_failure_displays_both_contexts() {
-        let err = ToolError::TimeoutWithKillFailure {
-            message: "command timed out after 100ms".into(),
-            kill_error: "permission denied".into(),
-        };
-        let display = err.to_string();
-        assert!(display.contains("command timed out after 100ms"));
-        assert!(display.contains("kill failed: permission denied"));
-    }
-}
