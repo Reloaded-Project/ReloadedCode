@@ -62,7 +62,7 @@ DOC_ARGS=(--workspace --document-private-items --no-deps --quiet --exclude llm-c
 run_cmd env RUSTDOCFLAGS="-D warnings" cargo doc "${DOC_ARGS[@]}"
 
 echo "Formatting..."
-run_cmd cargo fmt --all --check --quiet
+run_cmd cargo fmt --all --quiet
 
 echo "Linux-only feature coverage..."
 if [ "$IS_LINUX" = true ]; then

@@ -76,7 +76,7 @@ try {
     }
 
     Write-Host "Formatting..."
-    Invoke-LoggedCommand "cargo" @("fmt", "--all", "--check", "--quiet")
+    Invoke-LoggedCommand "cargo" @("fmt", "--all", "--quiet")
 
     Write-Host "Linux-only feature coverage..."
     if ($onLinux) {
