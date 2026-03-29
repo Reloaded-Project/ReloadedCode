@@ -116,11 +116,71 @@ pub fn fetch_url(
 mod tests {
     use super::*;
     use rstest::rstest;
+    use std::sync::mpsc;
+    use std::sync::Arc;
+    use tokio::runtime::Runtime;
+    use tokio::sync::Notify;
+    use wiremock::matchers::{method, path};
+    use wiremock::{Mock, MockServer, ResponseTemplate};
 
     fn test_client() -> reqwest::blocking::Client {
         reqwest::blocking::Client::builder()
             .build()
             .expect("client build failed")
+    }
+
+    /// Handle to a running mock server. When dropped, signals the server to shut down
+    /// and waits for the server thread to exit, ensuring proper cleanup.
+    struct MockServerHandle {
+        uri: String,
+        shutdown: Arc<Notify>,
+        thread: Option<std::thread::JoinHandle<()>>,
+    }
+
+    impl MockServerHandle {
+        fn uri(&self) -> &str {
+            &self.uri
+        }
+    }
+
+    impl Drop for MockServerHandle {
+        fn drop(&mut self) {
+            self.shutdown.notify_one();
+            if let Some(thread) = self.thread.take() {
+                thread.join().ok();
+            }
+        }
+    }
+
+    /// Starts a wiremock server in a dedicated tokio thread for blocking tests.
+    /// Returns a handle that shuts down the server and joins the thread when dropped.
+    fn start_mock_server(
+        setup: impl FnOnce(MockServer) -> std::pin::Pin<Box<dyn std::future::Future<Output = ()> + Send>>
+            + Send
+            + 'static,
+    ) -> MockServerHandle {
+        let (tx, rx) = mpsc::channel::<String>();
+        let shutdown = Arc::new(Notify::new());
+        let shutdown_clone = shutdown.clone();
+
+        let thread = std::thread::spawn(move || {
+            let rt = Runtime::new().expect("Failed to create tokio runtime");
+            rt.block_on(async {
+                let server = MockServer::start().await;
+                let uri = server.uri();
+                tx.send(uri).expect("Failed to send server URI");
+                setup(server).await;
+                // Wait for shutdown signal
+                shutdown_clone.notified().await;
+            })
+        });
+
+        let uri = rx.recv().expect("Failed to receive server URI");
+        MockServerHandle {
+            uri,
+            shutdown,
+            thread: Some(thread),
+        }
     }
 
     /// Verifies that invalid timeout values are rejected before making any
@@ -144,38 +204,58 @@ mod tests {
 
     #[test]
     fn fetches_plain_text() {
-        // Use httpbin.org for blocking tests since wiremock is async-only
+        let server = start_mock_server(|mock_server| {
+            Box::pin(async move {
+                Mock::given(method("GET"))
+                    .and(path("/robots.txt"))
+                    .respond_with(
+                        ResponseTemplate::new(200)
+                            .set_body_bytes("User-agent: *\nDisallow: /")
+                            .insert_header("content-type", "text/plain"),
+                    )
+                    .mount(&mock_server)
+                    .await;
+            })
+        });
+
         let client = test_client();
         let result = fetch_url(
             &client,
-            "https://httpbin.org/robots.txt",
+            &format!("{}/robots.txt", server.uri()),
             10_000,
             20_000,
             5 * 1024 * 1024,
         );
 
-        // This test requires network access, so we just check it doesn't panic
-        // In CI, this might fail due to network restrictions
-        if let Ok(output) = result {
-            assert!(!output.content.is_empty());
-            assert!(!output.content_type.is_empty());
-        }
+        let output = result.expect("Should successfully fetch");
+        assert!(output.content.contains("User-agent"));
+        assert!(output.content_type.contains("text/plain"));
     }
 
     #[test]
     fn handles_404() {
+        let server = start_mock_server(|mock_server| {
+            Box::pin(async move {
+                Mock::given(method("GET"))
+                    .and(path("/not-found"))
+                    .respond_with(ResponseTemplate::new(404))
+                    .mount(&mock_server)
+                    .await;
+            })
+        });
+
         let client = test_client();
         let result = fetch_url(
             &client,
-            "https://httpbin.org/status/404",
+            &format!("{}/not-found", server.uri()),
             10_000,
             20_000,
             5 * 1024 * 1024,
         );
 
-        // In case of network issues, just verify we get some result
-        if let Err(e) = result {
-            assert!(matches!(e, ToolError::Http(_)));
-        }
+        assert!(
+            matches!(result, Err(ToolError::Http(_))),
+            "Should return HTTP error for 404"
+        );
     }
 }
