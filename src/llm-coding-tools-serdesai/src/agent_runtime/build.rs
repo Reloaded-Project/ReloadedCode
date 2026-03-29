@@ -160,15 +160,18 @@ where
             ToolCatalogKind::Bash => {
                 let settings = &prepared.tool_settings.bash;
                 builder = builder.tool(
-                    prompt_builder
-                        .track(BashTool::new().with_default_timeout_ms(settings.timeout_ms)),
+                    prompt_builder.track(
+                        BashTool::new()
+                            .with_default_timeout_ms(settings.timeout_ms)
+                            .with_max_timeout_ms(settings.max_timeout_ms),
+                    ),
                 );
             }
             ToolCatalogKind::WebFetch => {
                 let settings = &prepared.tool_settings.webfetch;
                 builder = builder.tool(prompt_builder.track(WebFetchTool::with_settings(
                     settings.timeout_ms,
-                    None, // Use default max_timeout_ms
+                    Some(settings.max_timeout_ms),
                     settings.max_response_size_mib,
                 )));
             }

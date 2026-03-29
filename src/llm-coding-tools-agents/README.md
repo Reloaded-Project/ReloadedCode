@@ -132,25 +132,29 @@ tool_settings:
     limit: 1000                 # default: 1000
   bash:
     timeout_ms: 120000          # default: 120000 (2 minutes)
+    max_timeout_ms: 600000      # default: 600000 (10 minutes)
   webfetch:
     timeout_ms: 30000           # default: 30000 (30 seconds)
+    max_timeout_ms: 600000      # default: 600000 (10 minutes)
     max_response_size_mib: 5    # default: 5
 ```
 
 **Setting reference:**
 
-| Tool     | Setting                 | Type  | Default  | Min  | Description                                      |
-| -------- | ----------------------- | ----- | -------- | ---- | ------------------------------------------------ |
-| read     | `line_numbers`          | bool  | `true`   | —    | Show line numbers in output                      |
-| read     | `limit`                 | usize | `2000`   | 1    | Max lines per file read                          |
-| read     | `max_line_length`       | usize | `2000`   | 4    | Max characters per line (truncates longer lines) |
-| grep     | `line_numbers`          | bool  | `true`   | —    | Show line numbers in output                      |
-| grep     | `limit`                 | usize | `100`    | 1    | Max matches returned                             |
-| grep     | `max_line_length`       | usize | `2000`   | 4    | Max characters per match line                    |
-| glob     | `limit`                 | usize | `1000`   | 1    | Max files returned                               |
-| bash     | `timeout_ms`            | usize | `120000` | 1000 | Default command timeout in milliseconds          |
-| webfetch | `timeout_ms`            | usize | `30000`  | 1000 | Fetch timeout in milliseconds                    |
-| webfetch | `max_response_size_mib` | usize | `5`      | 1    | Max response body size in MiB                    |
+| Tool     | Setting                 | Type  | Default  | Min  | Description                                             |
+| -------- | ----------------------- | ----- | -------- | ---- | ------------------------------------------------------- |
+| read     | `line_numbers`          | bool  | `true`   | —    | Show line numbers in output                             |
+| read     | `limit`                 | usize | `2000`   | 1    | Max lines per file read                                 |
+| read     | `max_line_length`       | usize | `2000`   | 4    | Max characters per line (truncates longer lines)        |
+| grep     | `line_numbers`          | bool  | `true`   | —    | Show line numbers in output                             |
+| grep     | `limit`                 | usize | `100`    | 1    | Max matches returned                                    |
+| grep     | `max_line_length`       | usize | `2000`   | 4    | Max characters per match line                           |
+| glob     | `limit`                 | usize | `1000`   | 1    | Max files returned                                      |
+| bash     | `timeout_ms`            | usize | `120000` | 1000 | Default command timeout in milliseconds                 |
+| bash     | `max_timeout_ms`        | usize | `600000` | *    | Maximum timeout LLM can request (must be >= timeout_ms) |
+| webfetch | `timeout_ms`            | usize | `30000`  | 1000 | Fetch timeout in milliseconds                           |
+| webfetch | `max_timeout_ms`        | usize | `600000` | *    | Maximum timeout LLM can request (must be >= timeout_ms) |
+| webfetch | `max_response_size_mib` | usize | `5`      | 1    | Max response body size in MiB                           |
 
 **Output format:**
 
@@ -194,8 +198,14 @@ fn main() {
 - **`bash.timeout_ms`** - Maximum time a shell command may run before being killed, in
   milliseconds. Used when the LLM doesn't specify `timeout_ms`.
 
+- **`bash.max_timeout_ms`** - Maximum timeout the LLM is allowed to request via the 
+  `timeout_ms` parameter. Must be greater than or equal to `timeout_ms`.
+
 - **`webfetch.timeout_ms`** - Maximum time to wait for a response from a URL, in
   milliseconds. Used when the LLM doesn't specify `timeout_ms`.
+
+- **`webfetch.max_timeout_ms`** - Maximum timeout the LLM is allowed to request via the
+  `timeout_ms` parameter. Must be greater than or equal to `timeout_ms`.
 
 - **`webfetch.max_response_size_mib`** - Maximum response body size in mebibytes.
   Responses larger than this are rejected.

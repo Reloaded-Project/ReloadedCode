@@ -21,8 +21,10 @@
 //!     limit: 1000               # default: 1000 (tool_metadata::glob::MAX_RESULTS)
 //!   bash:
 //!     timeout_ms: 120000        # default: 120000ms (tool_metadata::bash::DEFAULT_TIMEOUT_MS)
+//!     max_timeout_ms: 600000    # default: 600000ms (tool_metadata::bash::MAX_TIMEOUT_MS)
 //!   webfetch:
 //!     timeout_ms: 30000         # default: 30000ms (tool_metadata::webfetch::DEFAULT_TIMEOUT_MS)
+//!     max_timeout_ms: 600000    # default: 600000ms (tool_metadata::webfetch::MAX_TIMEOUT_MS)
 //!     max_response_size_mib: 5  # default: 5 MiB (tool_metadata::webfetch::MAX_RESPONSE_SIZE_MIB)
 //! ---
 //! ```
@@ -144,12 +146,16 @@ pub struct BashToolSettings {
         deserialize_with = "deserialize_min_timeout_ms"
     )]
     pub timeout_ms: u32,
+    /// Maximum timeout allowed for LLM requests (default: 600000, min: timeout_ms).
+    #[serde(default = "bash_default_max_timeout_ms")]
+    pub max_timeout_ms: u32,
 }
 
 impl Default for BashToolSettings {
     fn default() -> Self {
         Self {
             timeout_ms: bash_default_timeout_ms(),
+            max_timeout_ms: bash_default_max_timeout_ms(),
         }
     }
 }
@@ -164,6 +170,9 @@ pub struct WebFetchToolSettings {
         deserialize_with = "deserialize_min_timeout_ms"
     )]
     pub timeout_ms: u32,
+    /// Maximum timeout allowed for LLM requests (default: 600000, min: timeout_ms).
+    #[serde(default = "webfetch_default_max_timeout_ms")]
+    pub max_timeout_ms: u32,
     /// Maximum response size in MiB (default: 5, min: 1).
     #[serde(
         default = "webfetch_default_max_response_size_mib",
@@ -176,6 +185,7 @@ impl Default for WebFetchToolSettings {
     fn default() -> Self {
         Self {
             timeout_ms: webfetch_default_timeout_ms(),
+            max_timeout_ms: webfetch_default_max_timeout_ms(),
             max_response_size_mib: webfetch_default_max_response_size_mib(),
         }
     }
@@ -218,8 +228,18 @@ const fn bash_default_timeout_ms() -> u32 {
 }
 
 #[inline]
+const fn bash_default_max_timeout_ms() -> u32 {
+    bash::MAX_TIMEOUT_MS
+}
+
+#[inline]
 const fn webfetch_default_timeout_ms() -> u32 {
     webfetch::DEFAULT_TIMEOUT_MS
+}
+
+#[inline]
+const fn webfetch_default_max_timeout_ms() -> u32 {
+    webfetch::MAX_TIMEOUT_MS
 }
 
 #[inline]
@@ -294,6 +314,33 @@ pub(crate) fn deserialize_non_null_tool_settings<'de, D>(
 where
     D: serde::Deserializer<'de>,
 {
-    let value = Option::<AgentToolSettings>::deserialize(deserializer)?;
-    value.ok_or_else(|| serde::de::Error::custom("tool_settings cannot be null"))
+    let value = Option::<AgentToolSettings>::deserialize(deserializer)?
+        .ok_or_else(|| serde::de::Error::custom("tool_settings cannot be null"))?;
+
+    value.validate().map_err(serde::de::Error::custom)?;
+    Ok(value)
+}
+
+impl AgentToolSettings {
+    /// Validates cross-field constraints (e.g., timeout_ms <= max_timeout_ms).
+    #[inline]
+    fn validate(&self) -> Result<(), String> {
+        validate_timeout_pair("bash", self.bash.timeout_ms, self.bash.max_timeout_ms)?;
+        validate_timeout_pair(
+            "webfetch",
+            self.webfetch.timeout_ms,
+            self.webfetch.max_timeout_ms,
+        )?;
+        Ok(())
+    }
+}
+
+#[inline]
+fn validate_timeout_pair(tool: &str, timeout_ms: u32, max_timeout_ms: u32) -> Result<(), String> {
+    if max_timeout_ms < timeout_ms {
+        return Err(format!(
+            "{tool}.max_timeout_ms ({max_timeout_ms}) must be >= {tool}.timeout_ms ({timeout_ms})"
+        ));
+    }
+    Ok(())
 }
