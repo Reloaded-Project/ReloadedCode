@@ -17,5 +17,6 @@ pub use runtime::{
     TaskSettings, TaskTargetSummary, ToolCatalogEntry, ToolCatalogKind,
 };
 pub use types::{
-    parse_model_parts, AgentConfig, AgentLoadError, AgentLoadResult, AgentMode, PermissionRule,
+    parse_model_parts, AgentConfig, AgentLoadError, AgentLoadResult, AgentMode, AgentToolSettings,
+    GrepToolSettings, PermissionRule, ReadToolSettings,
 };

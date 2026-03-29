@@ -96,6 +96,7 @@ impl AgentCatalog {
 mod tests {
     use super::*;
     use crate::types::AgentMode;
+    use crate::AgentToolSettings;
     use ahash::AHashMap;
     use indexmap::IndexMap;
 
@@ -112,6 +113,7 @@ mod tests {
             top_p: None,
             permission: IndexMap::new(),
             options: AHashMap::new(),
+            tool_settings: AgentToolSettings::default(),
             prompt: Default::default(),
         });
         catalog.insert(AgentConfig {
@@ -124,6 +126,7 @@ mod tests {
             top_p: None,
             permission: IndexMap::new(),
             options: AHashMap::new(),
+            tool_settings: AgentToolSettings::default(),
             prompt: Default::default(),
         });
 

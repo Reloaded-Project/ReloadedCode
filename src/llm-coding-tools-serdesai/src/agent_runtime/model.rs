@@ -26,7 +26,9 @@ mod tests {
     use super::resolve_model;
     use ahash::AHashMap;
     use indexmap::IndexMap;
-    use llm_coding_tools_agents::{AgentConfig, AgentDefaults, AgentMode, ModelResolutionError};
+    use llm_coding_tools_agents::{
+        AgentConfig, AgentDefaults, AgentMode, AgentToolSettings, ModelResolutionError,
+    };
     use llm_coding_tools_core::models::{
         Modality, ModelCatalog, ModelInfo, ProviderIdx, ProviderInfo, ProviderModelSource,
         ProviderSource, ProviderType,
@@ -44,6 +46,7 @@ mod tests {
             top_p: None,
             permission: IndexMap::new(),
             options: AHashMap::new(),
+            tool_settings: AgentToolSettings::default(),
             prompt: Default::default(),
         }
     }

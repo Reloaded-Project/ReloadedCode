@@ -327,7 +327,8 @@ llm-coding-tools-agents
 ├── types/
 │   ├── mod.rs              re-exports
 │   ├── config.rs           AgentConfig, AgentMode, PermissionRule, parse_model_parts
-│   └── error.rs            AgentLoadError, AgentLoadResult
+│   ├── error.rs            AgentLoadError, AgentLoadResult
+│   └── tool_settings.rs    AgentToolSettings, ReadToolSettings, GrepToolSettings
 ├── runtime/
 │   ├── mod.rs              module root, re-exports
 │   ├── state.rs            AgentRuntime, AgentDefaults

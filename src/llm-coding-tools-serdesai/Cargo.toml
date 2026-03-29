@@ -92,5 +92,6 @@ wiremock = "0.6"
 ahash = "0.8"
 indexmap = "2"
 temp-env = "0.3.6"
+rstest = "0.26"
 # models.dev catalog loader for examples
 llm-coding-tools-models-dev = { version = "0.1.0", path = "../llm-coding-tools-models-dev" }

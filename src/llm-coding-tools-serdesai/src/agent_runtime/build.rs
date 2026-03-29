@@ -13,8 +13,8 @@ use crate::{
     create_todo_tools,
 };
 use llm_coding_tools_agents::{
-    AgentRuntime, ModelResolutionError, TaskTargetSummary, ToolCatalogEntry, ToolCatalogKind,
-    summarize_callable_targets,
+    AgentRuntime, AgentToolSettings, ModelResolutionError, TaskTargetSummary, ToolCatalogEntry,
+    ToolCatalogKind, summarize_callable_targets,
 };
 use llm_coding_tools_core::{CredentialLookup, models::ModelCatalog};
 use serdes_ai::AgentBuilder;
@@ -36,8 +36,10 @@ pub(super) struct PreparedBuild {
     temperature: Option<f64>,
     /// Top-p sampling parameter, if specified at agent or defaults level.
     top_p: Option<f64>,
-    /// Permission-filtered tool entries to materialize.
+    /// Permission-filtered tool entries to materialise.
     tools: Vec<ToolCatalogEntry>,
+    /// Tool settings controlling tool behaviour.
+    tool_settings: AgentToolSettings,
     /// Pre-computed callable Task target summaries for the Task tool description.
     callable_target_summaries: Vec<TaskTargetSummary>,
 }
@@ -91,6 +93,7 @@ where
             .map(f64::from),
         top_p: agent.top_p.or(runtime.defaults().top_p).map(f64::from),
         tools,
+        tool_settings: agent.tool_settings.clone(),
         callable_target_summaries,
     })
 }
@@ -118,7 +121,11 @@ where
     for entry in &prepared.tools {
         match entry.kind {
             ToolCatalogKind::Read => {
-                builder = builder.tool(prompt_builder.track(ReadTool::<true>::new()))
+                if prepared.tool_settings.read.line_numbers {
+                    builder = builder.tool(prompt_builder.track(ReadTool::<true>::new()));
+                } else {
+                    builder = builder.tool(prompt_builder.track(ReadTool::<false>::new()));
+                }
             }
             ToolCatalogKind::Write => {
                 builder = builder.tool(prompt_builder.track(WriteTool::new()))
@@ -126,7 +133,11 @@ where
             ToolCatalogKind::Edit => builder = builder.tool(prompt_builder.track(EditTool::new())),
             ToolCatalogKind::Glob => builder = builder.tool(prompt_builder.track(GlobTool::new())),
             ToolCatalogKind::Grep => {
-                builder = builder.tool(prompt_builder.track(GrepTool::<true>::new()))
+                if prepared.tool_settings.grep.line_numbers {
+                    builder = builder.tool(prompt_builder.track(GrepTool::<true>::new()));
+                } else {
+                    builder = builder.tool(prompt_builder.track(GrepTool::<false>::new()));
+                }
             }
             ToolCatalogKind::Bash => builder = builder.tool(prompt_builder.track(BashTool::new())),
             ToolCatalogKind::WebFetch => {
@@ -189,7 +200,8 @@ mod tests {
     use ahash::AHashMap;
     use indexmap::IndexMap;
     use llm_coding_tools_agents::{
-        AgentCatalog, AgentConfig, AgentDefaults, AgentMode, AgentRuntimeBuilder, PermissionRule,
+        AgentCatalog, AgentConfig, AgentDefaults, AgentMode, AgentRuntimeBuilder,
+        AgentToolSettings, PermissionRule,
     };
     use llm_coding_tools_core::CredentialResolver;
     use llm_coding_tools_core::models::{
@@ -198,7 +210,7 @@ mod tests {
     };
     use llm_coding_tools_core::permissions::PermissionAction;
     use llm_coding_tools_core::tool_metadata::{
-        bash as bash_meta, glob as glob_meta, read as read_meta,
+        bash as bash_meta, glob as glob_meta, grep as grep_meta, read as read_meta,
     };
     use serdes_ai::AgentBuilder;
     use serdes_ai_models::MockModel;
@@ -234,6 +246,7 @@ mod tests {
             top_p: None,
             permission,
             options: AHashMap::new(),
+            tool_settings: AgentToolSettings::default(),
             prompt: prompt.into(),
         }
     }
@@ -257,6 +270,7 @@ mod tests {
             top_p,
             permission,
             options: AHashMap::new(),
+            tool_settings: AgentToolSettings::default(),
             prompt: prompt.into(),
         }
     }
@@ -406,5 +420,82 @@ mod tests {
         let agent = build_with_mock(&prepared, "dupe");
         assert_eq!(agent.tools().len(), 1);
         assert_eq!(agent.tools()[0].name(), glob_meta::NAME);
+    }
+
+    /// Verifies that `tool_settings.line_numbers` selects the correct generic
+    /// tool variant by checking tool descriptions (the only observable difference
+    /// between `ReadTool::<true>` and `ReadTool::<false>`).
+    #[test]
+    fn build_wires_line_numbers_to_correct_tool_variant() {
+        let credentials = credentials();
+        let catalog = catalog();
+
+        let mut without_line_numbers = AgentToolSettings::default();
+        without_line_numbers.read.line_numbers = false;
+        without_line_numbers.grep.line_numbers = false;
+
+        // Agent with line_numbers=true (default)
+        let runtime_true = AgentRuntimeBuilder::new()
+            .catalog(AgentCatalog::from_entries([agent(
+                "numbered",
+                allow_tools(&[read_meta::NAME, grep_meta::NAME]),
+                "prompt",
+            )]))
+            .defaults(AgentDefaults::with_model("openrouter/openai/gpt-4.1-mini"))
+            .build();
+
+        let prepared = prepare_build(&runtime_true, "numbered", &catalog, &credentials, true)
+            .expect("should succeed");
+
+        let agent = build_with_mock(&prepared, "numbered");
+        let tools: std::collections::HashMap<&str, &str> = agent
+            .tools()
+            .iter()
+            .map(|t| (t.name(), t.description()))
+            .collect();
+        assert!(
+            tools[read_meta::NAME].contains("line-numbered"),
+            "read with line_numbers=true should mention line-numbered"
+        );
+        assert!(
+            tools[grep_meta::NAME].contains("line numbers"),
+            "grep with line_numbers=true should mention line numbers"
+        );
+
+        // Agent with line_numbers=false
+        let runtime_false = AgentRuntimeBuilder::new()
+            .catalog(AgentCatalog::from_entries([AgentConfig {
+                name: "raw".into(),
+                mode: AgentMode::Primary,
+                description: "raw agent".into(),
+                model: None,
+                hidden: false,
+                temperature: None,
+                top_p: None,
+                permission: allow_tools(&[read_meta::NAME, grep_meta::NAME]),
+                options: AHashMap::new(),
+                tool_settings: without_line_numbers,
+                prompt: "prompt".into(),
+            }]))
+            .defaults(AgentDefaults::with_model("openrouter/openai/gpt-4.1-mini"))
+            .build();
+
+        let prepared = prepare_build(&runtime_false, "raw", &catalog, &credentials, true)
+            .expect("should succeed");
+        let agent = build_with_mock(&prepared, "raw");
+        let tools: std::collections::HashMap<&str, &str> = agent
+            .tools()
+            .iter()
+            .map(|t| (t.name(), t.description()))
+            .collect();
+
+        assert!(
+            !tools[read_meta::NAME].contains("line-numbered"),
+            "read with line_numbers=false should not mention line-numbered"
+        );
+        assert!(
+            !tools[grep_meta::NAME].contains("line numbers"),
+            "grep with line_numbers=false should not mention line numbers"
+        );
     }
 }

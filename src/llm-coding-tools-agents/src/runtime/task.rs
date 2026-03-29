@@ -148,7 +148,7 @@ fn collect_allowed_tools(
 mod tests {
     use super::*;
     use crate::types::PermissionRule;
-    use crate::{AgentConfig, AgentMode, AgentRuntimeBuilder};
+    use crate::{AgentConfig, AgentMode, AgentRuntimeBuilder, AgentToolSettings};
     use ahash::AHashMap;
     use indexmap::IndexMap;
     use llm_coding_tools_core::permissions::PermissionAction;
@@ -172,6 +172,7 @@ mod tests {
             top_p: None,
             permission,
             options: AHashMap::new(),
+            tool_settings: AgentToolSettings::default(),
             prompt: Default::default(),
         }
     }

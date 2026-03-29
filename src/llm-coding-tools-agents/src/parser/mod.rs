@@ -77,9 +77,10 @@ pub(crate) fn parse_agent<T: DeserializeOwned>(
     })?;
     validate_headless_compatibility(&yaml_value)?;
 
-    let data: T = serde_yaml::from_value(yaml_value).map_err(|e| AgentParseError::InvalidYaml {
-        message: e.to_string(),
-    })?;
+    let data: T =
+        serde_yaml::from_value(yaml_value).map_err(|e| AgentParseError::SchemaValidation {
+            message: e.to_string(),
+        })?;
 
     // Extract body by mutating and reusing the existing allocation.
     let body = extract_body_inplace(content, offsets.body_start);

@@ -37,6 +37,7 @@ llm-coding-tools-core = { path = "../llm-coding-tools-core", version = "0.2.0" }
 tempfile = "3.27"
 criterion = "0.8"
 indoc = "2"
+rstest = "0.26"
 
 [[bench]]
 name = "parser"

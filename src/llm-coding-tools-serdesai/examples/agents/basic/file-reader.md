@@ -1,6 +1,11 @@
 ---
 mode: all
 description: Reads repository files and summarizes the important details.
+tool_settings:
+  read:
+    line_numbers: false
+  grep:
+    line_numbers: false
 permission:
   read: allow
   glob: allow

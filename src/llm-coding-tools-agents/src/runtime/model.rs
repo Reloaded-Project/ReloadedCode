@@ -267,6 +267,7 @@ mod tests {
             top_p: None,
             permission: IndexMap::new(),
             options: AHashMap::new(),
+            tool_settings: crate::AgentToolSettings::default(),
             prompt: Default::default(),
         }
     }

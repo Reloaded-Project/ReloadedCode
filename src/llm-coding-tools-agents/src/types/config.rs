@@ -21,6 +21,11 @@
 //!   task:
 //!     "*": deny
 //!     orchestrator-*: allow
+//! tool_settings:
+//!   read:
+//!     line_numbers: false
+//!   grep:
+//!     line_numbers: false
 //! options:
 //!   max_tokens: 4096
 //! hidden: false
@@ -33,7 +38,9 @@
 //! - [`AgentConfig::prompt`] stores LF newlines and trims outer ASCII whitespace.
 //! - `permission` supports scalar (`allow`/`deny`) or pattern-map rules.
 //! - `hidden` is accepted for compatibility but ignored in headless runtime.
+//! - `tool_settings` controls tool behaviour; defaults to line-numbers enabled.
 
+use super::tool_settings::{deserialize_non_null_tool_settings, AgentToolSettings};
 use ahash::AHashMap;
 use indexmap::IndexMap;
 use llm_coding_tools_core::permissions::PermissionAction;
@@ -80,7 +87,7 @@ pub(crate) struct RawFrontmatter {
     pub model: Option<Box<str>>,
     /// Legacy visibility flag accepted for compatibility only.
     ///
-    /// Runtime behavior in headless mode ignores this field.
+    /// Runtime behaviour in headless mode ignores this field.
     #[serde(default)]
     pub hidden: bool,
     #[serde(default)]
@@ -89,6 +96,8 @@ pub(crate) struct RawFrontmatter {
     pub top_p: Option<f32>,
     #[serde(default)]
     pub permission: IndexMap<String, PermissionRule>,
+    #[serde(default, deserialize_with = "deserialize_non_null_tool_settings")]
+    pub tool_settings: AgentToolSettings,
     #[serde(default)]
     pub options: AHashMap<String, serde_json::Value>,
 }
@@ -114,7 +123,7 @@ pub struct AgentConfig {
     pub model: Option<Box<str>>,
     /// Legacy visibility flag accepted for compatibility only.
     ///
-    /// Runtime behavior in headless mode ignores this field.
+    /// Runtime behaviour in headless mode ignores this field.
     #[serde(default)]
     pub hidden: bool,
     /// Temperature for sampling.
@@ -129,6 +138,9 @@ pub struct AgentConfig {
     /// Arbitrary extra options.
     #[serde(default)]
     pub options: AHashMap<String, serde_json::Value>,
+    /// Tool settings controlling tool behaviour.
+    #[serde(default)]
+    pub tool_settings: AgentToolSettings,
     /// Prompt body after frontmatter parsing.
     ///
     /// The parser stores this with LF line endings and trims surrounding ASCII
@@ -173,6 +185,7 @@ impl AgentConfig {
             top_p: raw.top_p,
             permission: raw.permission,
             options: raw.options,
+            tool_settings: raw.tool_settings,
             prompt: prompt.into(),
         }
     }
@@ -197,7 +210,7 @@ pub fn parse_model_parts(value: &str) -> Option<(&str, &str)> {
 
 #[cfg(test)]
 mod tests {
-    use super::{AgentConfig, AgentMode};
+    use super::{AgentConfig, AgentMode, AgentToolSettings};
     use ahash::AHashMap;
     use indexmap::IndexMap;
 
@@ -212,6 +225,7 @@ mod tests {
             top_p: None,
             permission: IndexMap::new(),
             options: AHashMap::new(),
+            tool_settings: AgentToolSettings::default(),
             prompt: Default::default(),
         }
     }

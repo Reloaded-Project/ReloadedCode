@@ -155,7 +155,8 @@ mod tests {
     use ahash::AHashMap;
     use indexmap::IndexMap;
     use llm_coding_tools_agents::{
-        AgentCatalog, AgentConfig, AgentDefaults, AgentMode, AgentRuntimeBuilder, PermissionRule,
+        AgentCatalog, AgentConfig, AgentDefaults, AgentMode, AgentRuntimeBuilder,
+        AgentToolSettings, PermissionRule,
     };
     use llm_coding_tools_core::CredentialResolver;
     use llm_coding_tools_core::models::{
@@ -179,6 +180,7 @@ mod tests {
             top_p: None,
             permission,
             options: AHashMap::new(),
+            tool_settings: AgentToolSettings::default(),
             prompt: Default::default(),
         }
     }

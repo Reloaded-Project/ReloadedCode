@@ -2,7 +2,7 @@ use super::{ResolvedSerdesModel, build_serdes_model};
 use crate::agent_runtime::model::resolve_model;
 use ahash::AHashMap;
 use indexmap::IndexMap;
-use llm_coding_tools_agents::{AgentConfig, AgentDefaults, AgentMode};
+use llm_coding_tools_agents::{AgentConfig, AgentDefaults, AgentMode, AgentToolSettings};
 use llm_coding_tools_core::CredentialResolver;
 use llm_coding_tools_core::models::{
     Modality, ModelCatalog, ModelInfo, ProviderIdx, ProviderInfo, ProviderModelSource,
@@ -29,6 +29,7 @@ fn config_with_model(name: &str, model: Option<&str>) -> AgentConfig {
         top_p: None,
         permission: IndexMap::new(),
         options: AHashMap::new(),
+        tool_settings: AgentToolSettings::default(),
         prompt: Default::default(),
     }
 }

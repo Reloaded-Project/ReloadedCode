@@ -397,9 +397,11 @@ fn derive_agent_name_from_rel(rel_path: &str) -> Option<String> {
 mod tests {
     use super::*;
     use crate::types::AgentMode;
+    use crate::AgentToolSettings;
     use ahash::AHashMap;
     use indexmap::IndexMap;
     use indoc::indoc;
+    use rstest::rstest;
     use std::fs::{self, File};
     use std::io::Write;
     use tempfile::TempDir;
@@ -679,6 +681,7 @@ mod tests {
             top_p: None,
             permission: IndexMap::new(),
             options: AHashMap::new(),
+            tool_settings: AgentToolSettings::default(),
             prompt: Default::default(),
         }
     }
@@ -1160,5 +1163,144 @@ mod tests {
         let agent = catalog.by_name("hidden-agent").unwrap();
         assert!(agent.hidden);
         assert_eq!(&*agent.description, "Hidden agent");
+    }
+
+    /// Tests tool_settings line_numbers configuration with various per-tool settings.
+    #[rstest]
+    #[case::read_false(
+        indoc! {"
+            ---
+            description: Test agent
+            tool_settings:
+              read:
+                line_numbers: false
+            ---
+            Prompt"
+        },
+        false, // read.line_numbers=false
+        true   // grep.line_numbers defaults to true
+    )]
+    #[case::grep_false(
+        indoc! {"
+            ---
+            description: Test agent
+            tool_settings:
+              grep:
+                line_numbers: false
+            ---
+            Prompt"
+        },
+        true,  // read.line_numbers defaults to true
+        false  // grep.line_numbers=false
+    )]
+    #[case::both_false(
+        indoc! {"
+            ---
+            description: Test agent
+            tool_settings:
+              read:
+                line_numbers: false
+              grep:
+                line_numbers: false
+            ---
+            Prompt"
+        },
+        false, // read.line_numbers=false
+        false  // grep.line_numbers=false
+    )]
+    fn parse_tool_settings_line_numbers(
+        #[case] markdown: &str,
+        #[case] expect_read: bool,
+        #[case] expect_grep: bool,
+    ) {
+        let loader = AgentLoader::new();
+        let mut catalog = AgentCatalog::new();
+
+        loader.add_from_str(&mut catalog, markdown, "test").unwrap();
+        let agent = catalog.by_name("test").unwrap();
+        assert_eq!(agent.tool_settings.read.line_numbers, expect_read);
+        assert_eq!(agent.tool_settings.grep.line_numbers, expect_grep);
+    }
+
+    #[test]
+    fn parse_tool_settings_empty_object_uses_defaults() {
+        let loader = AgentLoader::new();
+        let mut catalog = AgentCatalog::new();
+        let markdown = indoc! {r#"
+            ---
+            description: Test agent
+            tool_settings: {}
+            ---
+            Prompt"#
+        };
+
+        loader.add_from_str(&mut catalog, markdown, "test").unwrap();
+        let agent = catalog.by_name("test").unwrap();
+        assert!(agent.tool_settings.read.line_numbers);
+        assert!(agent.tool_settings.grep.line_numbers);
+    }
+
+    #[test]
+    fn parse_tool_settings_rejects_null() {
+        let loader = AgentLoader::new();
+        let mut catalog = AgentCatalog::new();
+        let markdown = indoc! {r#"
+            ---
+            description: Test agent
+            tool_settings: null
+            ---
+            Prompt"#
+        };
+
+        let result = loader.add_from_str(&mut catalog, markdown, "test");
+        assert!(matches!(
+            result,
+            Err(AgentLoadError::SchemaValidation { message, .. })
+                if message.contains("tool_settings")
+        ));
+    }
+
+    #[test]
+    fn parse_tool_settings_rejects_unknown_tool_key() {
+        let loader = AgentLoader::new();
+        let mut catalog = AgentCatalog::new();
+        let markdown = indoc! {r#"
+            ---
+            description: Test agent
+            tool_settings:
+              not_a_real_tool:
+                line_numbers: false
+            ---
+            Prompt"#
+        };
+
+        let result = loader.add_from_str(&mut catalog, markdown, "test");
+        assert!(matches!(
+            result,
+            Err(AgentLoadError::SchemaValidation { message, .. })
+                if message.contains("not_a_real_tool")
+        ));
+    }
+
+    #[test]
+    fn parse_tool_settings_rejects_unknown_nested_key() {
+        let loader = AgentLoader::new();
+        let mut catalog = AgentCatalog::new();
+        let markdown = indoc! {r#"
+            ---
+            description: Test agent
+            tool_settings:
+              read:
+                invalid_field_name_xyz: false
+            ---
+            Prompt"#
+        };
+
+        let result = loader.add_from_str(&mut catalog, markdown, "test");
+        assert!(matches!(
+            result,
+            Err(AgentLoadError::SchemaValidation { message, .. })
+                if message.contains("invalid_field_name_xyz")
+        ));
     }
 }

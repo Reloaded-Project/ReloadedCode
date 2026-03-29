@@ -80,7 +80,7 @@ mod tests {
     use super::AgentRuntimeBuilder;
     use crate::runtime::tool_catalog::{default_tools, ToolCatalogEntry, ToolCatalogKind};
     use crate::runtime::AgentDefaults;
-    use crate::{AgentCatalog, AgentConfig, AgentMode};
+    use crate::{AgentCatalog, AgentConfig, AgentMode, AgentToolSettings};
     use llm_coding_tools_core::tool_metadata::{glob as glob_meta, read as read_meta};
     use llm_coding_tools_core::TaskSettings;
 
@@ -95,6 +95,7 @@ mod tests {
             top_p: Some(0.8),
             permission: Default::default(),
             options: Default::default(),
+            tool_settings: AgentToolSettings::default(),
             prompt: format!("You are {name}.").into(),
         }
     }
