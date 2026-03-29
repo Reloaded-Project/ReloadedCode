@@ -28,6 +28,7 @@
 //! ```
 
 use llm_coding_tools_core::tool_metadata::{bash, glob, grep, read, webfetch};
+use llm_coding_tools_core::util::MIN_LINE_LENGTH;
 use serde::{Deserialize, Serialize};
 
 /// Per-agent tool settings controlling tool behaviour.
@@ -61,8 +62,11 @@ pub struct ReadToolSettings {
     /// Maximum lines to return per read (default: 2000, min: 1).
     #[serde(default = "read_default_limit")]
     pub limit: usize,
-    /// Maximum characters per line before truncation (default: 2000, min: 100).
-    #[serde(default = "read_default_max_line_length")]
+    /// Maximum characters per line before truncation (default: 2000, min: 4).
+    #[serde(
+        default = "read_default_max_line_length",
+        deserialize_with = "deserialize_read_max_line_length"
+    )]
     pub max_line_length: usize,
 }
 
@@ -86,8 +90,11 @@ pub struct GrepToolSettings {
     /// Maximum matches to return (default: 100, min: 1).
     #[serde(default = "grep_default_limit")]
     pub limit: usize,
-    /// Maximum characters per line before truncation (default: 2000, min: 100).
-    #[serde(default = "grep_default_max_line_length")]
+    /// Maximum characters per line before truncation (default: 2000, min: 4).
+    #[serde(
+        default = "grep_default_max_line_length",
+        deserialize_with = "deserialize_grep_max_line_length"
+    )]
     pub max_line_length: usize,
 }
 
@@ -200,6 +207,37 @@ const fn webfetch_default_timeout_ms() -> u64 {
 #[inline]
 const fn webfetch_default_max_response_size_mib() -> usize {
     webfetch::MAX_RESPONSE_SIZE_MIB
+}
+
+fn deserialize_read_max_line_length<'de, D>(deserializer: D) -> Result<usize, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    deserialize_min_max_line_length(deserializer, "read.max_line_length")
+}
+
+fn deserialize_grep_max_line_length<'de, D>(deserializer: D) -> Result<usize, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    deserialize_min_max_line_length(deserializer, "grep.max_line_length")
+}
+
+fn deserialize_min_max_line_length<'de, D>(
+    deserializer: D,
+    field_name: &str,
+) -> Result<usize, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    let value = usize::deserialize(deserializer)?;
+    if value < MIN_LINE_LENGTH {
+        return Err(serde::de::Error::custom(format!(
+            "{field_name} must be >= {}",
+            MIN_LINE_LENGTH
+        )));
+    }
+    Ok(value)
 }
 
 /// Deserializes `tool_settings`, rejecting explicit `null` while allowing

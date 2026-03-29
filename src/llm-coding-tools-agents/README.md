@@ -143,10 +143,10 @@ tool_settings:
 | -------- | ----------------------- | ----- | -------- | ---- | ------------------------------------------------ |
 | read     | `line_numbers`          | bool  | `true`   | —    | Show line numbers in output                      |
 | read     | `limit`                 | usize | `2000`   | 1    | Max lines per file read                          |
-| read     | `max_line_length`       | usize | `2000`   | 100  | Max characters per line (truncates longer lines) |
+| read     | `max_line_length`       | usize | `2000`   | 4    | Max characters per line (truncates longer lines) |
 | grep     | `line_numbers`          | bool  | `true`   | —    | Show line numbers in output                      |
 | grep     | `limit`                 | usize | `100`    | 1    | Max matches returned                             |
-| grep     | `max_line_length`       | usize | `2000`   | 100  | Max characters per match line                    |
+| grep     | `max_line_length`       | usize | `2000`   | 4    | Max characters per match line                    |
 | glob     | `limit`                 | usize | `1000`   | 1    | Max files returned                               |
 | bash     | `timeout_ms`            | usize | `120000` | 1000 | Default command timeout in milliseconds          |
 | webfetch | `timeout_ms`            | usize | `30000`  | 1000 | Fetch timeout in milliseconds                    |

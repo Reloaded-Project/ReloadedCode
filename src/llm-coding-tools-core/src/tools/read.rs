@@ -4,7 +4,9 @@ use crate::error::{ToolError, ToolResult};
 use crate::fs;
 use crate::output::ToolOutput;
 use crate::path::PathResolver;
-use crate::util::{truncate_line, ESTIMATED_CHARS_PER_LINE};
+use crate::util::{
+    truncate_line_with_ellipsis, ESTIMATED_CHARS_PER_LINE, MIN_LINE_LENGTH, TRUNCATION_ELLIPSIS,
+};
 use memchr::memchr;
 use std::borrow::Cow;
 use std::fmt::Write;
@@ -26,16 +28,20 @@ fn process_line<const LINE_NUMBERS: bool>(
 ) {
     let line_bytes = strip_cr(line_bytes);
     let content: Cow<'_, str> = String::from_utf8_lossy(line_bytes);
-    let (truncated_content, _) = truncate_line(&content, max_line_length);
+    let (display_content, was_truncated) = truncate_line_with_ellipsis(&content, max_line_length);
 
     if *lines_output > 0 {
         output.push('\n');
     }
 
     if LINE_NUMBERS {
-        let _ = write!(output, "L{}: {}", line_number, truncated_content);
+        let _ = write!(output, "L{}: {}", line_number, display_content);
     } else {
-        output.push_str(truncated_content);
+        output.push_str(display_content);
+    }
+
+    if was_truncated {
+        output.push_str(TRUNCATION_ELLIPSIS);
     }
 
     *lines_output += 1;
@@ -66,6 +72,12 @@ pub async fn read_file<R: PathResolver, const LINE_NUMBERS: bool>(
     }
     if limit == 0 {
         return Err(ToolError::OutOfBounds("limit must be >= 1".into()));
+    }
+    if max_line_length < MIN_LINE_LENGTH {
+        return Err(ToolError::Validation(format!(
+            "max_line_length must be >= {}",
+            MIN_LINE_LENGTH
+        )));
     }
 
     let path = resolver.resolve(file_path)?;
@@ -207,5 +219,44 @@ mod tests {
     async fn errors_on_offset_zero() {
         let err = read_temp_file::<true>(b"test\n", 0, 10).await.unwrap_err();
         assert!(matches!(err, ToolError::OutOfBounds(_)));
+    }
+
+    #[maybe_async::test(feature = "blocking", async(feature = "tokio", tokio::test))]
+    async fn errors_on_invalid_max_line_length() {
+        let mut temp = NamedTempFile::new().unwrap();
+        temp.write_all(b"test\n").unwrap();
+        let resolver = AbsolutePathResolver;
+
+        let err = read_file::<_, true>(
+            &resolver,
+            temp.path().to_str().unwrap(),
+            1,
+            10,
+            3, // below MIN_LINE_LENGTH of 4
+        )
+        .await
+        .unwrap_err();
+
+        assert!(matches!(err, ToolError::Validation(_)));
+        assert!(err.to_string().contains("max_line_length must be >= 4"));
+    }
+
+    #[maybe_async::test(feature = "blocking", async(feature = "tokio", tokio::test))]
+    async fn truncates_long_line_with_ellipsis() {
+        let mut temp = NamedTempFile::new().unwrap();
+        temp.write_all(b"abcdefghij\n").unwrap();
+        let resolver = AbsolutePathResolver;
+
+        let result = read_file::<_, false>(
+            &resolver,
+            temp.path().to_str().unwrap(),
+            1,
+            10,
+            6, // keep 3 chars + "..."
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(result.content, "abc...");
     }
 }

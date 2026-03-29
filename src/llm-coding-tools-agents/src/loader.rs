@@ -400,7 +400,7 @@ mod tests {
     use crate::AgentToolSettings;
     use ahash::AHashMap;
     use indexmap::IndexMap;
-    use indoc::indoc;
+    use indoc::{formatdoc, indoc};
     use rstest::rstest;
     use std::fs::{self, File};
     use std::io::Write;
@@ -1301,6 +1301,33 @@ mod tests {
             result,
             Err(AgentLoadError::SchemaValidation { message, .. })
                 if message.contains("invalid_field_name_xyz")
+        ));
+    }
+
+    #[rstest]
+    #[case("read")]
+    #[case("grep")]
+    fn parse_tool_settings_rejects_max_line_length_below_minimum(#[case] tool: &str) {
+        let loader = AgentLoader::new();
+        let mut catalog = AgentCatalog::new();
+
+        let markdown = formatdoc! {
+            r#"
+            ---
+            description: Test agent
+            tool_settings:
+              {tool}:
+                max_line_length: 3
+            ---
+            Prompt"#
+        };
+
+        let result = loader.add_from_str(&mut catalog, &markdown, "test");
+        assert!(matches!(
+            result,
+            Err(AgentLoadError::SchemaValidation { message, .. })
+                if message.contains(&format!("{tool}.max_line_length"))
+                    && message.contains(">= 4")
         ));
     }
 }

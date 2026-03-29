@@ -2042,6 +2042,7 @@ dependencies = [
  "parking_lot",
  "process-wrap",
  "reqwest 0.13.1",
+ "rstest",
  "schemars",
  "serde",
  "serde_json",

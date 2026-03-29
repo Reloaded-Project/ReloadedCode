@@ -109,6 +109,7 @@ wiremock = "0.6"
 indoc = "2"
 criterion = "0.8"
 temp-env = "0.3.6"
+rstest = "0.26"
 
 [[bench]]
 name = "model_catalog_builder"

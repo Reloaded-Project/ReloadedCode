@@ -2,6 +2,7 @@
 
 use crate::error::{ToolError, ToolResult};
 use crate::path::PathResolver;
+use crate::util::{truncate_line_with_ellipsis, TRUNCATION_ELLIPSIS};
 use globset::Glob;
 use grep_regex::RegexMatcher;
 use grep_searcher::sinks::UTF8;
@@ -12,7 +13,7 @@ use std::fmt::Write;
 use std::path::Path;
 use std::time::SystemTime;
 
-/// Default maximum line length (in bytes) for formatted grep output.
+/// Default maximum line length (in characters) for formatted grep output.
 pub const DEFAULT_MAX_LINE_LENGTH: usize = 2000;
 
 /// Estimated characters per grep match for buffer pre-allocation.
@@ -65,7 +66,7 @@ impl GrepOutput {
     /// # Arguments
     ///
     /// * `limit` - The original match limit (used in truncation message)
-    /// * `max_line_len` - Truncate lines exceeding this byte length at UTF-8 boundary
+    /// * `max_line_len` - Truncate lines exceeding this character length and append `...`
     pub fn format<const LINE_NUMBERS: bool>(&self, limit: usize, max_line_len: usize) -> String {
         let estimated_capacity = self.match_count * ESTIMATED_CHARS_PER_MATCH;
         let mut output = String::with_capacity(estimated_capacity);
@@ -75,16 +76,20 @@ impl GrepOutput {
         for file in &self.files {
             let _ = writeln!(&mut output, "\n{}:", file.path);
             for m in &file.matches {
-                let truncated_text = if m.line_text.len() > max_line_len {
-                    &m.line_text[..m.line_text.floor_char_boundary(max_line_len)]
-                } else {
-                    &m.line_text
-                };
+                let (display_text, was_truncated) =
+                    truncate_line_with_ellipsis(&m.line_text, max_line_len);
+
                 if LINE_NUMBERS {
-                    let _ = writeln!(&mut output, "  L{}: {}", m.line_num, truncated_text);
+                    let _ = write!(&mut output, "  L{}: {}", m.line_num, display_text);
                 } else {
-                    let _ = writeln!(&mut output, "  {}", truncated_text);
+                    let _ = write!(&mut output, "  {}", display_text);
                 }
+
+                if was_truncated {
+                    output.push_str(TRUNCATION_ELLIPSIS);
+                }
+
+                output.push('\n');
             }
         }
 
@@ -256,6 +261,7 @@ fn collect_file_matches(
 mod tests {
     use super::*;
     use crate::path::AbsolutePathResolver;
+    use rstest::rstest;
     use tempfile::tempdir;
 
     #[test]
@@ -334,5 +340,41 @@ mod tests {
         assert_eq!(result.match_count, 0);
         assert!(!result.truncated);
         assert!(!result.errors.is_empty());
+    }
+
+    #[rstest]
+    #[case(true, 6, "L1: abc...")] // With line numbers, truncates to "abc..."
+    #[case(false, 4, "  a...")] // Without line numbers, at min limit "  a..."
+    fn grep_format_truncates_lines_with_ellipsis(
+        #[case] with_line_numbers: bool,
+        #[case] max_len: usize,
+        #[case] expected: &str,
+    ) {
+        let output = GrepOutput {
+            files: vec![GrepFileMatches {
+                path: "file.txt".to_string(),
+                matches: vec![GrepLineMatch {
+                    line_num: 1,
+                    line_text: "abcdefghij".to_string(),
+                }],
+                mtime: SystemTime::UNIX_EPOCH,
+            }],
+            match_count: 1,
+            truncated: false,
+            partial: false,
+            errors: Vec::new(),
+        };
+
+        let formatted = if with_line_numbers {
+            output.format::<true>(10, max_len)
+        } else {
+            output.format::<false>(10, max_len)
+        };
+        assert!(
+            formatted.contains(expected),
+            "Expected '{}' in:\n{}",
+            expected,
+            formatted
+        );
     }
 }
