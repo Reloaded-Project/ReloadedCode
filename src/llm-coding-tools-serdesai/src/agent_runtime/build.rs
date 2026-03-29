@@ -54,12 +54,6 @@ impl PreparedBuild {
     pub(super) fn callable_target_summaries(&self) -> &[TaskTargetSummary] {
         &self.callable_target_summaries
     }
-
-    /// Clears callable Task target summaries for depth-limited builds.
-    #[inline]
-    pub(super) fn clear_callable_target_summaries(&mut self) {
-        self.callable_target_summaries.clear();
-    }
 }
 
 /// Resolves model configuration and collects build parameters for an agent.
@@ -68,6 +62,7 @@ pub(super) fn prepare_build<C>(
     name: &str,
     model_catalog: &ModelCatalog,
     credentials: &C,
+    with_summaries: bool,
 ) -> Result<PreparedBuild, AgentBuildError>
 where
     C: CredentialLookup,
@@ -79,7 +74,11 @@ where
     let resolved = resolve_model(model_catalog, runtime.defaults(), agent)?;
     let serdes_model = build_serdes_model(model_catalog, &resolved, credentials)?;
     let tools = runtime.allowed_tools(name);
-    let callable_target_summaries = summarize_callable_targets(runtime.catalog(), name);
+    let callable_target_summaries = if with_summaries {
+        summarize_callable_targets(runtime.catalog(), name)
+    } else {
+        Vec::new()
+    };
 
     Ok(PreparedBuild {
         agent_name: agent.name.clone(),
@@ -320,8 +319,8 @@ mod tests {
             .build();
 
         // Agent with permissions gets only the allowed tools
-        let prepared =
-            prepare_build(&runtime, "with-tools", &catalog, &credentials).expect("should succeed");
+        let prepared = prepare_build(&runtime, "with-tools", &catalog, &credentials, true)
+            .expect("should succeed");
         let agent = build_with_mock(&prepared, "with-tools");
         let names: HashSet<&str> = agent.tools().iter().map(|t| t.name()).collect();
         assert!(names.contains(read_meta::NAME));
@@ -329,8 +328,8 @@ mod tests {
         assert_eq!(names.len(), 2);
 
         // Agent with empty permissions gets no tools
-        let prepared =
-            prepare_build(&runtime, "no-tools", &catalog, &credentials).expect("should succeed");
+        let prepared = prepare_build(&runtime, "no-tools", &catalog, &credentials, true)
+            .expect("should succeed");
         let agent = build_with_mock(&prepared, "no-tools");
         assert!(agent.tools().is_empty());
     }
@@ -358,8 +357,8 @@ mod tests {
             .build();
 
         // Agent-level settings win over defaults
-        let prepared =
-            prepare_build(&runtime, "planner", &catalog, &credentials).expect("should succeed");
+        let prepared = prepare_build(&runtime, "planner", &catalog, &credentials, true)
+            .expect("should succeed");
         assert_eq!(prepared.model_spec.as_ref(), "openrouter:openai/gpt-4o");
         assert!((prepared.temperature.unwrap() - 0.4).abs() < 1e-6);
         assert!((prepared.top_p.unwrap() - 0.8).abs() < 1e-6);
@@ -374,7 +373,7 @@ mod tests {
         let runtime = AgentRuntimeBuilder::new()
             .defaults(AgentDefaults::with_model("openrouter/openai/gpt-4.1-mini"))
             .build();
-        let err = prepare_build(&runtime, "missing", &catalog, &credentials)
+        let err = prepare_build(&runtime, "missing", &catalog, &credentials, true)
             .err()
             .expect("should fail");
         assert!(matches!(err, AgentBuildError::UnknownAgent { name } if &*name == "missing"));
@@ -402,7 +401,7 @@ mod tests {
             .defaults(AgentDefaults::default())
             .build();
         let prepared =
-            prepare_build(&runtime, "dupe", &catalog, &credentials).expect("should succeed");
+            prepare_build(&runtime, "dupe", &catalog, &credentials, true).expect("should succeed");
         assert_eq!(prepared.model_spec.as_ref(), "openrouter:openai/gpt-4o");
         let agent = build_with_mock(&prepared, "dupe");
         assert_eq!(agent.tools().len(), 1);

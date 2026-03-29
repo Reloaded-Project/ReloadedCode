@@ -114,19 +114,17 @@ pub(crate) fn build_agent<C>(
 where
     C: CredentialLookup + Send + Sync + 'static,
 {
-    let mut prepared = prepare_build(
+    let with_summaries = context
+        .runtime()
+        .task_settings()
+        .allows_delegation(current_depth);
+    let prepared = prepare_build(
         context.runtime.as_ref(),
         name,
         context.model_catalog.as_ref(),
         context.credentials.as_ref(),
+        with_summaries,
     )?;
-    if !context
-        .runtime()
-        .task_settings()
-        .allows_delegation(current_depth)
-    {
-        prepared.clear_callable_target_summaries();
-    }
     let builder = AgentBuilder::<(), String>::from_arc(prepared.model().clone());
     let task_handle = TaskHandle::new(context, current_depth);
     let (builder, prompt_builder) = attach_standard_tools(builder, &prepared, Some(&task_handle))?;
