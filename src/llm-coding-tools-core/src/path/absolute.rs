@@ -40,41 +40,55 @@ impl PathResolver for AbsolutePathResolver {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use rstest::rstest;
 
-    #[test]
-    fn accepts_absolute_path() {
+    #[rstest]
+    #[cfg_attr(
+        windows,
+        case::accepts_platform_absolute_path(
+            "C:\\Users\\user\\file.txt",    // input: Windows absolute path
+            Ok("C:\\Users\\user\\file.txt") // expected: accepted as-is
+        )
+    )]
+    #[cfg_attr(
+        not(windows),
+        case::accepts_platform_absolute_path(
+            "/home/user/file.txt",    // input: Unix absolute path
+            Ok("/home/user/file.txt") // expected: accepted as-is
+        )
+    )]
+    #[case::rejects_plain_relative_path(
+        "relative/path.txt", // input: plain relative, no dot prefix
+        Err(())              // expected: rejected as non-absolute
+    )]
+    #[case::rejects_dot_relative_path(
+        "./file.txt", // input: dot-relative path
+        Err(())       // expected: rejected as non-absolute
+    )]
+    #[case::rejects_parent_relative_path(
+        "../file.txt", // input: parent-relative path
+        Err(())        // expected: rejected as non-absolute
+    )]
+    #[cfg_attr(
+        windows,
+        case::accepts_windows_absolute_path(
+            "C:\\Users\\file.txt",    // input: Windows absolute with different path
+            Ok("C:\\Users\\file.txt") // expected: accepted as-is
+        )
+    )]
+    fn resolve_handles_absolute_and_relative_paths(
+        #[case] input: &str,                        // path string to resolve
+        #[case] expected: Result<&'static str, ()>, // Ok(path) if accepted, Err(()) if rejected
+    ) {
         let resolver = AbsolutePathResolver;
-        #[cfg(windows)]
-        let path = "C:\\Users\\user\\file.txt";
-        #[cfg(not(windows))]
-        let path = "/home/user/file.txt";
-
-        let result = resolver.resolve(path);
-        assert!(result.is_ok());
-        assert_eq!(result.unwrap(), PathBuf::from(path));
-    }
-
-    #[test]
-    fn rejects_relative_path() {
-        let resolver = AbsolutePathResolver;
-        let result = resolver.resolve("relative/path.txt");
-        assert!(result.is_err());
-        let err = result.unwrap_err();
-        assert!(matches!(err, ToolError::InvalidPath(_)));
-        assert!(err.to_string().contains("must be absolute"));
-    }
-
-    #[test]
-    fn rejects_dot_relative_path() {
-        let resolver = AbsolutePathResolver;
-        assert!(resolver.resolve("./file.txt").is_err());
-        assert!(resolver.resolve("../file.txt").is_err());
-    }
-
-    #[cfg(windows)]
-    #[test]
-    fn accepts_windows_absolute_path() {
-        let resolver = AbsolutePathResolver;
-        assert!(resolver.resolve("C:\\Users\\file.txt").is_ok());
+        let result = resolver.resolve(input);
+        match expected {
+            Ok(expected_path) => assert_eq!(result.unwrap(), PathBuf::from(expected_path)),
+            Err(()) => {
+                let err = result.unwrap_err();
+                assert!(matches!(err, ToolError::InvalidPath(_)));
+                assert!(err.to_string().contains("must be absolute"));
+            }
+        }
     }
 }
