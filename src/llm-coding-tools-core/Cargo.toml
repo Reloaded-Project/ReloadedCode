@@ -48,7 +48,7 @@ bitflags = "2.11.0"
 bitcode = "0.6.9"
 
 # Compile-time generated packed bitfield structs for model metadata
-bitfields = "1.0.2"
+bitfields = "1.0.3"
 
 # High-performance hashing for permission keys
 ahash = "0.8"
