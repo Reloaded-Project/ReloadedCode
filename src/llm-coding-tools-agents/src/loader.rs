@@ -415,37 +415,30 @@ mod tests {
         write!(file, "{}", content).unwrap();
     }
 
-    #[test]
-    fn matches_agent_pattern_works() {
-        assert!(matches_agent_pattern("agent/test.md"));
-        assert!(matches_agent_pattern("agents/test.md"));
-        assert!(matches_agent_pattern("agent/nested/deep.md"));
-        assert!(matches_agent_pattern("agents/nested/deep.md"));
-        assert!(!matches_agent_pattern("other/test.md"));
-        assert!(!matches_agent_pattern("agent/test.txt"));
-        assert!(!matches_agent_pattern("notagen/test.md"));
+    #[rstest]
+    #[case::agent_directory("agent/test.md", true)] // top-level agent/ path
+    #[case::agents_directory("agents/test.md", true)] // top-level agents/ path
+    #[case::nested_agent("agent/nested/deep.md", true)] // nested under agent/
+    #[case::nested_agents("agents/nested/deep.md", true)] // nested under agents/
+    #[case::wrong_directory("other/test.md", false)] // non-agent directory
+    #[case::wrong_extension("agent/test.txt", false)] // non-.md extension
+    #[case::wrong_prefix("notagen/test.md", false)] // similar prefix but not agent/
+    fn agent_path_pattern_matching(#[case] rel_path: &str, #[case] expected: bool) {
+        assert_eq!(matches_agent_pattern(rel_path), expected);
     }
 
-    #[test]
-    fn derive_agent_name_from_rel_works() {
+    #[rstest]
+    #[case::agent_directory("agent/test.md", Some("test"))] // strips agent/ prefix
+    #[case::agents_directory("agents/test.md", Some("test"))] // strips agents/ prefix
+    #[case::nested_agent("agent/nested/deep.md", Some("nested/deep"))] // preserves nested path
+    #[case::deep_nested("agents/foo/bar/baz.md", Some("foo/bar/baz"))] // deep nesting under agents/
+    #[case::empty_name_agent("agent/.md", None)] // empty stem → no name
+    #[case::empty_name_agents("agents/.md", None)] // empty stem → no name
+    fn extracts_agent_name_from_rel_path(#[case] rel_path: &str, #[case] expected: Option<&str>) {
         assert_eq!(
-            derive_agent_name_from_rel("agent/test.md"),
-            Some("test".to_string())
+            derive_agent_name_from_rel(rel_path),
+            expected.map(|s| s.to_string())
         );
-        assert_eq!(
-            derive_agent_name_from_rel("agents/test.md"),
-            Some("test".to_string())
-        );
-        assert_eq!(
-            derive_agent_name_from_rel("agent/nested/deep.md"),
-            Some("nested/deep".to_string())
-        );
-        assert_eq!(
-            derive_agent_name_from_rel("agents/foo/bar/baz.md"),
-            Some("foo/bar/baz".to_string())
-        );
-        assert_eq!(derive_agent_name_from_rel("agent/.md"), None);
-        assert_eq!(derive_agent_name_from_rel("agents/.md"), None);
     }
 
     #[test]
