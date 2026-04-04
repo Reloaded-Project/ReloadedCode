@@ -151,7 +151,7 @@ pub fn grep_search<R: PathResolver>(
     if pattern.is_empty() {
         return Err(ToolError::validation_for(
             "pattern",
-            "pattern must not be empty",
+            "pattern must not be empty or whitespace-only",
         ));
     }
 
@@ -566,7 +566,7 @@ mod tests {
         assert!(matches!(err, ToolError::Validation { .. }));
         assert_eq!(
             err.to_string(),
-            "validation error: pattern must not be empty"
+            "validation error: pattern must not be empty or whitespace-only"
         );
     }
 
