@@ -15,11 +15,13 @@ use llm_coding_tools_core::ToolContext;
 use llm_coding_tools_core::context::{PathMode, ToolPrompt};
 use llm_coding_tools_core::path::PathResolver;
 use llm_coding_tools_core::tool_metadata::grep as grep_meta;
-use llm_coding_tools_core::tools::{DEFAULT_MAX_LINE_LENGTH, grep_search};
+use llm_coding_tools_core::tools::{DEFAULT_MAX_LINE_LENGTH, GrepOutput, grep_search};
 use serde::Deserialize;
-use serdes_ai::tools::{RunContext, SchemaBuilder, Tool, ToolDefinition, ToolError, ToolResult};
+use serde_json::json;
+use serdes_ai::tools::{
+    RunContext, SchemaBuilder, Tool, ToolDefinition, ToolError, ToolResult, ToolReturn,
+};
 
-use crate::common::grep::output_to_return as grep_output_to_return;
 use crate::convert::to_serdes_result;
 
 /// Internal args for JSON deserialization.
@@ -147,6 +149,32 @@ impl<R: PathResolver + Clone + Send + Sync, Deps: Send + Sync> Tool<Deps> for Gr
             )),
         }
     }
+}
+
+const NO_MATCHES_FOUND: &str = "No matches found.";
+
+fn grep_output_to_return(
+    output: GrepOutput,
+    line_numbers: bool,
+    limit: usize,
+    max_line_len: usize,
+) -> ToolReturn {
+    if output.partial {
+        let content = output.format(line_numbers, limit, max_line_len);
+        return ToolReturn::json(json!({
+            "content": content,
+            "partial": true,
+            "errors": output.errors,
+            "match_count": output.match_count,
+            "truncated": output.truncated,
+        }));
+    }
+
+    if output.files.is_empty() {
+        return ToolReturn::text(NO_MATCHES_FOUND);
+    }
+
+    ToolReturn::text(output.format(line_numbers, limit, max_line_len))
 }
 
 impl<R: PathResolver + Clone> ToolContext for GrepTool<R> {

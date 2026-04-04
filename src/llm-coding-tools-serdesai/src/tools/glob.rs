@@ -14,11 +14,13 @@ use llm_coding_tools_core::ToolContext;
 use llm_coding_tools_core::context::{PathMode, ToolPrompt};
 use llm_coding_tools_core::path::PathResolver;
 use llm_coding_tools_core::tool_metadata::glob as glob_meta;
-use llm_coding_tools_core::tools::glob_files;
+use llm_coding_tools_core::tools::{GlobOutput, glob_files};
 use serde::Deserialize;
-use serdes_ai::tools::{RunContext, SchemaBuilder, Tool, ToolDefinition, ToolError, ToolResult};
+use serde_json::json;
+use serdes_ai::tools::{
+    RunContext, SchemaBuilder, Tool, ToolDefinition, ToolError, ToolResult, ToolReturn,
+};
 
-use crate::common::glob::output_to_return as glob_output_to_return;
 use crate::convert::to_serdes_result;
 
 /// Internal args for JSON deserialization.
@@ -92,6 +94,38 @@ impl<R: PathResolver + Clone + Send + Sync, Deps: Send + Sync> Tool<Deps> for Gl
             Err(e) => to_serdes_result(glob_meta::NAME, Err(e)),
             Ok(output) => Ok(glob_output_to_return(output)),
         }
+    }
+}
+
+const NO_FILES_FOUND: &str = "No files found matching the pattern.";
+
+fn output_content(files: &[String]) -> String {
+    if files.is_empty() {
+        NO_FILES_FOUND.to_string()
+    } else {
+        files.join("\n")
+    }
+}
+
+fn glob_output_to_return(output: GlobOutput) -> ToolReturn {
+    let content = output_content(&output.files);
+
+    if output.partial {
+        return ToolReturn::json(json!({
+            "content": content,
+            "partial": true,
+            "errors": output.errors,
+            "truncated": output.truncated,
+        }));
+    }
+
+    if output.truncated {
+        ToolReturn::json(json!({
+            "content": content,
+            "truncated": true,
+        }))
+    } else {
+        ToolReturn::text(content)
     }
 }
 
