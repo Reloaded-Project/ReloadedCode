@@ -155,7 +155,10 @@ mod tests {
     /// Starts a wiremock server in a dedicated tokio thread for blocking tests.
     /// Returns a handle that shuts down the server and joins the thread when dropped.
     fn start_mock_server(
-        setup: impl FnOnce(MockServer) -> std::pin::Pin<Box<dyn std::future::Future<Output = ()> + Send>>
+        setup: impl for<'a> FnOnce(
+                &'a MockServer,
+            )
+                -> std::pin::Pin<Box<dyn std::future::Future<Output = ()> + Send + 'a>>
             + Send
             + 'static,
     ) -> MockServerHandle {
@@ -168,8 +171,8 @@ mod tests {
             rt.block_on(async {
                 let server = MockServer::start().await;
                 let uri = server.uri();
+                setup(&server).await;
                 tx.send(uri).expect("Failed to send server URI");
-                setup(server).await;
                 // Wait for shutdown signal
                 shutdown_clone.notified().await;
             })
