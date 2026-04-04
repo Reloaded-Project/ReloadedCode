@@ -44,6 +44,9 @@ serde_json = "1.0"
 # Zero overhead compile time bitflag generation
 bitflags = "2.11.0"
 
+# Shell-like expansion for home directory paths (~/ and $HOME/)
+shellexpand = "3.1.2"
+
 # Fast binary serialization for catalog cache types
 bitcode = "0.6.9"
 

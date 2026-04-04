@@ -60,10 +60,15 @@ impl AllowedPathResolver {
         })
     }
 
-    /// Creates a resolver from already-canonicalized paths.
+    /// Creates a resolver from already-canonicalized paths, skipping
+    /// filesystem validation.
     ///
-    /// Use this when paths are known to be valid and canonicalized,
-    /// skipping the filesystem check.
+    /// A canonical path is absolute, with all symlinks resolved and all
+    /// `.` and `..` components normalized. Use [`std::fs::canonicalize`] or
+    /// [`std::path::Path::canonicalize`] to canonicalize paths.
+    ///
+    /// Use this when paths are known to be valid and canonicalized, skipping
+    /// the filesystem check.
     ///
     /// # Safety
     ///

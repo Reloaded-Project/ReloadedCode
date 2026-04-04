@@ -69,10 +69,14 @@ Path-based tools are generic over [`PathResolver`], so wrappers can choose unres
 
 - [`AbsolutePathResolver`] enforces absolute-path inputs (unrestricted mode).
 - [`AllowedPathResolver`] constrains operations to configured directories (sandbox mode).
+- [`AllowedGlobResolver`] constrains to directories with glob pattern filtering (fine-grained sandbox mode).
 - Failed resolution rejects traversal and out-of-sandbox paths before tool execution.
 
 ```rust,no_run
-use llm_coding_tools_core::{AbsolutePathResolver, AllowedPathResolver, PathResolver, ToolResult};
+use llm_coding_tools_core::{
+    path::{AllowedGlobResolver, GlobPolicy, RuleAction},
+    AbsolutePathResolver, AllowedPathResolver, PathResolver, ToolResult,
+};
 
 fn demo() -> ToolResult<()> {
     // Unrestricted mode: any absolute path is allowed.
@@ -82,6 +86,19 @@ fn demo() -> ToolResult<()> {
     // Sandboxed mode: only configured directories are allowed.
     let sandbox = AllowedPathResolver::new(["/workspace/project", "/tmp"])?;
     let _lib = sandbox.resolve("src/lib.rs")?;
+
+    // Fine-grained sandbox (last-match-wins).
+    let glob = AllowedGlobResolver::new(["/workspace/project"])?
+        .with_policy(
+            GlobPolicy::builder()
+                .add("src/**", RuleAction::Allow)?    // Matches src/lib.rs
+                .add("*.rs", RuleAction::Allow)?      // Also matches src/lib.rs
+                .add("target/**", RuleAction::Deny)?  // Blocks target/ even if *.rs matches
+                .build()?
+        );
+    let _lib = glob.resolve("src/lib.rs")?;
+    let _main = glob.resolve("main.rs")?;
+    // glob.resolve("target/debug/app")?; // Denied
     Ok(())
 }
 ```
@@ -313,6 +330,7 @@ let key = resolver.resolve("OPENAI_API_KEY");
 [`ToolContext`]: crate::context::ToolContext
 [`PathResolver`]: crate::PathResolver
 [`AbsolutePathResolver`]: crate::AbsolutePathResolver
+[`AllowedGlobResolver`]: crate::path::AllowedGlobResolver
 [`AllowedPathResolver`]: crate::AllowedPathResolver
 [`permissions`]: crate::permissions
 [`Rule`]: crate::permissions::Rule

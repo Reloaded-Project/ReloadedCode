@@ -3,12 +3,15 @@
 //! This module provides [`PathResolver`] trait and implementations:
 //! - [`AbsolutePathResolver`] - Requires absolute paths only
 //! - [`AllowedPathResolver`] - Restricts to allowed directories
+//! - [`AllowedGlobResolver`] - Restricts to allowed directories with glob pattern filtering
 
 mod absolute;
 mod allowed;
+mod allowed_glob;
 
 pub use absolute::AbsolutePathResolver;
 pub use allowed::AllowedPathResolver;
+pub use allowed_glob::{AllowedGlobResolver, GlobPolicy, GlobPolicyBuilder, RuleAction};
 
 use crate::context::PathMode;
 use crate::error::ToolResult;

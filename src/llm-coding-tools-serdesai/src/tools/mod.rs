@@ -8,9 +8,10 @@
 //! resolver type at construction time, which selects the correct schema
 //! parameter names and descriptions.
 //!
-//! Supported path resolvers:
+//! These tools work with any [`PathResolver`] implementation:
 //! - [`AbsolutePathResolver`] - unrestricted absolute path access
 //! - [`AllowedPathResolver`] - sandboxed directory-restricted access
+//! - [`AllowedGlobResolver`] for sandboxed access with glob pattern filtering
 //!
 //! # Public API
 //!
@@ -44,6 +45,7 @@
 //! [`AbsolutePathResolver`]: llm_coding_tools_core::path::AbsolutePathResolver
 //! [`AllowedPathResolver`]: llm_coding_tools_core::path::AllowedPathResolver
 //! [`Tool`]: serdes_ai::tools::Tool
+//! [`AllowedGlobResolver`]: llm_coding_tools_core::path::AllowedGlobResolver
 
 mod bash;
 mod edit;
