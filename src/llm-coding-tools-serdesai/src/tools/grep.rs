@@ -68,6 +68,10 @@ impl<R: PathResolver + Clone> GrepTool<R> {
         limit: usize,
         line_numbers: bool,
     ) -> Self {
+        if limit == 0 {
+            panic!("GrepTool::with_settings: limit must be >= 1");
+        }
+
         let path_mode = R::PATH_MODE;
         Self {
             definition: build_definition(path_mode, line_numbers),
