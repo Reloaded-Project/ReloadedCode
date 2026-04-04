@@ -56,9 +56,7 @@ impl<R: PathResolver + Clone> GrepTool<R> {
     ///
     /// # Type Parameters
     ///
-    /// * `R` - A path resolver implementing [`PathResolver`]. The tool will
-    ///   automatically determine the correct path mode (Absolute or Allowed)
-    ///   based on the resolver type at construction.
+    /// * `R` - A path resolver implementing [`PathResolver`].
     pub fn new(resolver: R) -> Self {
         Self::with_settings(
             resolver,
@@ -82,7 +80,7 @@ impl<R: PathResolver + Clone> GrepTool<R> {
         limit: usize,
         line_numbers: bool,
     ) -> Self {
-        let path_mode = determine_path_mode::<R>();
+        let path_mode = R::PATH_MODE;
         Self {
             definition: build_definition(path_mode, line_numbers),
             resolver,
@@ -185,16 +183,6 @@ impl<R: PathResolver + Clone> ToolContext for GrepTool<R> {
             path_mode: self.path_mode,
             line_numbers: self.line_numbers,
         }
-    }
-}
-
-/// Determine the path mode for a resolver type.
-fn determine_path_mode<R: PathResolver>() -> PathMode {
-    let type_name = std::any::type_name::<R>();
-    if type_name.contains("AllowedPathResolver") {
-        PathMode::Allowed
-    } else {
-        PathMode::Absolute
     }
 }
 

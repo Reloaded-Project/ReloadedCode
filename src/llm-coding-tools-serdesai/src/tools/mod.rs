@@ -11,7 +11,6 @@
 //! Supported path resolvers:
 //! - [`AbsolutePathResolver`] - unrestricted absolute path access
 //! - [`AllowedPathResolver`] - sandboxed directory-restricted access
-//! - Custom types implementing the [`PathResolver`] trait
 //!
 //! # Public API
 //!

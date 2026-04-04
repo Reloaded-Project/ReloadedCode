@@ -1,6 +1,7 @@
 //! Allowed directory path resolver implementation.
 
 use super::PathResolver;
+use crate::context::PathMode;
 use crate::error::{ToolError, ToolResult};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -84,6 +85,8 @@ impl AllowedPathResolver {
 }
 
 impl PathResolver for AllowedPathResolver {
+    const PATH_MODE: PathMode = PathMode::Allowed;
+
     fn resolve(&self, path: &str) -> ToolResult<PathBuf> {
         let input_path = PathBuf::from(path);
 

@@ -66,9 +66,7 @@ impl<R: PathResolver + Clone> ReadTool<R> {
     ///
     /// # Type Parameters
     ///
-    /// * `R` - A path resolver implementing [`PathResolver`]. The tool will
-    ///   automatically determine the correct path mode (Absolute or Allowed)
-    ///   based on the resolver type at construction.
+    /// * `R` - A path resolver implementing [`PathResolver`].
     pub fn new(resolver: R) -> Self {
         Self::with_settings(
             resolver,
@@ -92,7 +90,7 @@ impl<R: PathResolver + Clone> ReadTool<R> {
         max_line_length: usize,
         line_numbers: bool,
     ) -> Self {
-        let path_mode = determine_path_mode::<R>();
+        let path_mode = R::PATH_MODE;
         Self {
             definition: build_definition(path_mode, line_numbers),
             resolver,
@@ -105,7 +103,7 @@ impl<R: PathResolver + Clone> ReadTool<R> {
 
     /// Returns the path mode for this tool instance.
     ///
-    /// The path mode is determined at construction based on the resolver type.
+    /// The path mode comes from the resolver implementation.
     #[must_use]
     pub fn path_mode(&self) -> PathMode {
         self.path_mode
@@ -144,25 +142,6 @@ impl<R: PathResolver + Clone> ToolContext for ReadTool<R> {
             path_mode: self.path_mode,
             line_numbers: self.line_numbers,
         }
-    }
-}
-
-/// Determine the path mode for a resolver type.
-///
-/// This is used at construction to set the correct path mode based on
-/// the resolver type. The path mode affects:
-/// - ToolContext::context() return value
-/// - Schema parameter names and descriptions
-fn determine_path_mode<R: PathResolver>() -> PathMode {
-    // Use type name to determine path mode at compile time
-    // AbsolutePathResolver -> Absolute
-    // AllowedPathResolver -> Allowed
-    // Any other resolver defaults to Absolute
-    let type_name = std::any::type_name::<R>();
-    if type_name.contains("AllowedPathResolver") {
-        PathMode::Allowed
-    } else {
-        PathMode::Absolute
     }
 }
 
