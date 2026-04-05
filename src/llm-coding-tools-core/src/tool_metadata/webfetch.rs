@@ -11,8 +11,8 @@ pub const DEFAULT_TIMEOUT_MS: u32 = 30_000;
 /// Maximum timeout in milliseconds.
 pub const MAX_TIMEOUT_MS: u32 = 600_000;
 
-/// Maximum response size in mebibytes (for display in prompts).
-pub const MAX_RESPONSE_SIZE_MIB: usize = 5;
+/// Maximum response size in bytes (5 MiB).
+pub const MAX_RESPONSE_SIZE: usize = 5 * 1024 * 1024;
 
 /// Tool description.
 pub const DESCRIPTION: &str =

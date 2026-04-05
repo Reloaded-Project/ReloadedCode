@@ -18,5 +18,6 @@ pub use runtime::{
 };
 pub use types::{
     parse_model_parts, AgentConfig, AgentLoadError, AgentLoadResult, AgentMode, AgentToolSettings,
-    GrepToolSettings, PermissionRule, ReadToolSettings,
+    BashToolSettings, GlobToolSettings, GrepToolSettings, PermissionRule, ReadToolSettings,
+    WebFetchToolSettings,
 };

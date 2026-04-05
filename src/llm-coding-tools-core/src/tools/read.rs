@@ -5,9 +5,7 @@ use crate::fs;
 use crate::output::ToolOutput;
 use crate::path::PathResolver;
 use crate::tool_metadata::read as read_meta;
-use crate::util::{
-    truncate_line_with_ellipsis, ESTIMATED_CHARS_PER_LINE, MIN_LINE_LENGTH, TRUNCATION_ELLIPSIS,
-};
+use crate::util::{truncate_line_with_ellipsis, ESTIMATED_CHARS_PER_LINE, TRUNCATION_ELLIPSIS};
 use memchr::memchr;
 use serde::Deserialize;
 use serde_json::Value;
@@ -69,16 +67,131 @@ impl ReadRequest {
 }
 
 /// Runtime settings applied to read requests.
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ReadSettings {
-    /// Default line limit when the request omits one.
-    pub default_limit: usize,
-    /// Maximum line limit the caller may request.
-    pub max_limit: usize,
-    /// Maximum characters per output line before truncation.
-    pub max_line_length: usize,
-    /// Whether line numbers should be included in output.
-    pub line_numbers: bool,
+    default_limit: usize,
+    max_limit: usize,
+    max_line_length: usize,
+    line_numbers: bool,
+}
+
+impl Default for ReadSettings {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl ReadSettings {
+    /// Creates valid read settings with the standard defaults.
+    #[must_use]
+    pub const fn new() -> Self {
+        Self {
+            default_limit: read_meta::DEFAULT_LIMIT,
+            max_limit: read_meta::DEFAULT_LIMIT,
+            max_line_length: read_meta::MAX_LINE_LENGTH,
+            line_numbers: true,
+        }
+    }
+
+    /// Updates both read limits in one validated step.
+    ///
+    /// # Arguments
+    /// - `default_limit`: Default line count when the request omits `limit`.
+    /// - `max_limit`: Hard cap applied to any requested limit.
+    ///
+    /// # Returns
+    /// - `Ok(Self)` with both limits updated.
+    ///
+    /// # Errors
+    /// - Returns an error when either limit is below `MIN_LIMIT` or `default_limit > max_limit`.
+    pub fn with_limits(mut self, default_limit: usize, max_limit: usize) -> ToolResult<Self> {
+        ensure_read_limits(default_limit, max_limit)?;
+        self.default_limit = default_limit;
+        self.max_limit = max_limit;
+        Ok(self)
+    }
+
+    /// Updates only the default limit while preserving the current max limit.
+    pub fn with_default_limit(self, default_limit: usize) -> ToolResult<Self> {
+        self.with_limits(default_limit, self.max_limit)
+    }
+
+    /// Updates only the max limit while preserving the current default limit.
+    pub fn with_max_limit(self, max_limit: usize) -> ToolResult<Self> {
+        self.with_limits(self.default_limit, max_limit)
+    }
+
+    /// Updates the per-line truncation length.
+    pub fn with_max_line_length(mut self, max_line_length: usize) -> ToolResult<Self> {
+        ensure_max_line_length(max_line_length)?;
+        self.max_line_length = max_line_length;
+        Ok(self)
+    }
+
+    /// Enables or disables line numbers in output.
+    #[must_use]
+    pub const fn with_line_numbers(mut self, line_numbers: bool) -> Self {
+        self.line_numbers = line_numbers;
+        self
+    }
+
+    /// Returns the default line limit.
+    #[must_use]
+    pub const fn default_limit(self) -> usize {
+        self.default_limit
+    }
+
+    /// Returns the maximum line limit.
+    #[must_use]
+    pub const fn max_limit(self) -> usize {
+        self.max_limit
+    }
+
+    /// Returns the maximum characters per line before truncation.
+    #[must_use]
+    pub const fn max_line_length(self) -> usize {
+        self.max_line_length
+    }
+
+    /// Returns whether line numbers are included in output.
+    #[must_use]
+    pub const fn line_numbers(self) -> bool {
+        self.line_numbers
+    }
+}
+
+fn ensure_read_limits(default_limit: usize, max_limit: usize) -> ToolResult<()> {
+    use crate::util::MIN_LIMIT;
+    if default_limit < MIN_LIMIT {
+        return Err(ToolError::validation_for(
+            "default_limit",
+            format!("default_limit must be >= {}", MIN_LIMIT),
+        ));
+    }
+    if max_limit < MIN_LIMIT {
+        return Err(ToolError::validation_for(
+            "max_limit",
+            format!("max_limit must be >= {}", MIN_LIMIT),
+        ));
+    }
+    if default_limit > max_limit {
+        return Err(ToolError::validation_for(
+            "default_limit",
+            format!("default_limit ({default_limit}) must be <= max_limit ({max_limit})"),
+        ));
+    }
+    Ok(())
+}
+
+fn ensure_max_line_length(max_line_length: usize) -> ToolResult<()> {
+    use crate::util::MIN_LINE_LENGTH;
+    if max_line_length < MIN_LINE_LENGTH {
+        return Err(ToolError::validation_for(
+            "max_line_length",
+            format!("max_line_length must be >= {}", MIN_LINE_LENGTH),
+        ));
+    }
+    Ok(())
 }
 
 /// Reads a file and returns formatted content, optionally with line numbers.
@@ -99,25 +212,19 @@ pub async fn read_file<R: PathResolver>(
 
     let limit = request
         .limit
-        .unwrap_or(settings.default_limit)
-        .min(settings.max_limit);
+        .unwrap_or(settings.default_limit())
+        .min(settings.max_limit());
     if limit == 0 {
         return Err(ToolError::validation_for("limit", "limit must be >= 1"));
     }
 
     let offset = request.offset;
-    let max_line_length = settings.max_line_length;
-    let line_numbers = settings.line_numbers;
+    let max_line_length = settings.max_line_length();
+    let line_numbers = settings.line_numbers();
 
     if offset == 0 {
         return Err(ToolError::OutOfBounds(
             "offset must be >= 1 (1-indexed)".into(),
-        ));
-    }
-    if max_line_length < MIN_LINE_LENGTH {
-        return Err(ToolError::validation_for(
-            "max_line_length",
-            format!("max_line_length must be >= {}", MIN_LINE_LENGTH),
         ));
     }
 
@@ -221,6 +328,7 @@ pub async fn read_file<R: PathResolver>(
 mod tests {
     use super::*;
     use crate::path::AbsolutePathResolver;
+    use rstest::rstest;
     use std::io::Write as _;
     use tempfile::NamedTempFile;
 
@@ -234,6 +342,10 @@ mod tests {
         let mut temp = NamedTempFile::new().unwrap();
         temp.write_all(content).unwrap();
         let resolver = AbsolutePathResolver;
+        let settings = ReadSettings::new()
+            .with_limits(limit, limit)
+            .unwrap()
+            .with_line_numbers(line_numbers);
         read_file::<_>(
             &resolver,
             ReadRequest {
@@ -241,14 +353,56 @@ mod tests {
                 offset,
                 limit: Some(limit),
             },
-            ReadSettings {
-                default_limit: limit,
-                max_limit: limit,
-                max_line_length: 2000,
-                line_numbers,
-            },
+            settings,
         )
         .await
+    }
+
+    // ReadSettings tests
+    #[test]
+    fn read_settings_should_create_standard_defaults() {
+        let settings = ReadSettings::new();
+        assert_eq!(settings.default_limit(), read_meta::DEFAULT_LIMIT);
+        assert_eq!(settings.max_limit(), read_meta::DEFAULT_LIMIT);
+        assert_eq!(settings.max_line_length(), read_meta::MAX_LINE_LENGTH);
+        assert!(settings.line_numbers());
+    }
+
+    #[test]
+    fn read_settings_should_accept_equal_minimum_limits() {
+        let settings = ReadSettings::new().with_limits(1, 1).unwrap();
+        assert_eq!(settings.default_limit(), 1);
+        assert_eq!(settings.max_limit(), 1);
+    }
+
+    #[rstest]
+    #[case::zero_default_limit(0, 1)]
+    #[case::both_zero(0, 0)]
+    #[case::default_limit_above_max(2, 1)]
+    fn read_settings_should_reject_invalid_limit_pairs(
+        #[case] default_limit: usize,
+        #[case] max_limit: usize,
+    ) {
+        assert!(ReadSettings::new()
+            .with_limits(default_limit, max_limit)
+            .is_err());
+    }
+
+    #[test]
+    fn read_settings_should_reject_zero_limits_from_individual_updates() {
+        assert!(ReadSettings::new().with_default_limit(0).is_err());
+        assert!(ReadSettings::new().with_max_limit(0).is_err());
+    }
+
+    #[test]
+    fn read_settings_should_reject_max_limit_below_current_default() {
+        let settings = ReadSettings::new().with_default_limit(100).unwrap();
+        assert!(settings.with_max_limit(50).is_err());
+    }
+
+    #[test]
+    fn read_settings_should_reject_short_max_line_length() {
+        assert!(ReadSettings::new().with_max_line_length(3).is_err());
     }
 
     #[maybe_async::test(feature = "blocking", async(feature = "tokio", tokio::test))]
@@ -274,37 +428,17 @@ mod tests {
     }
 
     #[maybe_async::test(feature = "blocking", async(feature = "tokio", tokio::test))]
-    async fn errors_on_invalid_max_line_length() {
-        let mut temp = NamedTempFile::new().unwrap();
-        temp.write_all(b"test\n").unwrap();
-        let resolver = AbsolutePathResolver;
-
-        let err = read_file::<_>(
-            &resolver,
-            ReadRequest {
-                file_path: temp.path().to_str().unwrap().to_string(),
-                offset: 1,
-                limit: Some(10),
-            },
-            ReadSettings {
-                default_limit: 10,
-                max_limit: 10,
-                max_line_length: 3, // below MIN_LINE_LENGTH of 4
-                line_numbers: true,
-            },
-        )
-        .await
-        .unwrap_err();
-
-        assert!(matches!(err, ToolError::Validation { .. }));
-        assert!(err.to_string().contains("max_line_length must be >= 4"));
-    }
-
-    #[maybe_async::test(feature = "blocking", async(feature = "tokio", tokio::test))]
     async fn truncates_long_line_with_ellipsis() {
         let mut temp = NamedTempFile::new().unwrap();
         temp.write_all(b"abcdefghij\n").unwrap();
         let resolver = AbsolutePathResolver;
+
+        let settings = ReadSettings::new()
+            .with_limits(10, 10)
+            .unwrap()
+            .with_max_line_length(6)
+            .unwrap()
+            .with_line_numbers(false);
 
         let result = read_file::<_>(
             &resolver,
@@ -313,12 +447,7 @@ mod tests {
                 offset: 1,
                 limit: Some(10),
             },
-            ReadSettings {
-                default_limit: 10,
-                max_limit: 10,
-                max_line_length: 6, // keep 3 chars + "..."
-                line_numbers: false,
-            },
+            settings,
         )
         .await
         .unwrap();
@@ -332,6 +461,15 @@ mod tests {
         temp.write_all(b"line1\nline2\nline3\n").unwrap();
         let resolver = AbsolutePathResolver;
 
+        // Valid settings: default_limit (2) <= max_limit (3), but request limit (3)
+        // will be capped at max_limit (3), then min with requested gives 3.
+        // Actually, to test capping, we need max_limit to be lower than requested.
+        // So: default_limit=1, max_limit=1, and request with limit=3 should cap at 1.
+        let settings = ReadSettings::new()
+            .with_limits(1, 1)
+            .unwrap()
+            .with_line_numbers(true);
+
         let result = read_file(
             &resolver,
             ReadRequest {
@@ -339,12 +477,7 @@ mod tests {
                 offset: 1,
                 limit: Some(3),
             },
-            ReadSettings {
-                default_limit: 2,
-                max_limit: 1,
-                max_line_length: 2000,
-                line_numbers: true,
-            },
+            settings,
         )
         .await
         .unwrap();
@@ -353,24 +486,25 @@ mod tests {
     }
 
     #[maybe_async::test(feature = "blocking", async(feature = "tokio", tokio::test))]
-    async fn read_request_rejects_zero_effective_limit() {
+    async fn read_request_rejects_zero_requested_limit() {
         let mut temp = NamedTempFile::new().unwrap();
         temp.write_all(b"line1\n").unwrap();
         let resolver = AbsolutePathResolver;
+
+        // Use valid settings, but request an explicit limit of 0
+        let settings = ReadSettings::new()
+            .with_limits(10, 10)
+            .unwrap()
+            .with_line_numbers(true);
 
         let err = read_file(
             &resolver,
             ReadRequest {
                 file_path: temp.path().to_string_lossy().into_owned(),
                 offset: 1,
-                limit: None,
+                limit: Some(0), // Request explicitly asks for 0 lines
             },
-            ReadSettings {
-                default_limit: 0,
-                max_limit: 0,
-                max_line_length: 2000,
-                line_numbers: true,
-            },
+            settings,
         )
         .await
         .unwrap_err();

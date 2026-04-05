@@ -23,8 +23,8 @@ pub use bash::{
 pub use edit::{edit_file, EditError, EditRequest};
 pub use glob::{glob_files, GlobOutput, GlobRequest, GlobSettings};
 pub use grep::{
-    grep_search, GrepFileMatches, GrepLineMatch, GrepOutput, GrepRequest, GrepSettings,
-    DEFAULT_MAX_LINE_LENGTH,
+    grep_search, GrepFileMatches, GrepFormattingSettings, GrepLineMatch, GrepOutput, GrepRequest,
+    GrepSettings, DEFAULT_MAX_LINE_LENGTH,
 };
 pub use read::{read_file, ReadRequest, ReadSettings};
 pub use task::{TaskInput, TaskOutput, TaskSettings};

@@ -29,7 +29,6 @@ use llm_coding_tools_core::context::{PathMode, ToolPrompt};
 use llm_coding_tools_core::path::PathResolver;
 use llm_coding_tools_core::tool_metadata::read as read_meta;
 use llm_coding_tools_core::tools::{ReadRequest, ReadSettings, read_file};
-use llm_coding_tools_core::util::{MIN_LIMIT, MIN_LINE_LENGTH};
 use serdes_ai::tools::{RunContext, SchemaBuilder, Tool, ToolDefinition, ToolResult};
 
 use crate::convert::{core_error_to_serdes, to_serdes_result};
@@ -43,9 +42,7 @@ pub struct ReadTool<R: PathResolver + Clone> {
     definition: ToolDefinition,
     resolver: R,
     path_mode: PathMode,
-    limit: usize,
-    max_line_length: usize,
-    line_numbers: bool,
+    settings: ReadSettings,
 }
 
 impl<R: PathResolver + Clone> ReadTool<R> {
@@ -58,12 +55,7 @@ impl<R: PathResolver + Clone> ReadTool<R> {
     ///
     /// * `R` - A path resolver implementing [`PathResolver`].
     pub fn new(resolver: R) -> Self {
-        Self::with_settings(
-            resolver,
-            read_meta::DEFAULT_LIMIT,
-            read_meta::MAX_LINE_LENGTH,
-            true,
-        )
+        Self::with_settings(resolver, ReadSettings::new())
     }
 
     /// Creates a new read tool with custom settings.
@@ -71,33 +63,14 @@ impl<R: PathResolver + Clone> ReadTool<R> {
     /// # Arguments
     ///
     /// * `resolver` - The path resolver for path validation and resolution.
-    /// * `limit` - Maximum number of lines to return per read call.
-    /// * `max_line_length` - Maximum characters per line before truncation.
-    /// * `line_numbers` - Whether to prefix lines with line numbers.
-    pub fn with_settings(
-        resolver: R,
-        limit: usize,
-        max_line_length: usize,
-        line_numbers: bool,
-    ) -> Self {
-        if limit < MIN_LIMIT {
-            panic!("ReadTool::with_settings: limit must be >= {}", MIN_LIMIT);
-        }
-        if max_line_length < MIN_LINE_LENGTH {
-            panic!(
-                "ReadTool::with_settings: max_line_length must be >= {}",
-                MIN_LINE_LENGTH
-            );
-        }
-
+    /// * `settings` - Core read settings for limits and formatting.
+    pub fn with_settings(resolver: R, settings: ReadSettings) -> Self {
         let path_mode = R::PATH_MODE;
         Self {
-            definition: build_definition(path_mode, line_numbers),
+            definition: build_definition(path_mode, settings.line_numbers()),
             resolver,
             path_mode,
-            limit,
-            max_line_length,
-            line_numbers,
+            settings,
         }
     }
 
@@ -120,17 +93,7 @@ impl<R: PathResolver + Clone + Send + Sync, Deps: Send + Sync> Tool<Deps> for Re
         let args =
             ReadRequest::parse(args).map_err(|e| core_error_to_serdes(read_meta::NAME, e))?;
 
-        let result = read_file(
-            &self.resolver,
-            args,
-            ReadSettings {
-                default_limit: self.limit,
-                max_limit: self.limit,
-                max_line_length: self.max_line_length,
-                line_numbers: self.line_numbers,
-            },
-        )
-        .await;
+        let result = read_file(&self.resolver, args, self.settings).await;
         to_serdes_result(read_meta::NAME, result)
     }
 }
@@ -141,7 +104,7 @@ impl<R: PathResolver + Clone> ToolContext for ReadTool<R> {
     fn context(&self) -> ToolPrompt {
         ToolPrompt::Read {
             path_mode: self.path_mode,
-            line_numbers: self.line_numbers,
+            line_numbers: self.settings.line_numbers(),
         }
     }
 }
@@ -202,6 +165,18 @@ mod tests {
 
     fn mock_ctx() -> RunContext<()> {
         RunContext::new((), "test-model")
+    }
+
+    #[test]
+    fn read_tool_should_use_custom_core_settings() {
+        let settings = ReadSettings::new()
+            .with_limits(1, 1)
+            .unwrap()
+            .with_max_line_length(100)
+            .unwrap()
+            .with_line_numbers(false);
+        let tool = ReadTool::with_settings(AbsolutePathResolver, settings);
+        assert_eq!(tool.settings, settings);
     }
 
     #[tokio::test]
@@ -274,7 +249,13 @@ mod tests {
     async fn respects_custom_settings() {
         let mut temp = NamedTempFile::new().unwrap();
         temp.write_all(b"line1\nline2\n").unwrap();
-        let tool = ReadTool::with_settings(AbsolutePathResolver, 1, 100, false);
+        let settings = ReadSettings::new()
+            .with_limits(1, 1)
+            .unwrap()
+            .with_max_line_length(100)
+            .unwrap()
+            .with_line_numbers(false);
+        let tool = ReadTool::with_settings(AbsolutePathResolver, settings);
 
         let result = tool
             .call(
@@ -295,7 +276,11 @@ mod tests {
     async fn caps_requested_limit_at_tool_limit() {
         let mut temp = NamedTempFile::new().unwrap();
         temp.write_all(b"line1\nline2\nline3\n").unwrap();
-        let tool = ReadTool::with_settings(AbsolutePathResolver, 1, 100, true);
+        let settings = ReadSettings::new()
+            .with_limits(1, 1)
+            .unwrap()
+            .with_line_numbers(true);
+        let tool = ReadTool::with_settings(AbsolutePathResolver, settings);
 
         let result = tool
             .call(

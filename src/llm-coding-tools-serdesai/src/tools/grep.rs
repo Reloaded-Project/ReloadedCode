@@ -16,9 +16,8 @@ use llm_coding_tools_core::context::{PathMode, ToolPrompt};
 use llm_coding_tools_core::path::PathResolver;
 use llm_coding_tools_core::tool_metadata::grep as grep_meta;
 use llm_coding_tools_core::tools::{
-    DEFAULT_MAX_LINE_LENGTH, GrepOutput, GrepRequest, GrepSettings, grep_search,
+    GrepFormattingSettings, GrepOutput, GrepRequest, GrepSettings, grep_search,
 };
-use llm_coding_tools_core::util::{MIN_LIMIT, MIN_LINE_LENGTH};
 use serde_json::json;
 use serdes_ai::tools::{RunContext, SchemaBuilder, Tool, ToolDefinition, ToolResult, ToolReturn};
 
@@ -32,9 +31,8 @@ pub struct GrepTool<R: PathResolver + Clone> {
     definition: ToolDefinition,
     resolver: R,
     path_mode: PathMode,
-    max_line_length: usize,
-    limit: usize,
-    line_numbers: bool,
+    search_settings: GrepSettings,
+    formatting_settings: GrepFormattingSettings,
 }
 
 impl<R: PathResolver + Clone> GrepTool<R> {
@@ -47,12 +45,7 @@ impl<R: PathResolver + Clone> GrepTool<R> {
     ///
     /// * `R` - A path resolver implementing [`PathResolver`].
     pub fn new(resolver: R) -> Self {
-        Self::with_settings(
-            resolver,
-            DEFAULT_MAX_LINE_LENGTH,
-            grep_meta::DEFAULT_LIMIT,
-            true,
-        )
+        Self::with_settings(resolver, GrepSettings::new(), GrepFormattingSettings::new())
     }
 
     /// Creates a new grep tool with custom settings.
@@ -60,33 +53,20 @@ impl<R: PathResolver + Clone> GrepTool<R> {
     /// # Arguments
     ///
     /// * `resolver` - The path resolver for path validation.
-    /// * `max_line_length` - Maximum characters per matching line before truncation.
-    /// * `limit` - Maximum number of matches to return when not specified in args.
-    /// * `line_numbers` - Whether to prefix lines with line numbers.
+    /// * `search_settings` - Core grep settings for search limits.
+    /// * `formatting_settings` - Core grep formatting settings for output.
     pub fn with_settings(
         resolver: R,
-        max_line_length: usize,
-        limit: usize,
-        line_numbers: bool,
+        search_settings: GrepSettings,
+        formatting_settings: GrepFormattingSettings,
     ) -> Self {
-        if limit < MIN_LIMIT {
-            panic!("GrepTool::with_settings: limit must be >= {}", MIN_LIMIT);
-        }
-        if max_line_length < MIN_LINE_LENGTH {
-            panic!(
-                "GrepTool::with_settings: max_line_length must be >= {}",
-                MIN_LINE_LENGTH
-            );
-        }
-
         let path_mode = R::PATH_MODE;
         Self {
-            definition: build_definition(path_mode, line_numbers),
+            definition: build_definition(path_mode, formatting_settings.line_numbers()),
             resolver,
             path_mode,
-            max_line_length,
-            limit,
-            line_numbers,
+            search_settings,
+            formatting_settings,
         }
     }
 
@@ -107,34 +87,20 @@ impl<R: PathResolver + Clone + Send + Sync, Deps: Send + Sync> Tool<Deps> for Gr
         let args =
             GrepRequest::parse(args).map_err(|e| core_error_to_serdes(grep_meta::NAME, e))?;
 
-        let result = grep_search(
-            &self.resolver,
-            args,
-            GrepSettings {
-                max_limit: self.limit,
-            },
-        );
+        let result = grep_search(&self.resolver, args, self.search_settings);
 
         match result {
             Err(e) => to_serdes_result(grep_meta::NAME, Err(e)),
-            Ok(grep_output) => Ok(grep_output_to_return(
-                grep_output,
-                self.line_numbers,
-                self.max_line_length,
-            )),
+            Ok(grep_output) => Ok(grep_output_to_return(grep_output, self.formatting_settings)),
         }
     }
 }
 
 const NO_MATCHES_FOUND: &str = "No matches found.";
 
-fn grep_output_to_return(
-    output: GrepOutput,
-    line_numbers: bool,
-    max_line_len: usize,
-) -> ToolReturn {
+fn grep_output_to_return(output: GrepOutput, formatting: GrepFormattingSettings) -> ToolReturn {
     if output.partial {
-        let content = output.format(line_numbers, max_line_len);
+        let content = output.format(formatting);
         return ToolReturn::json(json!({
             "content": content,
             "partial": true,
@@ -148,7 +114,7 @@ fn grep_output_to_return(
         return ToolReturn::text(NO_MATCHES_FOUND);
     }
 
-    ToolReturn::text(output.format(line_numbers, max_line_len))
+    ToolReturn::text(output.format(formatting))
 }
 
 impl<R: PathResolver + Clone> ToolContext for GrepTool<R> {
@@ -157,7 +123,7 @@ impl<R: PathResolver + Clone> ToolContext for GrepTool<R> {
     fn context(&self) -> ToolPrompt {
         ToolPrompt::Grep {
             path_mode: self.path_mode,
-            line_numbers: self.line_numbers,
+            line_numbers: self.formatting_settings.line_numbers(),
         }
     }
 }
@@ -384,7 +350,7 @@ mod tests {
                 // Line format is "  L1: content", so actual content is line.len() - prefix
                 let content_start = line.find("prefix_").unwrap();
                 let content = &line[content_start..];
-                assert!(content.len() <= DEFAULT_MAX_LINE_LENGTH);
+                assert!(content.len() <= llm_coding_tools_core::tools::DEFAULT_MAX_LINE_LENGTH);
             }
         }
     }
@@ -443,11 +409,12 @@ mod tests {
         std::fs::write(dir.path().join("test.txt"), "alpha\nbeta\ngamma\n").unwrap();
 
         // Tool configured with limit=1, but caller requests limit=3
+        let search_settings = GrepSettings::new().with_max_limit(1).unwrap();
+        let formatting_settings = GrepFormattingSettings::new();
         let tool = GrepTool::with_settings(
             AllowedPathResolver::new([dir.path()]).unwrap(),
-            DEFAULT_MAX_LINE_LENGTH,
-            1,
-            true,
+            search_settings,
+            formatting_settings,
         );
 
         let result = tool
@@ -467,6 +434,16 @@ mod tests {
         assert!(text.contains("L1: alpha"));
         assert!(!text.contains("L2: beta"));
         assert!(!text.contains("L3: gamma"));
+    }
+
+    #[test]
+    fn grep_tool_should_use_core_formatting_settings() {
+        let resolver = AbsolutePathResolver;
+        let search_settings = GrepSettings::new().with_max_limit(1).unwrap();
+        let formatting_settings = GrepFormattingSettings::new().with_line_numbers(false);
+        let tool = GrepTool::with_settings(resolver, search_settings, formatting_settings);
+        assert_eq!(tool.search_settings, search_settings);
+        assert_eq!(tool.formatting_settings, formatting_settings);
     }
 
     #[test]

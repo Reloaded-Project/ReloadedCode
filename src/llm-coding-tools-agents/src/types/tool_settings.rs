@@ -10,22 +10,22 @@
 //! name: example-agent
 //! tool_settings:
 //!   read:
-//!     line_numbers: true        # default: true
-//!     limit: 2000               # default: 2000 (tool_metadata::read::DEFAULT_LIMIT)
-//!     max_line_length: 2000     # default: 2000 (tool_metadata::read::MAX_LINE_LENGTH)
+//!     line_numbers: true         # default: true
+//!     limit: 2000                # default: 2000 (tool_metadata::read::DEFAULT_LIMIT)
+//!     max_line_length: 2000      # default: 2000 (tool_metadata::read::MAX_LINE_LENGTH)
 //!   grep:
-//!     line_numbers: true        # default: true
-//!     limit: 100                # default: 100 (tool_metadata::grep::DEFAULT_LIMIT)
-//!     max_line_length: 2000     # default: 2000 (tool_metadata::tools::DEFAULT_MAX_LINE_LENGTH)
+//!     line_numbers: true         # default: true
+//!     limit: 100                 # default: 100 (tool_metadata::grep::DEFAULT_LIMIT)
+//!     max_line_length: 2000      # default: 2000 (tool_metadata::tools::DEFAULT_MAX_LINE_LENGTH)
 //!   glob:
-//!     limit: 1000               # default: 1000 (tool_metadata::glob::MAX_RESULTS)
+//!     limit: 1000                # default: 1000 (tool_metadata::glob::MAX_RESULTS)
 //!   bash:
-//!     timeout_ms: 120000        # default: 120000ms (tool_metadata::bash::DEFAULT_TIMEOUT_MS)
-//!     max_timeout_ms: 600000    # default: 600000ms (tool_metadata::bash::MAX_TIMEOUT_MS)
+//!     timeout_ms: 120000         # default: 120000ms (tool_metadata::bash::DEFAULT_TIMEOUT_MS)
+//!     max_timeout_ms: 600000     # default: 600000ms (tool_metadata::bash::MAX_TIMEOUT_MS)
 //!   webfetch:
-//!     timeout_ms: 30000         # default: 30000ms (tool_metadata::webfetch::DEFAULT_TIMEOUT_MS)
-//!     max_timeout_ms: 600000    # default: 600000ms (tool_metadata::webfetch::MAX_TIMEOUT_MS)
-//!     max_response_size_mib: 5  # default: 5 MiB (tool_metadata::webfetch::MAX_RESPONSE_SIZE_MIB)
+//!     timeout_ms: 30000          # default: 30000ms (tool_metadata::webfetch::DEFAULT_TIMEOUT_MS)
+//!     max_timeout_ms: 600000     # default: 600000ms (tool_metadata::webfetch::MAX_TIMEOUT_MS)
+//!     max_response_size: 5242880 # default: 5242880 bytes (5 MiB) (tool_metadata::webfetch::MAX_RESPONSE_SIZE)
 //! ---
 //! ```
 
@@ -179,12 +179,12 @@ pub struct WebFetchToolSettings {
         deserialize_with = "deserialize_min_max_timeout_ms"
     )]
     pub max_timeout_ms: u32,
-    /// Maximum response size in MiB (default: 5, min: 1).
+    /// Maximum response size in bytes (default: 5242880 = 5 MiB, min: 1).
     #[serde(
-        default = "webfetch_default_max_response_size_mib",
+        default = "webfetch_default_max_response_size",
         deserialize_with = "deserialize_min_limit"
     )]
-    pub max_response_size_mib: usize,
+    pub max_response_size: usize,
 }
 
 impl Default for WebFetchToolSettings {
@@ -192,7 +192,7 @@ impl Default for WebFetchToolSettings {
         Self {
             timeout_ms: webfetch_default_timeout_ms(),
             max_timeout_ms: webfetch_default_max_timeout_ms(),
-            max_response_size_mib: webfetch_default_max_response_size_mib(),
+            max_response_size: webfetch_default_max_response_size(),
         }
     }
 }
@@ -249,8 +249,8 @@ const fn webfetch_default_max_timeout_ms() -> u32 {
 }
 
 #[inline]
-const fn webfetch_default_max_response_size_mib() -> usize {
-    webfetch::MAX_RESPONSE_SIZE_MIB
+const fn webfetch_default_max_response_size() -> usize {
+    webfetch::MAX_RESPONSE_SIZE
 }
 
 fn deserialize_read_max_line_length<'de, D>(deserializer: D) -> Result<usize, D::Error>
@@ -342,16 +342,12 @@ where
 }
 
 impl AgentToolSettings {
-    /// Validates cross-field constraints (e.g., timeout_ms <= max_timeout_ms).
+    /// Validates cross-field constraints for bash timeout pair.
+    /// Note: read/glob/grep/webfetch validation now happens during agent build
+    /// when these values are converted into Core settings.
     #[inline]
     fn validate(&self) -> Result<(), String> {
-        validate_timeout_pair("bash", self.bash.timeout_ms, self.bash.max_timeout_ms)?;
-        validate_timeout_pair(
-            "webfetch",
-            self.webfetch.timeout_ms,
-            self.webfetch.max_timeout_ms,
-        )?;
-        Ok(())
+        validate_timeout_pair("bash", self.bash.timeout_ms, self.bash.max_timeout_ms)
     }
 }
 

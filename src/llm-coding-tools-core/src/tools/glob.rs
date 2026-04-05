@@ -2,6 +2,7 @@
 
 use crate::error::{ToolError, ToolResult};
 use crate::path::PathResolver;
+use crate::tool_metadata::glob as glob_meta;
 use globset::Glob;
 use ignore::WalkBuilder;
 use serde::{Deserialize, Serialize};
@@ -23,10 +24,44 @@ impl GlobRequest {
 }
 
 /// Runtime settings applied to glob requests.
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct GlobSettings {
-    /// Maximum number of files to return.
-    pub limit: usize,
+    limit: usize,
+}
+
+impl Default for GlobSettings {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl GlobSettings {
+    /// Creates valid glob settings with the standard result limit.
+    #[must_use]
+    pub const fn new() -> Self {
+        Self {
+            limit: glob_meta::MAX_RESULTS,
+        }
+    }
+
+    /// Updates the maximum number of files returned.
+    pub fn with_limit(mut self, limit: usize) -> ToolResult<Self> {
+        use crate::util::MIN_LIMIT;
+        if limit < MIN_LIMIT {
+            return Err(ToolError::validation_for(
+                "limit",
+                format!("limit must be >= {}", MIN_LIMIT),
+            ));
+        }
+        self.limit = limit;
+        Ok(self)
+    }
+
+    /// Returns the maximum number of files to return.
+    #[must_use]
+    pub const fn limit(self) -> usize {
+        self.limit
+    }
 }
 
 /// Output from glob file matching.
@@ -63,10 +98,7 @@ pub fn glob_files<R: PathResolver>(
         )));
     }
 
-    let limit = settings.limit;
-    if limit == 0 {
-        return Err(ToolError::validation_for("limit", "limit must be >= 1"));
-    }
+    let limit = settings.limit();
 
     let matcher = Glob::new(&request.pattern)?.compile_matcher();
 
@@ -172,6 +204,18 @@ mod tests {
         dir
     }
 
+    // GlobSettings tests
+    #[test]
+    fn glob_settings_should_create_standard_defaults() {
+        let settings = GlobSettings::new();
+        assert_eq!(settings.limit(), glob_meta::MAX_RESULTS);
+    }
+
+    #[test]
+    fn glob_settings_should_reject_zero_limit() {
+        assert!(GlobSettings::new().with_limit(0).is_err());
+    }
+
     /// Verifies that glob patterns correctly include or exclude files based on
     /// both pattern matching and gitignore rules.
     #[rstest]
@@ -191,7 +235,7 @@ mod tests {
                 pattern: pattern.to_string(),
                 path: dir.path().to_str().unwrap().to_string(),
             },
-            GlobSettings { limit: 1000 },
+            GlobSettings::new().with_limit(1000).unwrap(),
         )
         .unwrap();
 
@@ -282,7 +326,7 @@ mod tests {
                 pattern: "**/*.txt".to_string(),
                 path: base.to_str().unwrap().to_string(),
             },
-            GlobSettings { limit: 1000 },
+            GlobSettings::new().with_limit(1000).unwrap(),
         )
         .unwrap();
 
@@ -316,7 +360,7 @@ mod tests {
                 pattern: "**/*.rs".to_string(),
                 path: dir.path().to_str().unwrap().to_string(),
             },
-            GlobSettings { limit: 1000 },
+            GlobSettings::new().with_limit(1000).unwrap(),
         )
         .unwrap();
 

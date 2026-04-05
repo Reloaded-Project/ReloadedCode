@@ -16,9 +16,47 @@ use llm_coding_tools_agents::{
     AgentRuntime, AgentToolSettings, ModelResolutionError, TaskTargetSummary, ToolCatalogEntry,
     ToolCatalogKind, summarize_callable_targets,
 };
+use llm_coding_tools_core::tool_metadata::{
+    glob as glob_meta, grep as grep_meta, read as read_meta, webfetch as webfetch_meta,
+};
+use llm_coding_tools_core::tools::{
+    GlobSettings, GrepFormattingSettings, GrepSettings, ReadSettings, WebFetchSettings,
+};
 use llm_coding_tools_core::{CredentialLookup, models::ModelCatalog};
 use serdes_ai::AgentBuilder;
 use serdes_ai_models::BoxedModel;
+
+/// Error returned when a build cannot produce a SerdesAI agent.
+#[derive(Debug, thiserror::Error)]
+pub enum AgentBuildError {
+    /// The requested agent name was not found in the runtime catalog.
+    #[error("unknown agent `{name}`")]
+    UnknownAgent {
+        /// The missing agent name.
+        name: Box<str>,
+    },
+    /// The runtime contains a tool kind this adapter cannot materialise.
+    #[error("tool `{name}` is not supported")]
+    UnsupportedToolKind {
+        /// The unsupported tool name.
+        name: Box<str>,
+    },
+    /// Resolving or validating the model configuration failed.
+    #[error(transparent)]
+    ModelResolution(#[from] ModelResolutionError),
+    /// Initializing the SerdesAI model failed.
+    #[error("failed to initialise model: {0}")]
+    ModelInit(#[from] serdes_ai_models::ModelError),
+    /// Tool settings validation failed during agent build.
+    #[error("invalid settings for tool `{tool}`: {source}")]
+    ToolSettingsValidation {
+        /// The tool name that had invalid settings.
+        tool: &'static str,
+        /// The underlying Core tool error.
+        #[source]
+        source: llm_coding_tools_core::ToolError,
+    },
+}
 
 /// Resolved build parameters ready for agent construction.
 #[derive(Clone)]
@@ -121,13 +159,10 @@ where
     for entry in &prepared.tools {
         match entry.kind {
             ToolCatalogKind::Read => {
-                let settings = &prepared.tool_settings.read;
-                builder = builder.tool(prompt_builder.track(ReadTool::with_settings(
-                    AbsolutePathResolver,
-                    settings.limit,
-                    settings.max_line_length,
-                    settings.line_numbers,
-                )));
+                let settings = build_read_settings(&prepared.tool_settings.read)?;
+                builder = builder.tool(
+                    prompt_builder.track(ReadTool::with_settings(AbsolutePathResolver, settings)),
+                );
             }
             ToolCatalogKind::Write => {
                 builder = builder.tool(prompt_builder.track(WriteTool::new(AbsolutePathResolver)))
@@ -136,19 +171,18 @@ where
                 builder = builder.tool(prompt_builder.track(EditTool::new(AbsolutePathResolver)))
             }
             ToolCatalogKind::Glob => {
-                let settings = &prepared.tool_settings.glob;
-                builder = builder.tool(prompt_builder.track(GlobTool::with_settings(
-                    AbsolutePathResolver,
-                    settings.limit,
-                )));
+                let settings = build_glob_settings(&prepared.tool_settings.glob)?;
+                builder = builder.tool(
+                    prompt_builder.track(GlobTool::with_settings(AbsolutePathResolver, settings)),
+                );
             }
             ToolCatalogKind::Grep => {
-                let settings = &prepared.tool_settings.grep;
+                let (search_settings, formatting_settings) =
+                    build_grep_settings(&prepared.tool_settings.grep)?;
                 builder = builder.tool(prompt_builder.track(GrepTool::with_settings(
                     AbsolutePathResolver,
-                    settings.max_line_length,
-                    settings.limit,
-                    settings.line_numbers,
+                    search_settings,
+                    formatting_settings,
                 )));
             }
             ToolCatalogKind::Bash => {
@@ -162,12 +196,8 @@ where
                     ));
             }
             ToolCatalogKind::WebFetch => {
-                let settings = &prepared.tool_settings.webfetch;
-                builder = builder.tool(prompt_builder.track(WebFetchTool::with_settings(
-                    settings.timeout_ms,
-                    Some(settings.max_timeout_ms),
-                    settings.max_response_size_mib,
-                )));
+                let settings = build_webfetch_settings(&prepared.tool_settings.webfetch)?;
+                builder = builder.tool(prompt_builder.track(WebFetchTool::with_settings(settings)));
             }
             ToolCatalogKind::TodoRead => {
                 builder = builder.tool(prompt_builder.track(todo_read.clone()))
@@ -197,27 +227,61 @@ where
     Ok((builder, prompt_builder))
 }
 
-/// Error returned when a build cannot produce a SerdesAI agent.
-#[derive(Debug, thiserror::Error)]
-pub enum AgentBuildError {
-    /// The requested agent name was not found in the runtime catalog.
-    #[error("unknown agent `{name}`")]
-    UnknownAgent {
-        /// The missing agent name.
-        name: Box<str>,
-    },
-    /// The runtime contains a tool kind this adapter cannot materialise.
-    #[error("tool `{name}` is not supported")]
-    UnsupportedToolKind {
-        /// The unsupported tool name.
-        name: Box<str>,
-    },
-    /// Resolving or validating the model configuration failed.
-    #[error(transparent)]
-    ModelResolution(#[from] ModelResolutionError),
-    /// Initializing the SerdesAI model failed.
-    #[error("failed to initialise model: {0}")]
-    ModelInit(#[from] serdes_ai_models::ModelError),
+fn build_read_settings(
+    settings: &llm_coding_tools_agents::ReadToolSettings,
+) -> Result<ReadSettings, AgentBuildError> {
+    ReadSettings::new()
+        .with_limits(settings.limit, settings.limit)
+        .and_then(|value| value.with_max_line_length(settings.max_line_length))
+        .map(|value| value.with_line_numbers(settings.line_numbers))
+        .map_err(|source| AgentBuildError::ToolSettingsValidation {
+            tool: read_meta::NAME,
+            source,
+        })
+}
+
+fn build_grep_settings(
+    settings: &llm_coding_tools_agents::GrepToolSettings,
+) -> Result<(GrepSettings, GrepFormattingSettings), AgentBuildError> {
+    let search_settings = GrepSettings::new()
+        .with_max_limit(settings.limit)
+        .map_err(|source| AgentBuildError::ToolSettingsValidation {
+            tool: grep_meta::NAME,
+            source,
+        })?;
+
+    let formatting_settings = GrepFormattingSettings::new()
+        .with_max_line_length(settings.max_line_length)
+        .map(|value| value.with_line_numbers(settings.line_numbers))
+        .map_err(|source| AgentBuildError::ToolSettingsValidation {
+            tool: grep_meta::NAME,
+            source,
+        })?;
+
+    Ok((search_settings, formatting_settings))
+}
+
+fn build_glob_settings(
+    settings: &llm_coding_tools_agents::GlobToolSettings,
+) -> Result<GlobSettings, AgentBuildError> {
+    GlobSettings::new()
+        .with_limit(settings.limit)
+        .map_err(|source| AgentBuildError::ToolSettingsValidation {
+            tool: glob_meta::NAME,
+            source,
+        })
+}
+
+fn build_webfetch_settings(
+    settings: &llm_coding_tools_agents::WebFetchToolSettings,
+) -> Result<WebFetchSettings, AgentBuildError> {
+    WebFetchSettings::new()
+        .with_timeouts(settings.timeout_ms, settings.max_timeout_ms)
+        .and_then(|value| value.with_max_response_size(settings.max_response_size))
+        .map_err(|source| AgentBuildError::ToolSettingsValidation {
+            tool: webfetch_meta::NAME,
+            source,
+        })
 }
 
 #[cfg(test)]

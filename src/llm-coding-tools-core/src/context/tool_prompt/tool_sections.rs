@@ -185,9 +185,9 @@ fn write_webfetch_section(output: &mut String) {
         output,
         formatcp!(
             "- Output starts with `[content-type - bytes]`.\n\
-            - Maximum response size is `{}` MiB.\n\
+            - Maximum response size is `{}` bytes.\n\
             - Use this for known URLs, not web search. Prefer a more specialized web tool when one exists.\n",
-            webfetch::MAX_RESPONSE_SIZE_MIB,
+            webfetch::MAX_RESPONSE_SIZE,
         ),
     );
 }

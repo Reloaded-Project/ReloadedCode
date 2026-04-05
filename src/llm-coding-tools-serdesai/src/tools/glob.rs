@@ -15,7 +15,6 @@ use llm_coding_tools_core::context::{PathMode, ToolPrompt};
 use llm_coding_tools_core::path::PathResolver;
 use llm_coding_tools_core::tool_metadata::glob as glob_meta;
 use llm_coding_tools_core::tools::{GlobOutput, GlobRequest, GlobSettings, glob_files};
-use llm_coding_tools_core::util::MIN_LIMIT;
 use serde_json::json;
 use serdes_ai::tools::{RunContext, SchemaBuilder, Tool, ToolDefinition, ToolResult, ToolReturn};
 
@@ -29,7 +28,7 @@ pub struct GlobTool<R: PathResolver + Clone> {
     definition: ToolDefinition,
     resolver: R,
     path_mode: PathMode,
-    limit: usize,
+    settings: GlobSettings,
 }
 
 impl<R: PathResolver + Clone> GlobTool<R> {
@@ -41,7 +40,7 @@ impl<R: PathResolver + Clone> GlobTool<R> {
     ///
     /// * `R` - A path resolver implementing [`PathResolver`].
     pub fn new(resolver: R) -> Self {
-        Self::with_settings(resolver, glob_meta::MAX_RESULTS)
+        Self::with_settings(resolver, GlobSettings::new())
     }
 
     /// Creates a new glob tool with custom settings.
@@ -49,18 +48,14 @@ impl<R: PathResolver + Clone> GlobTool<R> {
     /// # Arguments
     ///
     /// * `resolver` - The path resolver for path validation.
-    /// * `limit` - Maximum number of files to return per glob call.
-    pub fn with_settings(resolver: R, limit: usize) -> Self {
-        if limit < MIN_LIMIT {
-            panic!("GlobTool::with_settings: limit must be >= {}", MIN_LIMIT);
-        }
-
+    /// * `settings` - Core glob settings for result limits.
+    pub fn with_settings(resolver: R, settings: GlobSettings) -> Self {
         let path_mode = R::PATH_MODE;
         Self {
             definition: build_definition(path_mode),
             resolver,
             path_mode,
-            limit,
+            settings,
         }
     }
 
@@ -81,7 +76,7 @@ impl<R: PathResolver + Clone + Send + Sync, Deps: Send + Sync> Tool<Deps> for Gl
         let args =
             GlobRequest::parse(args).map_err(|e| core_error_to_serdes(glob_meta::NAME, e))?;
 
-        let result = glob_files(&self.resolver, args, GlobSettings { limit: self.limit });
+        let result = glob_files(&self.resolver, args, self.settings);
 
         match result {
             Err(e) => to_serdes_result(glob_meta::NAME, Err(e)),

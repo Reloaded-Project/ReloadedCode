@@ -136,7 +136,7 @@ tool_settings:
   webfetch:
     timeout_ms: 30000           # default: 30000 (30 seconds)
     max_timeout_ms: 600000      # default: 600000 (10 minutes)
-    max_response_size_mib: 5    # default: 5
+    max_response_size: 5242880  # default: 5242880 (5 MiB in bytes)
 ```
 
 **Setting reference:**
@@ -154,7 +154,7 @@ tool_settings:
 | bash     | `max_timeout_ms`        | usize | `600000` | *    | Maximum timeout LLM can request (must be >= timeout_ms) |
 | webfetch | `timeout_ms`            | usize | `30000`  | 1000 | Fetch timeout in milliseconds                           |
 | webfetch | `max_timeout_ms`        | usize | `600000` | *    | Maximum timeout LLM can request (must be >= timeout_ms) |
-| webfetch | `max_response_size_mib` | usize | `5`      | 1    | Max response body size in MiB                           |
+| webfetch | `max_response_size`     | usize | `5242880`| 1    | Max response body size in bytes                         |
 
 **Output format:**
 
@@ -207,8 +207,8 @@ fn main() {
 - **`webfetch.max_timeout_ms`** - Maximum timeout the LLM is allowed to request via the
   `timeout_ms` parameter. Must be greater than or equal to `timeout_ms`.
 
-- **`webfetch.max_response_size_mib`** - Maximum response body size in mebibytes.
-  Responses larger than this are rejected.
+- **`webfetch.max_response_size`** - Maximum response body size in bytes.
+  Responses larger than this are rejected. Default is 5242880 bytes (5 MiB).
 
 ## Building agents
 

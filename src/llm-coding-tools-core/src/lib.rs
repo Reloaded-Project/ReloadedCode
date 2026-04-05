@@ -33,10 +33,10 @@ pub use system_prompt::SystemPromptBuilder;
 pub use tools::{
     edit_file, execute_command, execute_command_with_mode, glob_files, grep_search, read_file,
     read_todos, write_file, write_todos, BashExecutionMode, BashOutput, BashRequest, BashSettings,
-    EditError, EditRequest, GlobOutput, GlobRequest, GlobSettings, GrepFileMatches, GrepLineMatch,
-    GrepOutput, GrepRequest, GrepSettings, ReadRequest, ReadSettings, TaskInput, TaskOutput,
-    TaskSettings, Todo, TodoPriority, TodoReadRequest, TodoState, TodoStatus, TodoWriteRequest,
-    WriteRequest,
+    EditError, EditRequest, GlobOutput, GlobRequest, GlobSettings, GrepFileMatches,
+    GrepFormattingSettings, GrepLineMatch, GrepOutput, GrepRequest, GrepSettings, ReadRequest,
+    ReadSettings, TaskInput, TaskOutput, TaskSettings, Todo, TodoPriority, TodoReadRequest,
+    TodoState, TodoStatus, TodoWriteRequest, WriteRequest,
 };
 
 // Re-export Linux sandbox types (Linux-only, requires linux-bubblewrap feature)

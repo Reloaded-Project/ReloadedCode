@@ -20,7 +20,7 @@ pub fn fetch_url(
     request: super::WebFetchRequest,
     settings: super::WebFetchSettings,
 ) -> ToolResult<WebFetchOutput> {
-    let timeout_ms = request.timeout_ms.unwrap_or(settings.default_timeout_ms);
+    let timeout_ms = request.timeout_ms.unwrap_or(settings.default_timeout_ms());
 
     if timeout_ms == 0 {
         return Err(ToolError::validation_for(
@@ -28,12 +28,12 @@ pub fn fetch_url(
             "timeout_ms must be at least 1",
         ));
     }
-    if timeout_ms > settings.max_timeout_ms {
+    if timeout_ms > settings.max_timeout_ms() {
         return Err(ToolError::validation_for(
             "timeout_ms",
             format!(
                 "timeout_ms exceeds maximum allowed value of {}",
-                settings.max_timeout_ms
+                settings.max_timeout_ms()
             ),
         ));
     }
@@ -73,7 +73,7 @@ pub fn fetch_url(
         })
         .transpose()?;
     if let Some(len) = content_length {
-        check_size(len, &request.url, settings.max_response_size)?;
+        check_size(len, &request.url, settings.max_response_size())?;
     }
 
     // Stream response body with incremental size checks to avoid memory exhaustion
@@ -94,7 +94,7 @@ pub fn fetch_url(
         total_len = total_len.checked_add(n).ok_or_else(|| {
             ToolError::Http(format!("Response size overflow for {}", request.url))
         })?;
-        check_size(total_len, &request.url, settings.max_response_size)?;
+        check_size(total_len, &request.url, settings.max_response_size())?;
 
         bytes.extend_from_slice(chunk);
         reader.consume(n);
@@ -114,7 +114,7 @@ pub fn fetch_url(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::tools::webfetch::{WebFetchRequest, WebFetchSettings};
+    use crate::tools::webfetch::WebFetchSettings;
     use rstest::rstest;
     use std::sync::mpsc;
     use std::sync::Arc;
@@ -122,6 +122,12 @@ mod tests {
     use tokio::sync::Notify;
     use wiremock::matchers::{method, path};
     use wiremock::{Mock, MockServer, ResponseTemplate};
+
+    fn test_settings() -> WebFetchSettings {
+        WebFetchSettings::new()
+            .with_timeouts(10_000, 20_000)
+            .unwrap()
+    }
 
     fn test_client() -> reqwest::blocking::Client {
         reqwest::blocking::Client::builder()
@@ -190,21 +196,20 @@ mod tests {
     /// network request. The URL is intentionally unreachable.
     #[rstest]
     #[case::zero_timeout(0, 10_000)]
-    #[case::exceeds_max(11_000, 10_000)]
+    #[case::exceeds_max(21_000, 20_000)]
     fn rejects_invalid_timeout(#[case] timeout_ms: u32, #[case] max_timeout_ms: u32) {
         let client = test_client();
+        let settings = WebFetchSettings::new()
+            .with_timeouts(5_000, max_timeout_ms)
+            .unwrap();
 
         let result = fetch_url(
             &client,
-            WebFetchRequest {
+            super::super::WebFetchRequest {
                 url: "http://localhost:1".to_string(),
                 timeout_ms: Some(timeout_ms),
             },
-            WebFetchSettings {
-                default_timeout_ms: 5000,
-                max_timeout_ms,
-                max_response_size: 5 * 1024 * 1024,
-            },
+            settings,
         );
 
         assert!(matches!(result, Err(ToolError::Validation { .. })));
@@ -229,15 +234,11 @@ mod tests {
         let client = test_client();
         let result = fetch_url(
             &client,
-            WebFetchRequest {
+            super::super::WebFetchRequest {
                 url: format!("{}/robots.txt", server.uri()),
                 timeout_ms: None,
             },
-            WebFetchSettings {
-                default_timeout_ms: 10_000,
-                max_timeout_ms: 20_000,
-                max_response_size: 5 * 1024 * 1024,
-            },
+            test_settings(),
         );
 
         let output = result.expect("Should successfully fetch");
@@ -260,15 +261,11 @@ mod tests {
         let client = test_client();
         let result = fetch_url(
             &client,
-            WebFetchRequest {
+            super::super::WebFetchRequest {
                 url: format!("{}/not-found", server.uri()),
                 timeout_ms: None,
             },
-            WebFetchSettings {
-                default_timeout_ms: 10_000,
-                max_timeout_ms: 20_000,
-                max_response_size: 5 * 1024 * 1024,
-            },
+            test_settings(),
         );
 
         assert!(

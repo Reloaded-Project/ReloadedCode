@@ -24,9 +24,7 @@ use serdes_ai::tools::{RunContext, SchemaBuilder, Tool, ToolDefinition, ToolResu
 pub struct WebFetchTool {
     client: reqwest::Client,
     definition: ToolDefinition,
-    default_timeout_ms: u32,
-    max_timeout_ms: u32,
-    max_response_size: usize,
+    settings: WebFetchSettings,
 }
 
 impl Default for WebFetchTool {
@@ -38,22 +36,16 @@ impl Default for WebFetchTool {
 impl WebFetchTool {
     /// Creates a new webfetch tool with default client and settings.
     pub fn new() -> Self {
-        Self::with_settings(
-            webfetch_meta::DEFAULT_TIMEOUT_MS,
-            None,
-            webfetch_meta::MAX_RESPONSE_SIZE_MIB,
-        )
+        Self::with_settings(WebFetchSettings::new())
     }
 
     /// Creates a webfetch tool with a custom client and default settings.
     pub fn with_client(client: reqwest::Client) -> Self {
-        let max_timeout_ms = webfetch_meta::MAX_TIMEOUT_MS;
+        let settings = WebFetchSettings::new();
         Self {
             client,
-            definition: build_definition(max_timeout_ms),
-            default_timeout_ms: webfetch_meta::DEFAULT_TIMEOUT_MS,
-            max_timeout_ms,
-            max_response_size: webfetch_meta::MAX_RESPONSE_SIZE_MIB * 1024 * 1024,
+            definition: build_definition(settings.max_timeout_ms()),
+            settings,
         }
     }
 
@@ -61,41 +53,12 @@ impl WebFetchTool {
     ///
     /// # Arguments
     ///
-    /// * `default_timeout_ms` - Default timeout for web requests (must be >= 1)
-    /// * `max_timeout_ms` - Maximum timeout allowed for LLM requests (defaults to MAX_TIMEOUT_MS)
-    /// * `max_response_size_mib` - Maximum response size in mebibytes
-    ///
-    /// # Panics
-    ///
-    /// Panics if `default_timeout_ms` is 0 or exceeds `max_timeout_ms`.
-    pub fn with_settings(
-        default_timeout_ms: u32,
-        max_timeout_ms: Option<u32>,
-        max_response_size_mib: usize,
-    ) -> Self {
-        let max_timeout_ms = max_timeout_ms.unwrap_or(webfetch_meta::MAX_TIMEOUT_MS);
-
-        if max_timeout_ms == 0 {
-            panic!("max_timeout_ms must be at least 1");
-        }
-
-        if default_timeout_ms == 0 {
-            panic!("default_timeout_ms must be at least 1");
-        }
-        if default_timeout_ms > max_timeout_ms {
-            panic!(
-                "default_timeout_ms ({}) cannot exceed max_timeout_ms ({})",
-                default_timeout_ms, max_timeout_ms
-            );
-        }
-
-        let max_response_size = max_response_size_mib.saturating_mul(1024 * 1024);
+    /// * `settings` - Core webfetch settings for timeouts and size limits.
+    pub fn with_settings(settings: WebFetchSettings) -> Self {
         Self {
             client: reqwest::Client::new(),
-            definition: build_definition(max_timeout_ms),
-            default_timeout_ms,
-            max_timeout_ms,
-            max_response_size,
+            definition: build_definition(settings.max_timeout_ms()),
+            settings,
         }
     }
 }
@@ -110,16 +73,7 @@ impl<Deps: Send + Sync> Tool<Deps> for WebFetchTool {
         let args = WebFetchRequest::parse(args)
             .map_err(|e| core_error_to_serdes(webfetch_meta::NAME, e))?;
 
-        let result = fetch_url(
-            &self.client,
-            args,
-            WebFetchSettings {
-                default_timeout_ms: self.default_timeout_ms,
-                max_timeout_ms: self.max_timeout_ms,
-                max_response_size: self.max_response_size,
-            },
-        )
-        .await;
+        let result = fetch_url(&self.client, args, self.settings).await;
 
         to_serdes_result(webfetch_meta::NAME, result.map(ToolOutput::from))
     }
