@@ -3,7 +3,9 @@
 use crate::error::{ToolError, ToolResult};
 use crate::tool_metadata::webfetch as webfetch_meta;
 use crate::util::MIN_TIMEOUT_MS;
-use html_to_markdown_rs::{convert, ConversionOptions, PreprocessingOptions, PreprocessingPreset};
+use html_to_markdown_rs::{
+    convert, ConversionOptions, ConversionResult, PreprocessingOptions, PreprocessingPreset,
+};
 use serde::Deserialize;
 use serde_json::Value;
 
@@ -236,7 +238,10 @@ pub fn html_to_markdown(html: &str) -> String {
         ..Default::default()
     };
 
-    convert(html, Some(options)).unwrap_or_else(|_| html.to_string())
+    convert(html, Some(options))
+        .ok()
+        .and_then(|result: ConversionResult| result.content)
+        .unwrap_or_else(|| html.to_string())
 }
 
 /// Formats JSON content for readability.
