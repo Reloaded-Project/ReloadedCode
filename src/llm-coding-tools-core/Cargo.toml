@@ -89,7 +89,7 @@ reqwest = { version = "0.13", default-features = false, features = [
 maybe-async = "0.2"
 
 # Async file I/O, process execution, and timeouts
-tokio = { version = "1.50", features = ["fs", "io-util", "process", "time"], optional = true }
+tokio = { version = "1.51", features = ["fs", "io-util", "process", "time"], optional = true }
 
 # Cross-platform process tree management (Job Objects on Windows, process groups on Unix)
 process-wrap = { version = "9.1", default-features = false }
@@ -103,7 +103,7 @@ llm-coding-tools-bubblewrap = { version = "0.1.0", path = "../llm-coding-tools-b
 serial_test = "3"
 tempfile = "3.27"
 # For tests (async and blocking with wiremock)
-tokio = { version = "1.50", features = ["rt-multi-thread", "macros"] }
+tokio = { version = "1.51", features = ["rt-multi-thread", "macros"] }
 wiremock = "0.6"
 indoc = "2"
 criterion = "0.8"

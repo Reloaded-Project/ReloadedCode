@@ -59,9 +59,9 @@ thiserror = "2.0.18"
 tempfile = "3.27"
 
 # Async runtime (when tokio feature enabled)
-tokio = { version = "1.49", features = ["fs", "io-util"], optional = true }
+tokio = { version = "1.51", features = ["fs", "io-util"], optional = true }
 
 [dev-dependencies]
-tokio = { version = "1.49", features = ["rt", "macros"] }
+tokio = { version = "1.51", features = ["rt", "macros"] }
 serial_test = "3"
 rstest = "0.26"
