@@ -2,6 +2,8 @@
 
 use std::path::{Path, PathBuf};
 
+use crate::error::{ToolError, ToolResult};
+
 /// Normalizes a path to use forward slashes for consistent glob matching.
 ///
 /// On Windows, converts backslashes to forward slashes.
@@ -21,15 +23,19 @@ pub(crate) fn normalize_path(path: &Path) -> String {
 /// Expands shell-like patterns (`~/`, `$HOME/`, `$VAR`, `${VAR:-default}`) in a
 /// path string.
 ///
-/// Returns the expanded path or the original if no expansion needed. Uses
-/// `shellexpand` which internally uses `dirs::home_dir()` for cross-platform
-/// home detection.
-pub(crate) fn expand_shell(path: &str) -> PathBuf {
-    PathBuf::from(
-        shellexpand::full(path)
-            .unwrap_or_else(|_| path.into())
-            .into_owned(),
-    )
+/// Returns the expanded path on success, or a `ToolError::InvalidPath` if
+/// expansion fails (e.g., environment variable not set or contains non-Unicode
+/// data). Uses `shellexpand` which internally uses `dirs::home_dir()` for
+/// cross-platform home detection.
+pub(crate) fn expand_shell(path: &str) -> ToolResult<PathBuf> {
+    shellexpand::full(path)
+        .map(|cow| PathBuf::from(cow.into_owned()))
+        .map_err(|e| {
+            ToolError::InvalidPath(format!(
+                "failed to expand shell pattern in path '{}': {}",
+                path, e
+            ))
+        })
 }
 
 #[cfg(test)]
@@ -92,7 +98,7 @@ mod tests {
         let env_var = "HOME";
 
         with_var(env_var, Some(&temp_home_path), || {
-            let result = strip_verbatim(expand_shell("~/project"));
+            let result = strip_verbatim(expand_shell("~/project").unwrap());
             assert!(result.starts_with(&temp_home_path));
             assert!(result.ends_with("project"));
         });
@@ -106,7 +112,7 @@ mod tests {
         let temp_home_path = TempDir::new().unwrap().path().canonicalize().unwrap();
 
         with_var("HOME", Some(&temp_home_path), || {
-            let result = strip_verbatim(expand_shell("$HOME/workspace"));
+            let result = strip_verbatim(expand_shell("$HOME/workspace").unwrap());
             assert!(result.starts_with(&temp_home_path));
             assert!(result.ends_with("workspace"));
         });
@@ -114,7 +120,20 @@ mod tests {
 
     #[test]
     fn leaves_path_without_shell_patterns_unchanged() {
-        let result = expand_shell("/some/path");
+        let result = expand_shell("/some/path").unwrap();
         assert_eq!(result, PathBuf::from("/some/path"));
+    }
+
+    #[test]
+    fn returns_error_for_unset_environment_variable() {
+        use temp_env::with_var;
+
+        with_var("DEFINITELY_NOT_SET_12345", None::<&str>, || {
+            let result = expand_shell("$DEFINITELY_NOT_SET_12345/project");
+            assert!(result.is_err());
+            let err = result.unwrap_err();
+            assert!(err.to_string().contains("failed to expand shell pattern"));
+            assert!(err.to_string().contains("DEFINITELY_NOT_SET_12345"));
+        });
     }
 }

@@ -72,7 +72,7 @@ impl AllowedGlobResolver {
             .into_iter()
             .map(|p| {
                 let path = p.as_ref();
-                let expanded = expand_shell(&path.to_string_lossy());
+                let expanded = expand_shell(&path.to_string_lossy())?;
                 expanded
                     .canonicalize()
                     .map(|pb| Arc::from(pb.into_boxed_path()))
