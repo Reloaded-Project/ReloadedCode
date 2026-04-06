@@ -1,6 +1,6 @@
 //! Allowed directory path resolver implementation.
 
-use super::PathResolver;
+use super::{resolve_nonexistent_candidate, PathResolver};
 use crate::context::PathMode;
 use crate::error::{ToolError, ToolResult};
 use std::path::{Path, PathBuf};
@@ -109,17 +109,10 @@ impl PathResolver for AllowedPathResolver {
                 continue;
             }
 
-            // For non-existent paths (write operations), validate parent
-            if let Some(parent) = candidate.parent() {
-                if let Ok(canonical_parent) = parent.canonicalize() {
-                    if canonical_parent.starts_with(base) {
-                        // Parent is valid, construct the final path
-                        let file_name = candidate.file_name().ok_or_else(|| {
-                            ToolError::InvalidPath("path has no file name".into())
-                        })?;
-                        return Ok(canonical_parent.join(file_name));
-                    }
-                }
+            // For non-existent paths (write operations), resolve from the nearest
+            // existing ancestor so new intermediate directories are allowed.
+            if let Some(resolved) = resolve_nonexistent_candidate(base, &candidate) {
+                return Ok(resolved);
             }
         }
 
@@ -152,6 +145,7 @@ mod tests {
     #[case::nested_existing_file("subdir/nested.txt", "nested.txt")] // exists: created by setup_test_dir()
     #[case::new_file_in_root("new_file.txt", "new_file.txt")] // does NOT exist: tests write path resolution
     #[case::new_file_in_subdir("subdir/new_file.txt", "new_file.txt")] // does NOT exist: tests write path resolution
+    #[case::new_file_in_missing_directories("new_dir/nested/new_file.txt", "new_file.txt")]
     fn resolves_valid_paths_successfully(
         #[case] input_path: &str,
         #[case] expected_filename: &str,
@@ -172,6 +166,7 @@ mod tests {
     #[rstest]
     #[case::parent_traversal("../../../etc/passwd")]
     #[case::nested_parent_traversal("subdir/../../../new_file.txt")]
+    #[case::missing_dir_parent_traversal("new_dir/../../new_file.txt")]
     fn rejects_paths_that_escape_allowed_directory(#[case] input_path: &str) {
         let dir = setup_test_dir();
         let resolver = AllowedPathResolver::new(vec![dir.path().to_path_buf()]).unwrap();

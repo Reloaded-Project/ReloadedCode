@@ -6,7 +6,7 @@
 mod normalize;
 mod policy;
 
-use super::PathResolver;
+use super::{resolve_nonexistent_candidate, PathResolver};
 use crate::context::PathMode;
 use crate::error::{ToolError, ToolResult};
 use normalize::expand_shell;
@@ -160,29 +160,20 @@ impl PathResolver for AllowedGlobResolver {
                 return Ok(resolved);
             }
 
-            // For non-existent paths (write operations), validate parent directory.
-            if let Some(parent) = candidate.parent() {
-                if let Ok(resolved_parent) = parent.canonicalize() {
-                    if resolved_parent.starts_with(base_dir) {
-                        let file_name = candidate.file_name().ok_or_else(|| {
-                            ToolError::InvalidPath("path has no file name".into())
-                        })?;
-                        let target_path = resolved_parent.join(file_name);
+            // For non-existent paths (write operations), resolve from the nearest
+            // existing ancestor so new intermediate directories are allowed.
+            if let Some(target_path) = resolve_nonexistent_candidate(base_dir, &candidate) {
+                // Apply glob policy to the target relative path.
+                let relative_path = target_path.strip_prefix(base_dir).unwrap_or(Path::new(""));
+                let normalized_relative = normalize::normalize_path(relative_path);
 
-                        // Apply glob policy to the target relative path.
-                        let relative_path =
-                            target_path.strip_prefix(base_dir).unwrap_or(Path::new(""));
-                        let normalized_relative = normalize::normalize_path(relative_path);
-
-                        if let Some(policy) = &self.policy {
-                            if !policy.is_allowed(&normalized_relative) {
-                                continue;
-                            }
-                        }
-
-                        return Ok(target_path);
+                if let Some(policy) = &self.policy {
+                    if !policy.is_allowed(&normalized_relative) {
+                        continue;
                     }
                 }
+
+                return Ok(target_path);
             }
         }
 
@@ -305,10 +296,32 @@ mod tests {
         assert!(result.unwrap().ends_with("new_file.rs"));
     }
 
+    #[test]
+    fn resolves_new_file_when_intermediate_directories_do_not_exist() {
+        let dir = setup_test_dir();
+        let resolver = AllowedGlobResolver::new(vec![dir.path().to_path_buf()]).unwrap();
+
+        // write targets should still resolve when some parent directories do not exist yet.
+        let result = resolver.resolve("src/new_dir/nested/new_file.rs");
+        assert!(result.is_ok());
+        assert!(result.unwrap().ends_with("src/new_dir/nested/new_file.rs"));
+    }
+
+    #[test]
+    fn resolves_new_file_with_missing_directories_under_matching_policy() {
+        let dir = setup_test_dir();
+        let resolver = resolver_with_policy(&dir, "src/**/*.rs");
+
+        let result = resolver.resolve("src/new_dir/nested/new_file.rs");
+        assert!(result.is_ok());
+        assert!(result.unwrap().ends_with("src/new_dir/nested/new_file.rs"));
+    }
+
     #[rstest]
     #[case::parent_traversal("../../../etc/passwd")]
     #[case::nested_traversal("src/../../../etc/passwd")]
     #[case::simple_parent("../Cargo.toml")]
+    #[case::missing_dir_parent_traversal("src/new_dir/../../Cargo.toml")]
     fn rejects_path_traversal_attempts(#[case] input: &str) {
         let dir = setup_test_dir();
         let resolver = AllowedGlobResolver::new(vec![dir.path().to_path_buf()]).unwrap();
