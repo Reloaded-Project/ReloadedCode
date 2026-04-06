@@ -3,6 +3,7 @@
 use super::PathResolver;
 use crate::context::PathMode;
 use crate::error::{ToolError, ToolResult};
+use soft_canonicalize::soft_canonicalize;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
@@ -37,17 +38,24 @@ pub struct AllowedPathResolver {
 impl AllowedPathResolver {
     /// Creates a new resolver with the given allowed directories.
     ///
-    /// Each directory is canonicalized during construction to ensure
-    /// consistent path comparison. Returns an error if any directory
-    /// doesn't exist or can't be canonicalized.
+    /// Each directory is resolved during construction to ensure consistent path
+    /// comparison. Returns an error if any directory doesn't exist or can't be
+    /// resolved.
     pub fn new(allowed_paths: impl IntoIterator<Item = impl AsRef<Path>>) -> ToolResult<Self> {
         let canonicalized: Result<Arc<[PathBuf]>, _> = allowed_paths
             .into_iter()
             .map(|p| {
                 let path = p.as_ref();
-                path.canonicalize().map_err(|e| {
+                if !path.is_dir() {
+                    return Err(ToolError::InvalidPath(format!(
+                        "failed to resolve allowed path '{}': path is not an existing directory",
+                        path.display()
+                    )));
+                }
+
+                soft_canonicalize(path).map_err(|e| {
                     ToolError::InvalidPath(format!(
-                        "failed to canonicalize allowed path '{}': {}",
+                        "failed to resolve allowed path '{}': {}",
                         path.display(),
                         e
                     ))
@@ -60,10 +68,15 @@ impl AllowedPathResolver {
         })
     }
 
-    /// Creates a resolver from already-canonicalized paths.
+    /// Creates a resolver from already-canonicalized paths, skipping
+    /// filesystem validation.
     ///
-    /// Use this when paths are known to be valid and canonicalized,
-    /// skipping the filesystem check.
+    /// A canonical path is absolute, with all symlinks resolved and all
+    /// `.` and `..` components normalized. Use [`std::fs::canonicalize`] or
+    /// [`std::path::Path::canonicalize`] to canonicalize paths.
+    ///
+    /// Use this when paths are known to be valid and canonicalized, skipping
+    /// the filesystem check.
     ///
     /// # Safety
     ///
@@ -104,16 +117,11 @@ impl PathResolver for AllowedPathResolver {
                 continue;
             }
 
-            // For non-existent paths (write operations), validate parent
-            if let Some(parent) = candidate.parent() {
-                if let Ok(canonical_parent) = parent.canonicalize() {
-                    if canonical_parent.starts_with(base) {
-                        // Parent is valid, construct the final path
-                        let file_name = candidate.file_name().ok_or_else(|| {
-                            ToolError::InvalidPath("path has no file name".into())
-                        })?;
-                        return Ok(canonical_parent.join(file_name));
-                    }
+            // Non-existent paths still need a resolved absolute target so we can
+            // validate containment consistently across platforms.
+            if let Ok(resolved) = soft_canonicalize(&candidate) {
+                if resolved.starts_with(base) {
+                    return Ok(resolved);
                 }
             }
         }
@@ -147,6 +155,7 @@ mod tests {
     #[case::nested_existing_file("subdir/nested.txt", "nested.txt")] // exists: created by setup_test_dir()
     #[case::new_file_in_root("new_file.txt", "new_file.txt")] // does NOT exist: tests write path resolution
     #[case::new_file_in_subdir("subdir/new_file.txt", "new_file.txt")] // does NOT exist: tests write path resolution
+    #[case::new_file_in_missing_directories("new_dir/nested/new_file.txt", "new_file.txt")]
     fn resolves_valid_paths_successfully(
         #[case] input_path: &str,
         #[case] expected_filename: &str,
@@ -167,6 +176,7 @@ mod tests {
     #[rstest]
     #[case::parent_traversal("../../../etc/passwd")]
     #[case::nested_parent_traversal("subdir/../../../new_file.txt")]
+    #[case::missing_dir_parent_traversal("new_dir/../../new_file.txt")]
     fn rejects_paths_that_escape_allowed_directory(#[case] input_path: &str) {
         let dir = setup_test_dir();
         let resolver = AllowedPathResolver::new(vec![dir.path().to_path_buf()]).unwrap();
@@ -177,6 +187,16 @@ mod tests {
             err.to_string().contains("not within allowed"),
             "error should mention 'not within allowed'"
         );
+    }
+
+    #[test]
+    fn resolves_existing_file_through_missing_directory_parent_traversal() {
+        let dir = setup_test_dir();
+        let resolver = AllowedPathResolver::new(vec![dir.path().to_path_buf()]).unwrap();
+
+        let result = resolver.resolve("subdir/new_dir/../../file.txt");
+        assert!(result.is_ok());
+        assert!(result.unwrap().ends_with("file.txt"));
     }
 
     #[test]

@@ -25,7 +25,9 @@ pub use llm_coding_tools_core::context;
 pub use llm_coding_tools_core::SystemPromptBuilder;
 
 /// Re-export path resolvers from core.
-pub use llm_coding_tools_core::path::{AbsolutePathResolver, AllowedPathResolver, PathResolver};
+pub use llm_coding_tools_core::path::{
+    AbsolutePathResolver, AllowedGlobResolver, AllowedPathResolver, PathResolver,
+};
 
 // Re-export tools from the tools module
 pub use tools::{
