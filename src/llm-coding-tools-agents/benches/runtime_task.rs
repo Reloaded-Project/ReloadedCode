@@ -95,7 +95,7 @@ fn build_runtime(agent_count: usize) -> llm_coding_tools_agents::AgentRuntime {
 /// - **allowed_tools** – full tool-set resolution for the `caller` agent.
 /// - **summaries** – callable-target summary strings for `caller`.
 /// - **can_delegate_hit** – pattern-match hit (`caller` → `review-003`).
-/// - **can_delegate_miss** – pattern-match miss (`caller` → `misc-003`).
+/// - **can_delegate_miss** – pattern-match miss (`caller` → `misc-002`).
 fn bench_runtime_task_caches(c: &mut Criterion) {
     let mut group = c.benchmark_group("runtime/task_caches");
 
@@ -124,7 +124,7 @@ fn bench_runtime_task_caches(c: &mut Criterion) {
         group.bench_with_input(
             BenchmarkId::new("can_delegate_miss", agent_count),
             &runtime,
-            |b, runtime| b.iter(|| black_box(runtime.can_delegate_to("caller", "misc-003"))),
+            |b, runtime| b.iter(|| black_box(runtime.can_delegate_to("caller", "misc-002"))),
         );
     }
 

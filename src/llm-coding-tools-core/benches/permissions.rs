@@ -52,8 +52,9 @@ fn build_ruleset(
 }
 
 /// Return the standard set of permission benchmark cases covering exact
-/// matches, wildcard subjects, wildcard permission keys, and combined
-/// wildcards at two rule-set sizes (1 and 32 rules).
+/// matches at three rule-set sizes (1, 32, and 128 rules), plus wildcard
+/// subject, wildcard permission key, and combined wildcard cases at
+/// 32 rules and a combined wildcard case at 128 rules.
 fn benchmark_cases() -> Vec<PermissionCase> {
     vec![
         PermissionCase {

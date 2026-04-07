@@ -93,6 +93,7 @@ async fn await_pipe_drain_task_with_grace(task: PipeDrainTask, grace: Duration) 
 /// - Unix: Process groups
 ///
 /// # Errors
+/// - Returns [`ToolError::PermissionDenied`] when the command is blocked by `settings.permission`.
 /// - Returns `ToolError::Validation` if timeout is 0 or exceeds max_timeout_ms.
 /// - Returns [`ToolError::InvalidPath`] if workdir is not absolute or doesn't exist.
 /// - Returns [`ToolError::Execution`] for sandbox mode when bwrap is missing or unusable.
