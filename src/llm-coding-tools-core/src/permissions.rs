@@ -35,13 +35,14 @@
 //! ```
 //!
 //! ```rust
-//! use llm_coding_tools_core::permissions::{PermissionAction, Rule, Ruleset};
+//! use llm_coding_tools_core::permissions::{ExpandError, PermissionAction, Rule, Ruleset};
 //!
+//! # fn main() -> Result<(), ExpandError> {
 //! let mut rules = Ruleset::new();
-//! rules.push(Rule::new("*", "*", PermissionAction::Allow));    // Allow all
-//! rules.push(Rule::new("bash", "*", PermissionAction::Deny));  // Except bash
-//! rules.push(Rule::new("task", "*", PermissionAction::Deny));  // Except task
-//! rules.push(Rule::new("task", "orchestrator-*", PermissionAction::Allow)); // But allow `orchestrator-*` task
+//! rules.push(Rule::new("*", "*", PermissionAction::Allow)?);    // Allow all
+//! rules.push(Rule::new("bash", "*", PermissionAction::Deny)?);  // Except bash
+//! rules.push(Rule::new("task", "*", PermissionAction::Deny)?);  // Except task
+//! rules.push(Rule::new("task", "orchestrator-*", PermissionAction::Allow)?); // But allow `orchestrator-*` task
 //!
 //! assert_eq!(rules.evaluate("bash", "any-agent"), PermissionAction::Deny);
 //! assert_eq!(rules.evaluate("read", "any-agent"), PermissionAction::Allow);
@@ -50,6 +51,8 @@
 //!     PermissionAction::Allow
 //! );
 //! assert_eq!(rules.evaluate("task", "other-agent"), PermissionAction::Deny);
+//! # Ok(())
+//! # }
 //! ```
 
 use crate::internal::hash64::hash_u64;
@@ -57,6 +60,10 @@ use crate::internal::hash64::Hash64;
 use crate::path::allowed_glob::normalize::expand_pattern;
 use serde::{Deserialize, Serialize};
 use std::borrow::Cow;
+
+/// Error returned when shell expansion of a rule pattern fails
+/// (e.g., `$HOME` is unset).
+pub type ExpandError = shellexpand::LookupError<std::env::VarError>;
 
 /// Permission level for tool access.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
@@ -117,24 +124,24 @@ impl Rule {
     /// use llm_coding_tools_core::permissions::{Rule, PermissionAction};
     ///
     /// // Exact match on permission key
-    /// let exact = Rule::new("bash", "*", PermissionAction::Allow);
+    /// let exact = Rule::new("bash", "*", PermissionAction::Allow).unwrap();
     ///
     /// // Wildcard permission key matches any tool
-    /// let wildcard = Rule::new("*", "*", PermissionAction::Allow);
+    /// let wildcard = Rule::new("*", "*", PermissionAction::Allow).unwrap();
     /// ```
     pub fn new(
         permission: impl Into<Box<str>>,
         pattern: impl Into<Box<str>>,
         action: PermissionAction,
-    ) -> Self {
+    ) -> Result<Self, ExpandError> {
         let permission = permission.into();
         let pattern_box: Box<str> = pattern.into();
         let pattern: Box<str> = match expand_pattern(&pattern_box) {
             Ok(Cow::Borrowed(_)) => pattern_box,
             Ok(Cow::Owned(s)) => s.into_boxed_str(),
-            Err(_) => pattern_box,
+            Err(e) => return Err(e),
         };
-        Self {
+        Ok(Self {
             permission_hash: hash_u64(&permission),
             pattern_hash: hash_u64(&pattern),
             permission_is_wildcard: permission.contains('*') || permission.contains('?'),
@@ -142,7 +149,7 @@ impl Rule {
             permission,
             pattern,
             action,
-        }
+        })
     }
 
     /// Returns the permission key pattern.
@@ -441,6 +448,8 @@ mod tests {
     use temp_env;
     use tempfile::TempDir;
 
+    type TestResult = Result<(), ExpandError>;
+
     fn build_and_eval(
         rules: &[(&str, &str, PermissionAction)],
         permission: &str,
@@ -448,7 +457,10 @@ mod tests {
     ) -> PermissionAction {
         let mut ruleset = Ruleset::new();
         for (perm, pat, action) in rules {
-            ruleset.push(Rule::new(*perm, *pat, *action));
+            ruleset.push(Rule::new(*perm, *pat, *action).expect(&format!(
+                "failed to create Rule for permission {:?}, pattern {:?}, action {:?}",
+                perm, pat, action
+            )));
         }
         ruleset.evaluate(permission, subject)
     }
@@ -510,75 +522,79 @@ mod tests {
 
     /// A plain permission key without `*` or `?` must not set the wildcard flag.
     #[test]
-    fn exact_key_should_not_set_wildcard_flag() {
-        let rule = Rule::new("bash", "*", PermissionAction::Allow);
+    fn exact_key_should_not_set_wildcard_flag() -> TestResult {
+        let rule = Rule::new("bash", "*", PermissionAction::Allow)?;
         assert_eq!(rule.permission(), "bash");
         assert_eq!(rule.permission_hash(), hash_u64("bash").as_u64());
         assert!(!rule.permission_is_wildcard());
         assert_eq!(rule.action(), PermissionAction::Allow);
+        Ok(())
     }
 
     /// A lone `*` permission key must set the wildcard flag.
     #[test]
-    fn star_key_should_set_wildcard_flag() {
-        let rule = Rule::new("*", "*", PermissionAction::Allow);
+    fn star_key_should_set_wildcard_flag() -> TestResult {
+        let rule = Rule::new("*", "*", PermissionAction::Allow)?;
         assert_eq!(rule.permission(), "*");
         assert_eq!(rule.permission_hash(), hash_u64("*").as_u64());
         assert!(rule.permission_is_wildcard());
+        Ok(())
     }
 
     /// A permission key like `"bash*"` ends with a wildcard and must set the flag.
     #[test]
-    fn partial_wildcard_key_should_set_wildcard_flag() {
-        let rule = Rule::new("bash*", "*", PermissionAction::Allow);
+    fn partial_wildcard_key_should_set_wildcard_flag() -> TestResult {
+        let rule = Rule::new("bash*", "*", PermissionAction::Allow)?;
         assert_eq!(rule.permission(), "bash*");
         assert_eq!(rule.permission_hash(), hash_u64("bash*").as_u64());
         assert!(rule.permission_is_wildcard());
+        Ok(())
     }
 
     /// A subject pattern containing `*` must set the pattern wildcard flag, leaving permission untouched.
     #[test]
-    fn wildcard_subject_should_set_wildcard_flag() {
-        let rule = Rule::new("bash", "orchestrator-*", PermissionAction::Allow);
+    fn wildcard_subject_should_set_wildcard_flag() -> TestResult {
+        let rule = Rule::new("bash", "orchestrator-*", PermissionAction::Allow)?;
         assert_eq!(rule.pattern(), "orchestrator-*");
         assert_eq!(rule.pattern_hash(), hash_u64("orchestrator-*").as_u64());
         assert!(rule.pattern_is_wildcard());
         assert!(!rule.permission_is_wildcard());
+        Ok(())
     }
 
     /// A plain subject string without wildcards must not set the pattern wildcard flag.
     #[test]
-    fn exact_subject_should_not_set_wildcard_flag() {
-        let rule = Rule::new("bash", "exact-subject", PermissionAction::Allow);
+    fn exact_subject_should_not_set_wildcard_flag() -> TestResult {
+        let rule = Rule::new("bash", "exact-subject", PermissionAction::Allow)?;
         assert_eq!(rule.pattern(), "exact-subject");
         assert_eq!(rule.pattern_hash(), hash_u64("exact-subject").as_u64());
         assert!(!rule.pattern_is_wildcard());
         assert!(!rule.permission_is_wildcard());
+        Ok(())
     }
 
     #[test]
-    fn rule_permission_hash_should_be_case_sensitive() {
-        let upper = Rule::new("BASH", "*", PermissionAction::Allow);
-        let lower = Rule::new("bash", "*", PermissionAction::Allow);
+    fn rule_permission_hash_should_be_case_sensitive() -> TestResult {
+        let upper = Rule::new("BASH", "*", PermissionAction::Allow)?;
+        let lower = Rule::new("bash", "*", PermissionAction::Allow)?;
         assert_ne!(upper.permission_hash(), lower.permission_hash());
+        Ok(())
     }
 
     #[test]
-    fn rule_pattern_hash_should_be_case_sensitive() {
-        let upper = Rule::new("bash", "SUBJECT", PermissionAction::Allow);
-        let lower = Rule::new("bash", "subject", PermissionAction::Allow);
+    fn rule_pattern_hash_should_be_case_sensitive() -> TestResult {
+        let upper = Rule::new("bash", "SUBJECT", PermissionAction::Allow)?;
+        let lower = Rule::new("bash", "subject", PermissionAction::Allow)?;
         assert_ne!(upper.pattern_hash(), lower.pattern_hash());
+        Ok(())
     }
 
     #[test]
     fn rule_should_be_56_byte_clone() {
         assert_eq!(std::mem::size_of::<Rule>(), 56);
-        // Rule is Clone but not Copy (contains owned Box<str>)
         fn assert_clone<T: Clone>() {}
         assert_clone::<Rule>();
     }
-
-    // --- Ruleset evaluate ---
 
     #[test]
     fn evaluate_when_no_rules_should_deny() {
@@ -701,35 +717,38 @@ mod tests {
     // --- Ruleset convenience ---
 
     #[test]
-    fn is_allowed_should_reflect_evaluate() {
+    fn is_allowed_should_reflect_evaluate() -> TestResult {
         let mut ruleset = Ruleset::new();
-        ruleset.push(Rule::new("bash", "*", PermissionAction::Allow));
+        ruleset.push(Rule::new("bash", "*", PermissionAction::Allow)?);
         assert!(ruleset.is_allowed("bash", "any"));
         assert!(!ruleset.is_allowed("task", "any"));
+        Ok(())
     }
 
     #[test]
-    fn merge_should_append_and_override() {
+    fn merge_should_append_and_override() -> TestResult {
         let mut base = Ruleset::new();
-        base.push(Rule::new("bash", "*", PermissionAction::Deny));
+        base.push(Rule::new("bash", "*", PermissionAction::Deny)?);
 
         let mut override_rules = Ruleset::new();
-        override_rules.push(Rule::new("bash", "*", PermissionAction::Allow));
+        override_rules.push(Rule::new("bash", "*", PermissionAction::Allow)?);
 
         base.merge(&override_rules);
         assert_eq!(base.evaluate("bash", "any"), PermissionAction::Allow);
+        Ok(())
     }
 
     #[test]
-    fn merged_should_concatenate_in_order() {
+    fn merged_should_concatenate_in_order() -> TestResult {
         let mut r1 = Ruleset::new();
-        r1.push(Rule::new("a", "*", PermissionAction::Deny));
+        r1.push(Rule::new("a", "*", PermissionAction::Deny)?);
 
         let mut r2 = Ruleset::new();
-        r2.push(Rule::new("a", "*", PermissionAction::Allow));
+        r2.push(Rule::new("a", "*", PermissionAction::Allow)?);
 
         let combined = Ruleset::merged([&r1, &r2]);
         assert_eq!(combined.evaluate("a", "x"), PermissionAction::Allow);
+        Ok(())
     }
 
     // --- Rule::new with expansion integration ---
@@ -737,13 +756,13 @@ mod tests {
     /// Verifies that a rule created with `~/` pattern matches the expanded home path.
     #[cfg(not(windows))]
     #[test]
-    fn rule_with_tilde_pattern_should_match_expanded_path() {
+    fn rule_with_tilde_pattern_should_match_expanded_path() -> TestResult {
         let temp_dir = TempDir::new().unwrap();
         let temp_home = temp_dir.path().canonicalize().unwrap();
 
-        temp_env::with_var("HOME", Some(&temp_home), || {
+        temp_env::with_var("HOME", Some(&temp_home), || -> TestResult {
             let mut ruleset = Ruleset::new();
-            ruleset.push(Rule::new("read", "~/projects/*", PermissionAction::Allow));
+            ruleset.push(Rule::new("read", "~/projects/*", PermissionAction::Allow)?);
 
             let subject = format!("{}/projects/src/lib.rs", temp_home.to_str().unwrap());
             assert_eq!(
@@ -751,22 +770,23 @@ mod tests {
                 PermissionAction::Allow,
                 "expanded ~/ pattern should match real path"
             );
-        });
+            Ok(())
+        })
     }
 
     /// Verifies that a rule created with `$HOME/` pattern matches the expanded path.
     #[test]
-    fn rule_with_dollar_home_pattern_should_match_expanded_path() {
+    fn rule_with_dollar_home_pattern_should_match_expanded_path() -> TestResult {
         let temp_dir = TempDir::new().unwrap();
         let temp_home = temp_dir.path().canonicalize().unwrap();
 
-        temp_env::with_var("HOME", Some(&temp_home), || {
+        temp_env::with_var("HOME", Some(&temp_home), || -> TestResult {
             let mut ruleset = Ruleset::new();
             ruleset.push(Rule::new(
                 "read",
                 "$HOME/.config/*",
                 PermissionAction::Allow,
-            ));
+            )?);
 
             let subject = format!("{}/.config/app.conf", temp_home.to_str().unwrap());
             assert_eq!(
@@ -774,16 +794,21 @@ mod tests {
                 PermissionAction::Allow,
                 "expanded $HOME/ pattern should match real path"
             );
-        });
+            Ok(())
+        })
     }
 
     /// Verifies that rules without shell patterns evaluate correctly after
     /// the expansion change (regression guard).
     #[test]
-    fn rule_without_shell_patterns_evaluates_correctly() {
+    fn rule_without_shell_patterns_evaluates_correctly() -> TestResult {
         let mut ruleset = Ruleset::new();
-        ruleset.push(Rule::new("bash", "*", PermissionAction::Allow));
-        ruleset.push(Rule::new("task", "orchestrator-*", PermissionAction::Allow));
+        ruleset.push(Rule::new("bash", "*", PermissionAction::Allow)?);
+        ruleset.push(Rule::new(
+            "task",
+            "orchestrator-*",
+            PermissionAction::Allow,
+        )?);
 
         assert_eq!(
             ruleset.evaluate("bash", "anything"),
@@ -794,5 +819,6 @@ mod tests {
             PermissionAction::Allow
         );
         assert_eq!(ruleset.evaluate("task", "other"), PermissionAction::Deny);
+        Ok(())
     }
 }

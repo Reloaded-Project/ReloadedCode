@@ -163,7 +163,7 @@ mod tests {
         Modality, ModelCatalog, ModelInfo, ProviderIdx, ProviderInfo, ProviderModelSource,
         ProviderSource, ProviderType,
     };
-    use llm_coding_tools_core::permissions::PermissionAction;
+    use llm_coding_tools_core::permissions::{ExpandError, PermissionAction};
 
     fn agent(
         name: &str,
@@ -237,10 +237,10 @@ mod tests {
     }
 
     fn build_test_context(
-        runtime: llm_coding_tools_agents::AgentRuntime,
+        runtime: Result<llm_coding_tools_agents::AgentRuntime, ExpandError>,
     ) -> Arc<TaskBuildContext<CredentialResolver<false>>> {
         Arc::new(TaskBuildContext::new_for_test(
-            Arc::new(runtime),
+            Arc::new(runtime.expect("test fixture should not fail pattern expansion")),
             Arc::new(catalog()),
             credentials(),
         ))

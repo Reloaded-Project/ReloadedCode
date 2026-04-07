@@ -269,15 +269,18 @@ permission:
 With last-match-wins, the final `"*": deny` rule overrides earlier `task` matches.
 
 ```rust
-use llm_coding_tools_core::permissions::{PermissionAction, Rule, Ruleset};
+use llm_coding_tools_core::permissions::{ExpandError, PermissionAction, Rule, Ruleset};
 
+# fn main() -> Result<(), ExpandError> {
 let mut rules = Ruleset::new();
-rules.push(Rule::new("bash", "*", PermissionAction::Allow));
-rules.push(Rule::new("task", "orchestrator-*", PermissionAction::Allow));
-rules.push(Rule::new("task", "*", PermissionAction::Deny));
+rules.push(Rule::new("bash", "*", PermissionAction::Allow)?);
+rules.push(Rule::new("task", "orchestrator-*", PermissionAction::Allow)?);
+rules.push(Rule::new("task", "*", PermissionAction::Deny)?);
 
 assert_eq!(rules.evaluate("bash", "any-agent"), PermissionAction::Allow);
 assert_eq!(rules.evaluate("task", "orchestrator-review"), PermissionAction::Deny); // last-match-wins
+# Ok(())
+# }
 ```
 
 ## Credentials

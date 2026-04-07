@@ -29,14 +29,16 @@
 //! # Example
 //!
 //! ```no_run
-//! use llm_coding_tools_agents::{AgentCatalog, AgentDefaults, AgentRuntimeBuilder};
-//!
+//! # use llm_coding_tools_agents::{AgentCatalog, AgentDefaults, AgentRuntimeBuilder};
+//! # fn main() -> Result<(), Box<dyn std::error::Error>> {
 //! let runtime = AgentRuntimeBuilder::new()
 //!     .catalog(AgentCatalog::new())
 //!     .defaults(AgentDefaults::with_model("openai/gpt-4o"))
-//!     .build();
+//!     .build()?;
 //!
 //! assert!(runtime.catalog().iter().count() == 0);
+//! # Ok(())
+//! # }
 //! ```
 
 mod builder;

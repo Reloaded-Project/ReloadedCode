@@ -3,6 +3,7 @@
 use super::state::{AgentDefaults, AgentRuntime};
 use super::tool_catalog::{default_tools, ToolCatalogEntry};
 use crate::AgentCatalog;
+use llm_coding_tools_core::permissions::ExpandError;
 use llm_coding_tools_core::TaskSettings;
 
 /// Builds an [`AgentRuntime`] step by step.
@@ -70,7 +71,7 @@ impl AgentRuntimeBuilder {
 
     /// Finishes building and returns the [`AgentRuntime`].
     #[inline]
-    pub fn build(self) -> AgentRuntime {
+    pub fn build(self) -> Result<AgentRuntime, ExpandError> {
         AgentRuntime::from_parts(self.catalog, self.defaults, self.task_settings, self.tools)
     }
 }
@@ -82,10 +83,12 @@ mod tests {
     use crate::runtime::AgentDefaults;
     use crate::{AgentCatalog, AgentConfig, AgentMode, AgentToolSettings, PermissionRule};
     use indexmap::IndexMap;
-    use llm_coding_tools_core::permissions::PermissionAction;
+    use llm_coding_tools_core::permissions::{ExpandError, PermissionAction};
     use llm_coding_tools_core::tool_metadata::{glob as glob_meta, read as read_meta};
     use llm_coding_tools_core::TaskSettings;
     use std::sync::Arc;
+
+    type TestResult = Result<(), ExpandError>;
 
     fn sample_config(name: &str, model: Option<&str>) -> AgentConfig {
         AgentConfig {
@@ -104,7 +107,7 @@ mod tests {
     }
 
     #[test]
-    fn builder_builds_runtime_from_owned_inputs() {
+    fn builder_builds_runtime_from_owned_inputs() -> TestResult {
         let catalog = AgentCatalog::from_entries([sample_config("planner", Some("openai/gpt-4o"))]);
         let defaults = AgentDefaults {
             model: Some("openai/gpt-4.1-mini".into()),
@@ -120,7 +123,7 @@ mod tests {
             .catalog(catalog)
             .defaults(defaults.clone())
             .tools(tools.clone())
-            .build();
+            .build()?;
 
         assert_eq!(
             runtime
@@ -132,27 +135,30 @@ mod tests {
         assert_eq!(runtime.defaults(), &defaults);
         assert_eq!(runtime.task_settings(), TaskSettings::default());
         assert_eq!(runtime.tools(), tools.as_slice());
+        Ok(())
     }
 
     #[test]
-    fn builder_overrides_task_settings() {
-        let runtime = AgentRuntimeBuilder::new().max_task_depth(5).build();
+    fn builder_overrides_task_settings() -> TestResult {
+        let runtime = AgentRuntimeBuilder::new().max_task_depth(5).build()?;
 
         assert_eq!(runtime.task_settings(), TaskSettings::with_max_depth(5));
+        Ok(())
     }
 
     #[test]
-    fn builder_defaults_to_empty_catalog_defaults_and_default_tools() {
-        let runtime = AgentRuntimeBuilder::new().build();
+    fn builder_defaults_to_empty_catalog_defaults_and_default_tools() -> TestResult {
+        let runtime = AgentRuntimeBuilder::new().build()?;
 
         assert_eq!(runtime.catalog().iter().count(), 0);
         assert_eq!(runtime.defaults(), &AgentDefaults::default());
         assert_eq!(runtime.task_settings(), TaskSettings::default());
         assert_eq!(runtime.tools(), default_tools().as_slice());
+        Ok(())
     }
 
     #[test]
-    fn builder_caches_permission_rulesets() {
+    fn builder_caches_permission_rulesets() -> TestResult {
         let runtime = AgentRuntimeBuilder::new()
             .catalog(AgentCatalog::from_entries([AgentConfig {
                 name: "planner".into(),
@@ -170,7 +176,7 @@ mod tests {
                 tool_settings: AgentToolSettings::default(),
                 prompt: Default::default(),
             }]))
-            .build();
+            .build()?;
 
         let first = runtime
             .permission_ruleset("planner")
@@ -181,5 +187,6 @@ mod tests {
 
         assert!(Arc::ptr_eq(&first, &second));
         assert!(first.is_allowed(read_meta::NAME, "*"));
+        Ok(())
     }
 }

@@ -87,6 +87,7 @@ fn build_runtime(agent_count: usize) -> llm_coding_tools_agents::AgentRuntime {
     AgentRuntimeBuilder::new()
         .catalog(AgentCatalog::from_entries(agents))
         .build()
+        .expect("benchmark fixture should not fail pattern expansion")
 }
 
 /// Benchmark cached delegation queries against runtimes of 16, 64, and 256 agents.

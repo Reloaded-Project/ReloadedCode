@@ -231,10 +231,12 @@ fn build_host_wrap(command: &str, workdir: Option<&Path>) -> ToolResult<CommandW
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::permissions::{PermissionAction, Rule, Ruleset};
+    use crate::permissions::{ExpandError, PermissionAction, Rule, Ruleset};
     use crate::tool_metadata::bash as bash_meta;
     use crate::tools::{BashRequest, BashSettings};
     use tempfile::TempDir;
+
+    type TestResult = Result<(), ExpandError>;
 
     #[test]
     fn execute_echo_returns_output() {
@@ -259,14 +261,14 @@ mod tests {
     }
 
     #[test]
-    fn rejected_command_returns_permission_denied() {
+    fn rejected_command_returns_permission_denied() -> TestResult {
         let mut ruleset = Ruleset::new();
-        ruleset.push(Rule::new(bash_meta::NAME, "*", PermissionAction::Allow));
+        ruleset.push(Rule::new(bash_meta::NAME, "*", PermissionAction::Allow)?);
         ruleset.push(Rule::new(
             bash_meta::NAME,
             "echo hello",
             PermissionAction::Deny,
-        ));
+        )?);
 
         let err = execute_command(
             &BashExecutionMode::Host,
@@ -288,6 +290,7 @@ mod tests {
             err,
             ToolError::PermissionDenied { tool: "bash", .. }
         ));
+        Ok(())
     }
 
     #[test]
