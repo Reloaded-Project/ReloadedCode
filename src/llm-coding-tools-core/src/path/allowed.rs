@@ -1,6 +1,6 @@
 //! Allowed directory path resolver implementation.
 
-use super::{relative_path_escapes_base, PathResolver};
+use super::{relative_path_escapes_base, resolve_new_file_fast, PathResolver};
 use crate::context::PathMode;
 use crate::error::{ToolError, ToolResult};
 use soft_canonicalize::soft_canonicalize;
@@ -124,8 +124,17 @@ impl PathResolver for AllowedPathResolver {
                 continue;
             }
 
-            // Non-existent paths still need a resolved absolute target so we can
-            // validate containment consistently across platforms.
+            // Fast path for new files in existing directories.
+            // Canonicalizes parent directory, then joins filename.
+            // This avoids soft_canonicalize's expensive walk-up logic.
+            if let Some(resolved) = resolve_new_file_fast(&candidate) {
+                if resolved.starts_with(base) {
+                    return Ok(resolved);
+                }
+                continue;
+            }
+
+            // Fallback for paths where parent doesn't exist.
             if let Ok(resolved) = soft_canonicalize(&candidate) {
                 if resolved.starts_with(base) {
                     return Ok(resolved);

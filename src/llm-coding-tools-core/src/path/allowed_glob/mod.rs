@@ -6,7 +6,7 @@
 mod normalize;
 mod policy;
 
-use super::{relative_path_escapes_base, PathResolver};
+use super::{relative_path_escapes_base, resolve_new_file_fast, PathResolver};
 use crate::context::PathMode;
 use crate::error::{ToolError, ToolResult};
 use normalize::expand_shell;
@@ -174,8 +174,27 @@ impl PathResolver for AllowedGlobResolver {
                 return Ok(resolved);
             }
 
-            // Non-existent paths still need a resolved absolute target so we can
-            // validate containment and glob policy consistently across platforms.
+            // Fast path for new files in existing directories.
+            // Canonicalizes parent directory, then joins filename.
+            // This avoids soft_canonicalize's expensive walk-up logic.
+            if let Some(resolved) = resolve_new_file_fast(&candidate) {
+                if !resolved.starts_with(base_dir) {
+                    continue;
+                }
+
+                // Apply glob policy to the resolved relative path.
+                if let Some(policy) = policy {
+                    let relative_path = resolved.strip_prefix(base_dir).unwrap_or(Path::new(""));
+                    let normalized_relative = normalize::normalize_path(relative_path);
+                    if !policy.is_allowed(&normalized_relative) {
+                        continue;
+                    }
+                }
+
+                return Ok(resolved);
+            }
+
+            // Fallback for paths where parent doesn't exist.
             if let Ok(target_path) = soft_canonicalize(&candidate) {
                 if !target_path.starts_with(base_dir) {
                     continue;

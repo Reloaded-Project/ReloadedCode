@@ -6,36 +6,45 @@
 //!
 //! - `resolvers`: Compares [`AllowedPathResolver`] and [`AllowedGlobResolver`] on the same paths
 //! - `multiple_bases`: Tests [`AllowedPathResolver`] with multiple base directories
+//! - `canonicalize`: Isolates `canonicalize` vs `soft_canonicalize` performance
 //!
 //! # Test Cases
 //!
 //! ```text
-//! | Case              | Path                                               | What it tests                                  |
-//! |-------------------|----------------------------------------------------|------------------------------------------------|
-//! | existing_file     | src/lib.rs                                         | Fast path: file exists, canonicalize succeeds  |
-//! | new_file          | benchmarks/new_file_test.rs                        | Slow path: soft-canonicalize for non-existent  |
-//! | deep_nested       | src/llm-coding-tools-core/src/path/.../policy.rs   | Longer path, more components to process        |
-//! | traversal_reject  | ../../../outside.txt                               | Early rejection via lexical escape check       |
+//! | Case                   | Path                                               | What it tests                                  |
+//! |------------------------|----------------------------------------------------|------------------------------------------------|
+//! | existing_file          | src/lib.rs                                         | Fast path: file exists, canonicalize succeeds  |
+//! | new_file_existing_dir  | src/new_file_test.rs                               | Fast path: parent exists, canonicalize parent   |
+//! | new_file_missing_dir   | benchmarks/new_file_test.rs                        | Slow path: soft-canonicalize for non-existent  |
+//! | deep_nested            | src/llm-coding-tools-core/src/path/.../policy.rs   | Longer path, more components to process        |
+//! | traversal_reject       | ../../../outside.txt                               | Early rejection via lexical escape check       |
 //! ```
 //!
 //! # Reference Results (Linux, optimized build)
 //!
 //! ```text
-//! resolvers/AllowedPathResolver/existing_file       ~1.7-1.8 µs
-//! resolvers/AllowedPathResolver/new_file            ~7.8-8.0 µs
-//! resolvers/AllowedPathResolver/deep_nested         ~10.2-10.5 µs
-//! resolvers/AllowedPathResolver/traversal_reject    ~20 ns
+//! resolvers/AllowedPathResolver/existing_file          ~1.8 µs
+//! resolvers/AllowedPathResolver/new_file_existing_dir ~3.5 µs  (optimized: parent canonicalize)
+//! resolvers/AllowedPathResolver/new_file_missing_dir  ~8.1 µs  (fallback: soft_canonicalize)
+//! resolvers/AllowedPathResolver/deep_nested           ~10.5 µs
+//! resolvers/AllowedPathResolver/traversal_reject      ~20 ns
 //!
-//! resolvers/AllowedGlobResolver_simple_policy/existing_file     ~2.0-2.1 µs
-//! resolvers/AllowedGlobResolver_simple_policy/new_file          ~8.0-8.1 µs
-//! resolvers/AllowedGlobResolver_simple_policy/deep_nested       ~10.5-10.8 µs
-//! resolvers/AllowedGlobResolver_simple_policy/traversal_reject  ~20 ns
+//! resolvers/AllowedGlobResolver_simple_policy/existing_file          ~2.0 µs
+//! resolvers/AllowedGlobResolver_simple_policy/new_file_existing_dir  ~3.8 µs
+//! resolvers/AllowedGlobResolver_simple_policy/new_file_missing_dir   ~8.4 µs
+//! resolvers/AllowedGlobResolver_simple_policy/deep_nested            ~10.8 µs
+//! resolvers/AllowedGlobResolver_simple_policy/traversal_reject       ~20 ns
 //!
-//! resolvers/AllowedGlobResolver_complex_policy/existing_file     ~2.1-2.2 µs
-//! resolvers/AllowedGlobResolver_complex_policy/new_file          ~7.9-8.1 µs
-//! resolvers/AllowedGlobResolver_complex_policy/deep_nested       ~10.8-11.0 µs
-//! resolvers/AllowedGlobResolver_complex_policy/traversal_reject  ~20 ns
+//! canonicalize/existing_file_canonicalize         ~1.6 µs
+//! canonicalize/existing_file_soft_canonicalize    ~4.4 µs  (2.7x slower than canonicalize)
+//! canonicalize/new_file_shallow_soft_canonicalize ~6.0 µs
+//! canonicalize/new_file_deep_soft_canonicalize    ~7.0 µs
 //! ```
+//!
+//! # Platform Differences
+//!
+//! On Unix, new files in existing directories use the fast path (canonicalize parent + join filename).
+//! On Windows, the fast path uses `soft_canonicalize` due to complex path semantics.
 //!
 //! # Running Benchmarks
 //!
@@ -56,11 +65,13 @@ use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion, Through
 use llm_coding_tools_core::path::{
     AllowedGlobResolver, AllowedPathResolver, GlobPolicy, GlobPolicyBuilder, PathResolver,
 };
+use soft_canonicalize::soft_canonicalize;
 use std::fs;
 use tempfile::TempDir;
 
 const EXISTING_FILE: &str = "src/lib.rs";
-const NEW_FILE: &str = "benchmarks/new_file_test.rs";
+const NEW_FILE_EXISTING_DIR: &str = "src/new_file_test.rs";
+const NEW_FILE_MISSING_DIR: &str = "benchmarks/new_file_test.rs";
 const DEEP_NESTED: &str = "src/llm-coding-tools-core/src/path/allowed_glob/policy.rs";
 const TRAVERSAL: &str = "../../../outside.txt";
 
@@ -85,15 +96,16 @@ where
 /// | AllowedGlobResolver_complex     | 10 rules: realistic project config       |
 /// ```
 ///
-/// # Expected Performance
+/// # Expected Performance (Unix)
 ///
 /// ```text
-/// | Case              | Expected Time | Why                                    |
-/// |-------------------|---------------|----------------------------------------|
-/// | existing_file     | 1-2 µs        | canonicalize is fast for existing      |
-/// | new_file          | 7-8 µs        | soft-canonicalize walks filesystem     |
-/// | deep_nested       | 10-11 µs      | more path components to process        |
-/// | traversal_reject  | ~20 ns        | lexical check only, no filesystem I/O  |
+/// | Case                   | Expected Time | Why                                    |
+/// |------------------------|---------------|----------------------------------------|
+/// | existing_file          | 1-2 µs        | canonicalize is fast for existing      |
+/// | new_file_existing_dir  | 3-4 µs        | canonicalize parent, join filename     |
+/// | new_file_missing_dir   | 7-8 µs        | soft-canonicalize walks filesystem     |
+/// | deep_nested            | 10-11 µs      | more path components to process        |
+/// | traversal_reject       | ~20 ns        | lexical check only, no filesystem I/O  |
 /// ```
 fn bench_resolvers_same_paths(c: &mut Criterion) {
     let mut group = c.benchmark_group("resolvers");
@@ -133,7 +145,8 @@ fn bench_resolvers_same_paths(c: &mut Criterion) {
 
     for (case_name, path_input) in [
         ("existing_file", EXISTING_FILE),
-        ("new_file", NEW_FILE),
+        ("new_file_existing_dir", NEW_FILE_EXISTING_DIR),
+        ("new_file_missing_dir", NEW_FILE_MISSING_DIR),
         ("deep_nested", DEEP_NESTED),
         ("traversal_reject", TRAVERSAL),
     ] {
@@ -182,7 +195,7 @@ fn bench_resolvers_same_paths(c: &mut Criterion) {
 /// | first_base  | Path found in first base (fastest)          |
 /// | second_base | Path found in second base (one miss, hit)   |
 /// | third_base  | Path found in third base (two misses, hit)  |
-/// | not_found   | Path not in any base (all bases tried)      |
+/// | not_found   | Path not in any base (all bases tried)     |
 /// ```
 fn bench_multiple_bases(c: &mut Criterion) {
     let mut group = c.benchmark_group("multiple_bases");
@@ -217,6 +230,53 @@ fn bench_multiple_bases(c: &mut Criterion) {
     group.finish();
 }
 
-criterion_group!(benches, bench_resolvers_same_paths, bench_multiple_bases);
+/// Benchmarks `std::fs::canonicalize` vs `soft_canonicalize` directly.
+///
+/// Isolates the core filesystem operation to understand where time is spent.
+///
+/// # Test Cases
+///
+/// ```text
+/// | Case              | Path                          | canonicalize | soft_canonicalize |
+/// |-------------------|-------------------------------|--------------|-------------------|
+/// | existing_file     | src/lib.rs (exists)           | O(1) FS call | O(1) FS call      |
+/// | new_file_shallow  | new_file.rs (in root)         | N/A          | O(1) FS call      |
+/// | new_file_deep     | a/b/c/new_file.rs (3 levels)  | N/A          | O(4) FS calls     |
+/// ```
+fn bench_canonicalize_vs_soft(c: &mut Criterion) {
+    let mut group = c.benchmark_group("canonicalize");
+
+    let current_dir = std::env::current_dir().unwrap();
+    let existing = current_dir.join("src/lib.rs");
+    let new_shallow = current_dir.join("new_file.rs");
+    let new_deep = current_dir.join("a/b/c/new_file.rs");
+
+    group.throughput(Throughput::Elements(1));
+
+    group.bench_function("existing_file_canonicalize", |b| {
+        b.iter(|| existing.canonicalize().unwrap())
+    });
+
+    group.bench_function("existing_file_soft_canonicalize", |b| {
+        b.iter(|| soft_canonicalize(&existing).unwrap())
+    });
+
+    group.bench_function("new_file_shallow_soft_canonicalize", |b| {
+        b.iter(|| soft_canonicalize(&new_shallow).unwrap())
+    });
+
+    group.bench_function("new_file_deep_soft_canonicalize", |b| {
+        b.iter(|| soft_canonicalize(&new_deep).unwrap())
+    });
+
+    group.finish();
+}
+
+criterion_group!(
+    benches,
+    bench_resolvers_same_paths,
+    bench_multiple_bases,
+    bench_canonicalize_vs_soft
+);
 
 criterion_main!(benches);

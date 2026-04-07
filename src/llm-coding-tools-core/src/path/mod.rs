@@ -70,3 +70,42 @@ pub(crate) fn relative_path_escapes_base(path: &Path) -> bool {
 
     false
 }
+
+/// Resolves a path for a new file when the parent directory exists.
+///
+/// This is a fast path optimization that avoids the expensive `soft_canonicalize`
+/// for the common case where a new file is being created in an existing directory.
+///
+/// # Platform Differences
+///
+/// - **Unix**: Canonicalizes the parent directory and joins the filename.
+///   This is safe because Unix path resolution is straightforward.
+/// - **Windows/others**: Uses `soft_canonicalize` because Windows has complex path
+///   semantics (drive letters, UNC paths, verbatim paths) that require the
+///   full resolution logic for correct `..` handling.
+///
+/// # Returns
+///
+/// - `Some(resolved_path)` if the parent directory exists and was successfully canonicalized
+/// - `None` if the parent directory doesn't exist or canonicalization failed
+#[inline]
+pub(crate) fn resolve_new_file_fast(candidate: &Path) -> Option<PathBuf> {
+    let parent = candidate.parent()?;
+
+    #[cfg(unix)]
+    {
+        let filename = candidate.file_name()?;
+        if parent.is_dir() {
+            return parent.canonicalize().ok().map(|p| p.join(filename));
+        }
+        None
+    }
+
+    #[cfg(not(unix))]
+    {
+        if parent.is_dir() {
+            return soft_canonicalize::soft_canonicalize(candidate).ok();
+        }
+        None
+    }
+}
