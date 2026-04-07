@@ -33,9 +33,10 @@ fn build_ruleset(
     final_permission: impl Into<Box<str>>,
     final_pattern: impl Into<Box<str>>,
 ) -> Ruleset {
-    let mut ruleset = Ruleset::with_capacity(rule_count.max(1));
+    assert!(rule_count >= 1, "rule_count must be >= 1");
+    let mut ruleset = Ruleset::with_capacity(rule_count);
 
-    for idx in 0..rule_count.saturating_sub(1) {
+    for idx in 0..(rule_count - 1) {
         ruleset.push(Rule::new(
             format!("tool-{idx}"),
             format!("/workspace/other-{idx}.txt"),
