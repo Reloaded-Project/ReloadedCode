@@ -15,7 +15,7 @@ pub use allowed_glob::{AllowedGlobResolver, GlobPolicy, GlobPolicyBuilder, RuleA
 
 use crate::context::PathMode;
 use crate::error::ToolResult;
-use std::path::PathBuf;
+use std::path::{Component, Path, PathBuf};
 
 /// Strategy for resolving and validating file paths.
 ///
@@ -33,4 +33,40 @@ pub trait PathResolver: Send + Sync {
     /// Returns an absolute path (may or may not be canonical) if valid,
     /// or an error describing the issue.
     fn resolve(&self, path: &str) -> ToolResult<PathBuf>;
+}
+
+/// Fast lexical check for whether a relative path would escape its base directory.
+///
+/// This is a cheap pre-filter that avoids filesystem operations for obvious traversal
+/// attacks. It tracks the effective depth while walking path components:
+/// - `.` (current directory) has no effect
+/// - normal components increase depth
+/// - `..` (parent directory) decreases depth, and if depth is already 0, the path escapes
+///
+/// # Returns
+///
+/// - `true` if the path would escape (e.g., `../../../etc/passwd`, `../secrets.txt`)
+/// - `false` if the path stays within bounds or is absolute
+#[inline]
+pub(crate) fn relative_path_escapes_base(path: &Path) -> bool {
+    if path.is_absolute() {
+        return false;
+    }
+
+    let mut depth = 0usize;
+    for component in path.components() {
+        match component {
+            Component::Normal(_) => depth += 1,
+            Component::CurDir => {}
+            Component::ParentDir => {
+                if depth == 0 {
+                    return true;
+                }
+                depth -= 1;
+            }
+            Component::RootDir | Component::Prefix(_) => return false,
+        }
+    }
+
+    false
 }

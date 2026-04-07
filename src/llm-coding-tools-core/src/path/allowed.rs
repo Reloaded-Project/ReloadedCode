@@ -1,6 +1,6 @@
 //! Allowed directory path resolver implementation.
 
-use super::PathResolver;
+use super::{relative_path_escapes_base, PathResolver};
 use crate::context::PathMode;
 use crate::error::{ToolError, ToolResult};
 use soft_canonicalize::soft_canonicalize;
@@ -101,11 +101,18 @@ impl PathResolver for AllowedPathResolver {
     const PATH_MODE: PathMode = PathMode::Allowed;
 
     fn resolve(&self, path: &str) -> ToolResult<PathBuf> {
-        let input_path = PathBuf::from(path);
+        let input_path = Path::new(path);
+
+        if relative_path_escapes_base(input_path) {
+            return Err(ToolError::InvalidPath(format!(
+                "path '{}' is not within allowed directories",
+                path
+            )));
+        }
 
         // Try each allowed base directory in order
         for base in self.allowed_paths.iter() {
-            let candidate = base.join(&input_path);
+            let candidate = base.join(input_path);
 
             // Try to canonicalize for existing paths
             if let Ok(canonical) = candidate.canonicalize() {

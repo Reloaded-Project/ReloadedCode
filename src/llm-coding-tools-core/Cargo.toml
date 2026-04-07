@@ -120,3 +120,7 @@ rstest = "0.26"
 [[bench]]
 name = "model_catalog_builder"
 harness = false
+
+[[bench]]
+name = "path_resolvers"
+harness = false

@@ -1,5 +1,6 @@
 //! Path normalization utilities for glob matching.
 
+use std::borrow::Cow;
 use std::path::{Path, PathBuf};
 
 use crate::error::{ToolError, ToolResult};
@@ -8,15 +9,20 @@ use crate::error::{ToolError, ToolResult};
 ///
 /// On Windows, converts backslashes to forward slashes.
 /// On Unix, this returns the path string unchanged.
-pub(crate) fn normalize_path(path: &Path) -> String {
+#[inline]
+pub(crate) fn normalize_path(path: &Path) -> Cow<'_, str> {
     let path_str = path.to_string_lossy();
     #[cfg(windows)]
     {
-        path_str.replace('\\', "/")
+        if path_str.contains('\\') {
+            Cow::Owned(path_str.replace('\\', "/"))
+        } else {
+            path_str
+        }
     }
     #[cfg(not(windows))]
     {
-        path_str.into_owned()
+        path_str
     }
 }
 

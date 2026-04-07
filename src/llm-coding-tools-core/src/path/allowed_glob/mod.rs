@@ -6,7 +6,7 @@
 mod normalize;
 mod policy;
 
-use super::PathResolver;
+use super::{relative_path_escapes_base, PathResolver};
 use crate::context::PathMode;
 use crate::error::{ToolError, ToolResult};
 use normalize::expand_shell;
@@ -141,11 +141,19 @@ impl PathResolver for AllowedGlobResolver {
     const PATH_MODE: PathMode = PathMode::Allowed;
 
     fn resolve(&self, path: &str) -> ToolResult<PathBuf> {
-        let input_path = PathBuf::from(path);
+        let input_path = Path::new(path);
+        let policy = self.policy.as_deref();
+
+        if relative_path_escapes_base(input_path) {
+            return Err(ToolError::InvalidPath(format!(
+                "path '{}' is not within allowed directories",
+                path
+            )));
+        }
 
         for base_dir in self.base_directories.iter() {
             // Relative input joins base_dir; absolute input overrides it.
-            let candidate = base_dir.join(&input_path);
+            let candidate = base_dir.join(input_path);
 
             // Existing file/dir: canonicalize resolves symlinks and normalizes.
             if let Ok(resolved) = candidate.canonicalize() {
@@ -155,10 +163,9 @@ impl PathResolver for AllowedGlobResolver {
                 }
 
                 // Apply glob policy to the relative path.
-                let relative_path = resolved.strip_prefix(base_dir).unwrap_or(Path::new(""));
-                let normalized_relative = normalize::normalize_path(relative_path);
-
-                if let Some(policy) = &self.policy {
+                if let Some(policy) = policy {
+                    let relative_path = resolved.strip_prefix(base_dir).unwrap_or(Path::new(""));
+                    let normalized_relative = normalize::normalize_path(relative_path);
                     if !policy.is_allowed(&normalized_relative) {
                         continue;
                     }
@@ -175,10 +182,9 @@ impl PathResolver for AllowedGlobResolver {
                 }
 
                 // Apply glob policy to the target relative path.
-                let relative_path = target_path.strip_prefix(base_dir).unwrap_or(Path::new(""));
-                let normalized_relative = normalize::normalize_path(relative_path);
-
-                if let Some(policy) = &self.policy {
+                if let Some(policy) = policy {
+                    let relative_path = target_path.strip_prefix(base_dir).unwrap_or(Path::new(""));
+                    let normalized_relative = normalize::normalize_path(relative_path);
                     if !policy.is_allowed(&normalized_relative) {
                         continue;
                     }
