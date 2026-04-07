@@ -3,6 +3,7 @@
 use super::{relative_path_escapes_base, resolve_new_file_fast, PathResolver};
 use crate::context::PathMode;
 use crate::error::{ToolError, ToolResult};
+use crate::permissions::{PermissionAction, Ruleset};
 use soft_canonicalize::soft_canonicalize;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -33,6 +34,11 @@ use std::sync::Arc;
 pub struct AllowedPathResolver {
     /// Canonicalized allowed base directories.
     allowed_paths: Arc<[PathBuf]>,
+    /// Optional permission ruleset for paths outside allowed bases.
+    ///
+    /// If a path doesn't resolve within any base, the `"external_directory"` key
+    /// is checked against the canonicalized path. Only absolute paths are eligible.
+    external_permission: Option<Arc<Ruleset>>,
 }
 
 impl AllowedPathResolver {
@@ -65,6 +71,7 @@ impl AllowedPathResolver {
 
         Ok(Self {
             allowed_paths: canonicalized?,
+            external_permission: None,
         })
     }
 
@@ -88,12 +95,31 @@ impl AllowedPathResolver {
                 .into_iter()
                 .map(|p| p.as_ref().to_path_buf())
                 .collect(),
+            external_permission: None,
         }
     }
 
     /// Returns the allowed base directories.
     pub fn allowed_paths(&self) -> &[PathBuf] {
         &self.allowed_paths
+    }
+
+    /// Allows access to paths outside allowed directories via a permission ruleset.
+    ///
+    /// Paths that don't resolve within any base are checked against the
+    /// `"external_directory"` permission key. Only absolute paths are eligible;
+    /// relative paths always fail.
+    ///
+    /// # Arguments
+    /// - `permission` - [`Ruleset`] controlling external directory access.
+    ///
+    /// # Returns
+    /// The modified resolver for chaining. This method always returns `Self` and
+    /// is infallible.
+    #[must_use]
+    pub fn with_external_permission(mut self, permission: Arc<Ruleset>) -> Self {
+        self.external_permission = Some(permission);
+        self
     }
 }
 
@@ -142,6 +168,24 @@ impl PathResolver for AllowedPathResolver {
             }
         }
 
+        // External directory fallback: check "external_directory" permission.
+        // Only absolute paths are eligible.
+        if input_path.is_absolute() {
+            if let Some(perm) = &self.external_permission {
+                let canon = soft_canonicalize(input_path).map_err(|_| {
+                    ToolError::InvalidPath(format!(
+                        "path '{}' is not within allowed directories",
+                        path
+                    ))
+                })?;
+                if perm.evaluate("external_directory", &canon.to_string_lossy())
+                    == PermissionAction::Allow
+                {
+                    return Ok(canon);
+                }
+            }
+        }
+
         Err(ToolError::InvalidPath(format!(
             "path '{}' is not within allowed directories",
             path
@@ -152,8 +196,10 @@ impl PathResolver for AllowedPathResolver {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::permissions::{PermissionAction, Rule, Ruleset};
     use rstest::rstest;
     use std::fs;
+    use std::sync::Arc;
     use tempfile::TempDir;
 
     fn setup_test_dir() -> TempDir {
@@ -162,6 +208,18 @@ mod tests {
         fs::write(dir.path().join("file.txt"), "content").unwrap();
         fs::write(dir.path().join("subdir/nested.txt"), "nested").unwrap();
         dir
+    }
+
+    fn resolver_with_external_rule(
+        dir: &TempDir,
+        pattern: &str,
+        action: PermissionAction,
+    ) -> AllowedPathResolver {
+        let mut ruleset = Ruleset::new();
+        ruleset.push(Rule::new("external_directory", pattern, action).unwrap());
+        AllowedPathResolver::new(vec![dir.path().to_path_buf()])
+            .unwrap()
+            .with_external_permission(Arc::new(ruleset))
     }
 
     /// Verifies that valid paths resolve successfully, including both existing
@@ -240,6 +298,96 @@ mod tests {
         assert!(
             !resolved.to_string_lossy().contains(".."),
             "canonical path should not contain '..'"
+        );
+    }
+
+    // --- external directory permission ---
+
+    #[test]
+    fn resolves_external_path_when_permission_allows() {
+        let dir = setup_test_dir();
+        let external_dir = TempDir::new().unwrap();
+        let external_file = external_dir.path().join("external.txt");
+        fs::write(&external_file, "content").unwrap();
+
+        // Grant access to anything under external_dir.
+        let pattern = format!("{}/*", external_dir.path().to_str().unwrap());
+        let resolver = resolver_with_external_rule(&dir, &pattern, PermissionAction::Allow);
+
+        let result = resolver.resolve(external_file.to_str().unwrap());
+        let resolved = result.expect("external path allowed by permission should resolve");
+        assert!(resolved.is_absolute(), "resolved path must be absolute");
+        let expected = external_file.canonicalize().expect("file should exist");
+        assert_eq!(resolved, expected, "resolved path must be canonical");
+    }
+
+    /// External paths are rejected whether explicitly denied or no ruleset is configured.
+    #[rstest]
+    #[case::deny_rule(true)]
+    #[case::no_ruleset(false)]
+    fn rejects_external_path_without_allow(#[case] with_deny_ruleset: bool) {
+        let dir = setup_test_dir();
+        let resolver = if with_deny_ruleset {
+            resolver_with_external_rule(&dir, "*", PermissionAction::Deny)
+        } else {
+            AllowedPathResolver::new(vec![dir.path().to_path_buf()]).unwrap()
+        };
+        let external_path = std::env::temp_dir()
+            .join("some")
+            .join("external")
+            .join("path.txt");
+        let result = resolver.resolve(&external_path.to_string_lossy());
+        let err = result.expect_err("external path should be rejected");
+        assert!(err.to_string().contains("not within allowed"));
+    }
+
+    #[test]
+    fn rejects_relative_path_even_with_external_permission() {
+        let mut ruleset = Ruleset::new();
+        ruleset.push(Rule::new("external_directory", "*", PermissionAction::Allow).unwrap());
+
+        // No base directories — external permission allows everything, but only
+        // absolute paths. Relative paths must still be rejected.
+        let resolver = AllowedPathResolver::from_canonical(Vec::<PathBuf>::new())
+            .with_external_permission(Arc::new(ruleset));
+
+        let result = resolver.resolve("relative/path.txt");
+        assert!(
+            result.is_err(),
+            "relative paths must not be resolved externally"
+        );
+        let err = result.unwrap_err();
+        assert!(err.to_string().contains("not within allowed"));
+    }
+
+    /// Permission checks the canonicalized path, not the raw input.
+    /// Input like `{tmp}/allowed/../allowed/secret.txt` canonicalizes to
+    /// `{tmp}/allowed/secret.txt` which matches the exact pattern.
+    #[test]
+    fn canonicalizes_path_before_permission_check() {
+        let dir = setup_test_dir();
+        let tmp = TempDir::new().unwrap();
+        let subdir = tmp.path().join("allowed");
+        fs::create_dir_all(&subdir).unwrap();
+        fs::write(subdir.join("secret.txt"), "content").unwrap();
+
+        let pattern = format!("{}/allowed/secret.txt", tmp.path().to_str().unwrap());
+        let resolver = resolver_with_external_rule(&dir, &pattern, PermissionAction::Allow);
+
+        let input = format!(
+            "{}/allowed/../allowed/secret.txt",
+            tmp.path().to_str().unwrap()
+        );
+        let result = resolver.resolve(&input);
+        assert!(
+            result.is_ok(),
+            "canonicalized path must match exact pattern"
+        );
+        let resolved = result.unwrap();
+        assert!(
+            resolved.ends_with("allowed/secret.txt"),
+            "resolved path should be canonical: {:?}",
+            resolved
         );
     }
 }
