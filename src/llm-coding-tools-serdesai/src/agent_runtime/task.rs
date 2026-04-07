@@ -145,10 +145,12 @@ mod tests {
         Modality, ModelCatalog, ModelInfo, ProviderIdx, ProviderInfo, ProviderModelSource,
         ProviderSource, ProviderType,
     };
-    use llm_coding_tools_core::permissions::PermissionAction;
+    use llm_coding_tools_core::permissions::{ExpandError, PermissionAction};
     use llm_coding_tools_core::tool_metadata::{
         read as read_meta, task as task_meta, write as write_meta,
     };
+
+    type TestResult = Result<(), ExpandError>;
 
     fn agent(
         name: &str,
@@ -217,7 +219,7 @@ mod tests {
     }
 
     #[test]
-    fn build_agent_skips_task_tool_when_no_targets_are_callable() {
+    fn build_agent_skips_task_tool_when_no_targets_are_callable() -> TestResult {
         let credentials = credentials();
         let model_catalog = Arc::new(catalog());
 
@@ -232,7 +234,7 @@ mod tests {
                 agent("other", AgentMode::Primary, allow_tools(&[]), "prompt"),
             ]))
             .defaults(AgentDefaults::with_model("openrouter/openai/gpt-4.1-mini"))
-            .build();
+            .build()?;
 
         let context = Arc::new(TaskBuildContext {
             runtime: Arc::new(runtime),
@@ -243,10 +245,11 @@ mod tests {
         let agent = build_agent(context, "caller", 0).expect("build should succeed");
         let names: Vec<_> = agent.tools().iter().map(|t| t.name()).collect();
         assert!(!names.contains(&task_meta::NAME));
+        Ok(())
     }
 
     #[test]
-    fn build_agent_attaches_task_when_callable_targets_exist() {
+    fn build_agent_attaches_task_when_callable_targets_exist() -> TestResult {
         let credentials = credentials();
         let model_catalog = Arc::new(catalog());
 
@@ -266,7 +269,7 @@ mod tests {
                 ),
             ]))
             .defaults(AgentDefaults::with_model("openrouter/openai/gpt-4.1-mini"))
-            .build();
+            .build()?;
 
         let context = Arc::new(TaskBuildContext {
             runtime: Arc::new(runtime),
@@ -278,10 +281,11 @@ mod tests {
         let names: Vec<_> = agent.tools().iter().map(|t| t.name()).collect();
         assert!(names.contains(&task_meta::NAME));
         assert!(names.contains(&read_meta::NAME));
+        Ok(())
     }
 
     #[test]
-    fn build_agent_attaches_task_when_task_permission_is_target_scoped() {
+    fn build_agent_attaches_task_when_task_permission_is_target_scoped() -> TestResult {
         let credentials = credentials();
         let model_catalog = Arc::new(catalog());
 
@@ -299,7 +303,7 @@ mod tests {
                 agent("reader", AgentMode::Subagent, allow_tools(&[]), "prompt"),
             ]))
             .defaults(AgentDefaults::with_model("openrouter/openai/gpt-4.1-mini"))
-            .build();
+            .build()?;
 
         let context = Arc::new(TaskBuildContext {
             runtime: Arc::new(runtime),
@@ -310,10 +314,11 @@ mod tests {
         let agent = build_agent(context, "caller", 0).expect("build should succeed");
         let names: Vec<_> = agent.tools().iter().map(|t| t.name()).collect();
         assert_eq!(names, vec![task_meta::NAME]);
+        Ok(())
     }
 
     #[test]
-    fn build_agent_attaches_task_when_permission_task_is_absent() {
+    fn build_agent_attaches_task_when_permission_task_is_absent() -> TestResult {
         let credentials = credentials();
         let model_catalog = Arc::new(catalog());
 
@@ -328,7 +333,7 @@ mod tests {
                 agent("reader", AgentMode::Subagent, allow_tools(&[]), "prompt"),
             ]))
             .defaults(AgentDefaults::with_model("openrouter/openai/gpt-4.1-mini"))
-            .build();
+            .build()?;
 
         let context = Arc::new(TaskBuildContext {
             runtime: Arc::new(runtime),
@@ -336,16 +341,15 @@ mod tests {
             credentials,
         });
 
-        // OpenCode-compatible default: omitting `permission.task` still exposes Task.
-        // Any non-primary callable target keeps delegation available to the caller.
         let agent = build_agent(context, "caller", 0).expect("build should succeed");
         let names: Vec<_> = agent.tools().iter().map(|t| t.name()).collect();
         assert!(names.contains(&read_meta::NAME));
         assert!(names.contains(&task_meta::NAME));
+        Ok(())
     }
 
     #[test]
-    fn agent_build_context_omits_task_tool_when_no_targets_are_callable() {
+    fn agent_build_context_omits_task_tool_when_no_targets_are_callable() -> TestResult {
         let model_catalog = Arc::new(catalog());
         let credentials = credentials();
 
@@ -360,18 +364,17 @@ mod tests {
                 agent("other", AgentMode::Primary, allow_tools(&[]), "prompt"),
             ]))
             .defaults(AgentDefaults::with_model("openrouter/openai/gpt-4.1-mini"))
-            .build();
+            .build()?;
 
         let context = AgentBuildContext::new(Arc::new(runtime), model_catalog, credentials);
         let agent = context.build("caller").expect("build should succeed");
         let names: Vec<_> = agent.tools().iter().map(|t| t.name()).collect();
         assert!(!names.contains(&task_meta::NAME));
+        Ok(())
     }
 
     #[test]
-    fn build_agent_omits_task_tool_at_max_depth() {
-        // Mid-chain: an already-delegated agent (depth=1) at max_task_depth=1
-        // must not receive the Task tool.
+    fn build_agent_omits_task_tool_at_max_depth() -> TestResult {
         let credentials = credentials();
         let model_catalog = Arc::new(catalog());
 
@@ -392,7 +395,7 @@ mod tests {
             ]))
             .defaults(AgentDefaults::with_model("openrouter/openai/gpt-4.1-mini"))
             .max_task_depth(1)
-            .build();
+            .build()?;
 
         let context = Arc::new(TaskBuildContext {
             runtime: Arc::new(runtime),
@@ -404,11 +407,11 @@ mod tests {
         let names: Vec<_> = agent.tools().iter().map(|t| t.name()).collect();
         assert!(!names.contains(&task_meta::NAME));
         assert!(names.contains(&read_meta::NAME));
+        Ok(())
     }
 
     #[test]
-    fn agent_build_context_omits_task_tool_when_max_depth_is_zero() {
-        // Root agent: max_task_depth=0 disables delegation entirely from the start.
+    fn agent_build_context_omits_task_tool_when_max_depth_is_zero() -> TestResult {
         let model_catalog = Arc::new(catalog());
         let credentials = credentials();
 
@@ -429,12 +432,13 @@ mod tests {
             ]))
             .defaults(AgentDefaults::with_model("openrouter/openai/gpt-4.1-mini"))
             .max_task_depth(0)
-            .build();
+            .build()?;
 
         let context = AgentBuildContext::new(Arc::new(runtime), model_catalog, credentials);
         let agent = context.build("caller").expect("build should succeed");
         let names: Vec<_> = agent.tools().iter().map(|t| t.name()).collect();
         assert!(!names.contains(&task_meta::NAME));
         assert!(names.contains(&read_meta::NAME));
+        Ok(())
     }
 }

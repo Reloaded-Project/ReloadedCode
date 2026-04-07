@@ -419,10 +419,12 @@ pub async fn read_file<R: PathResolver>(
 mod tests {
     use super::*;
     use crate::path::AbsolutePathResolver;
-    use crate::permissions::{PermissionAction, Rule};
+    use crate::permissions::{ExpandError, PermissionAction, Rule};
     use rstest::rstest;
     use std::io::Write as _;
     use tempfile::NamedTempFile;
+
+    type TestResult = Result<(), ExpandError>;
 
     #[maybe_async::maybe_async]
     async fn read_temp_file(
@@ -605,18 +607,18 @@ mod tests {
     }
 
     #[maybe_async::test(feature = "blocking", async(feature = "tokio", tokio::test))]
-    async fn read_request_rejects_denied_path() {
+    async fn read_request_rejects_denied_path() -> TestResult {
         let mut temp = NamedTempFile::new().unwrap();
         temp.write_all(b"line1\n").unwrap();
         let resolver = AbsolutePathResolver;
 
         let mut ruleset = Ruleset::new();
-        ruleset.push(Rule::new("read", "*", PermissionAction::Allow));
+        ruleset.push(Rule::new("read", "*", PermissionAction::Allow)?);
         ruleset.push(Rule::new(
             "read",
             temp.path().to_string_lossy().into_owned(),
             PermissionAction::Deny,
-        ));
+        )?);
 
         let err = read_file(
             &resolver,
@@ -634,5 +636,6 @@ mod tests {
             err,
             ToolError::PermissionDenied { tool: "read", .. }
         ));
+        Ok(())
     }
 }

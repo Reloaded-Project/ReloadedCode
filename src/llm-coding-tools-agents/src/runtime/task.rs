@@ -8,7 +8,7 @@
 use super::tool_catalog::{ToolCatalogEntry, ToolCatalogKind};
 use crate::{AgentCatalog, AgentConfig, AgentMode, RulesetExt};
 use ahash::AHashMap;
-use llm_coding_tools_core::permissions::Ruleset;
+use llm_coding_tools_core::permissions::{ExpandError, Ruleset};
 use llm_coding_tools_core::tool_metadata::task as task_meta;
 use std::sync::Arc;
 
@@ -34,8 +34,8 @@ pub struct TaskTargetSummary {
 pub fn summarize_callable_targets(
     catalog: &AgentCatalog,
     caller_name: &str,
-) -> Vec<TaskTargetSummary> {
-    summarize_targets(callable_targets(catalog, caller_name))
+) -> Result<Vec<TaskTargetSummary>, ExpandError> {
+    Ok(summarize_targets(callable_targets(catalog, caller_name)?))
 }
 
 /// Returns the agents that `caller_name` (the currently running agent) may delegate to via Task.
@@ -52,15 +52,18 @@ pub fn summarize_callable_targets(
 /// `mode: all` and `mode: subagent` targets for OpenCode compatibility. When
 /// `permission.task` is present, its rules filter target names with the normal
 /// last-match-wins permission semantics.
-pub fn callable_targets<'a>(catalog: &'a AgentCatalog, caller_name: &str) -> Vec<&'a AgentConfig> {
+pub fn callable_targets<'a>(
+    catalog: &'a AgentCatalog,
+    caller_name: &str,
+) -> Result<Vec<&'a AgentConfig>, ExpandError> {
     let Some(caller) = catalog.by_name(caller_name) else {
-        return Vec::new();
+        return Ok(Vec::new());
     };
-    let task_rules = Ruleset::from_permission_config(&caller.permission);
+    let task_rules = Ruleset::from_permission_config(&caller.permission)?;
     // Sort to give deterministic ordering regardless of catalog iteration order;
     // the result feeds into LLM prompts and cached summaries that must be stable.
     let agents = sorted_agents(catalog);
-    filter_callable_targets(&agents, caller, &task_rules)
+    Ok(filter_callable_targets(&agents, caller, &task_rules))
 }
 
 /// Pre-compute per-agent task caches for the entire catalog in one pass.
@@ -186,10 +189,12 @@ mod tests {
     use crate::{AgentConfig, AgentMode, AgentRuntimeBuilder, AgentToolSettings};
     use ahash::AHashMap;
     use indexmap::IndexMap;
-    use llm_coding_tools_core::permissions::PermissionAction;
+    use llm_coding_tools_core::permissions::{ExpandError, PermissionAction};
     use llm_coding_tools_core::tool_metadata::{
         bash as bash_meta, read as read_meta, task as task_meta, write as write_meta,
     };
+
+    type TestResult = Result<(), ExpandError>;
 
     fn agent(
         name: &str,
@@ -236,7 +241,7 @@ mod tests {
 
     /// Unknown callers yield no targets.
     #[test]
-    fn callable_targets_returns_empty_for_unknown_caller() {
+    fn callable_targets_returns_empty_for_unknown_caller() -> TestResult {
         let catalog = AgentCatalog::from_entries([agent(
             "agent-a",
             AgentMode::All,
@@ -244,13 +249,14 @@ mod tests {
             allow_tools(&[task_meta::NAME]),
         )]);
 
-        let targets = callable_targets(&catalog, "nonexistent");
+        let targets = callable_targets(&catalog, "nonexistent")?;
         assert!(targets.is_empty());
+        Ok(())
     }
 
     /// Primary-mode agents are excluded from callable targets.
     #[test]
-    fn callable_targets_filters_primary_targets_even_when_allowed() {
+    fn callable_targets_filters_primary_targets_even_when_allowed() -> TestResult {
         let catalog = AgentCatalog::from_entries([
             agent(
                 "caller",
@@ -273,17 +279,18 @@ mod tests {
             ),
         ]);
 
-        let targets = callable_targets(&catalog, "caller");
+        let targets = callable_targets(&catalog, "caller")?;
         let names: Vec<_> = targets.iter().map(|t| t.name.as_ref()).collect();
         assert!(names.contains(&"all-target"));
         assert!(names.contains(&"subagent-target"));
         assert!(!names.contains(&"primary-target"));
         assert!(names.contains(&"caller"));
+        Ok(())
     }
 
     /// Self-delegation is allowed when mode and permission both permit.
     #[test]
-    fn callable_targets_keeps_self_when_mode_and_permission_allow_it() {
+    fn callable_targets_keeps_self_when_mode_and_permission_allow_it() -> TestResult {
         let catalog = AgentCatalog::from_entries([agent(
             "self-agent",
             AgentMode::All,
@@ -291,13 +298,14 @@ mod tests {
             allow_tools(&[task_meta::NAME]),
         )]);
 
-        let targets = callable_targets(&catalog, "self-agent");
+        let targets = callable_targets(&catalog, "self-agent")?;
         assert!(targets.iter().any(|t| t.name.as_ref() == "self-agent"));
+        Ok(())
     }
 
     /// Without explicit `permission.task`, Task defaults to all non-primary targets.
     #[test]
-    fn callable_targets_default_to_all_non_primary_when_task_permission_is_absent() {
+    fn callable_targets_default_to_all_non_primary_when_task_permission_is_absent() -> TestResult {
         let catalog = AgentCatalog::from_entries([
             agent(
                 "caller",
@@ -320,14 +328,15 @@ mod tests {
             ),
         ]);
 
-        let targets = callable_targets(&catalog, "caller");
+        let targets = callable_targets(&catalog, "caller")?;
         let names: Vec<_> = targets.iter().map(|t| t.name.as_ref()).collect();
         assert_eq!(names, vec!["all-target", "subagent-target"]);
+        Ok(())
     }
 
     /// Wildcard patterns are evaluated; specific patterns override wildcards.
     #[test]
-    fn callable_targets_honor_wildcard_and_specific_rules_in_order() {
+    fn callable_targets_honor_wildcard_and_specific_rules_in_order() -> TestResult {
         let catalog = AgentCatalog::from_entries([
             agent(
                 "caller",
@@ -352,15 +361,16 @@ mod tests {
             ),
         ]);
 
-        let targets = callable_targets(&catalog, "caller");
+        let targets = callable_targets(&catalog, "caller")?;
         let names: Vec<_> = targets.iter().map(|t| t.name.as_ref()).collect();
         assert!(names.contains(&"review-agent"));
         assert!(!names.contains(&"other-agent"));
+        Ok(())
     }
 
     /// Later patterns take precedence (last-match-wins).
     #[test]
-    fn callable_targets_use_last_match_wins_precedence() {
+    fn callable_targets_use_last_match_wins_precedence() -> TestResult {
         let catalog = AgentCatalog::from_entries([
             agent(
                 "caller",
@@ -385,15 +395,16 @@ mod tests {
             ),
         ]);
 
-        let targets = callable_targets(&catalog, "caller");
+        let targets = callable_targets(&catalog, "caller")?;
         let names: Vec<_> = targets.iter().map(|t| t.name.as_ref()).collect();
         assert!(!names.contains(&"review-agent"));
         assert!(!names.contains(&"other-agent"));
+        Ok(())
     }
 
     /// OpenCode-style task allowlists support both exact names and wildcards.
     #[test]
-    fn callable_targets_support_opencode_style_allowlists() {
+    fn callable_targets_support_opencode_style_allowlists() -> TestResult {
         let catalog = AgentCatalog::from_entries([
             agent(
                 "orchestrator",
@@ -434,7 +445,7 @@ mod tests {
             ),
         ]);
 
-        let targets = callable_targets(&catalog, "orchestrator");
+        let targets = callable_targets(&catalog, "orchestrator")?;
         let names: Vec<_> = targets.iter().map(|t| t.name.as_ref()).collect();
         assert_eq!(
             names,
@@ -445,11 +456,12 @@ mod tests {
                 "orchestrator-runner",
             ]
         );
+        Ok(())
     }
 
     /// Summaries are alphabetically sorted and preserve target descriptions.
     #[test]
-    fn summaries_are_sorted_and_preserve_target_descriptions() {
+    fn summaries_are_sorted_and_preserve_target_descriptions() -> TestResult {
         let catalog = AgentCatalog::from_entries([
             agent(
                 "zebra",
@@ -471,7 +483,7 @@ mod tests {
             ),
         ]);
 
-        let summaries = summarize_callable_targets(&catalog, "caller");
+        let summaries = summarize_callable_targets(&catalog, "caller")?;
 
         let names: Vec<&str> = summaries.iter().map(|s| s.name.as_ref()).collect();
         assert_eq!(names, vec!["alpha", "caller", "zebra"]);
@@ -487,22 +499,24 @@ mod tests {
             .find(|s| s.name.as_ref() == "zebra")
             .unwrap();
         assert_eq!(zebra_summary.description.as_ref(), "Zebra description");
+        Ok(())
     }
 
     /// Explicit deny on `permission.task` suppresses all task targets.
     #[test]
-    fn summaries_return_empty_when_task_is_explicitly_denied() {
+    fn summaries_return_empty_when_task_is_explicitly_denied() -> TestResult {
         let catalog = AgentCatalog::from_entries([
             agent("caller", AgentMode::All, "Caller", deny_task()),
             agent("target", AgentMode::All, "Target", IndexMap::new()),
         ]);
 
-        let summaries = summarize_callable_targets(&catalog, "caller");
+        let summaries = summarize_callable_targets(&catalog, "caller")?;
         assert!(summaries.is_empty());
+        Ok(())
     }
 
     #[test]
-    fn allowed_tools_keeps_task_when_a_target_is_callable() {
+    fn allowed_tools_keeps_task_when_a_target_is_callable() -> TestResult {
         let runtime = AgentRuntimeBuilder::new()
             .catalog(AgentCatalog::from_entries([
                 agent(
@@ -517,7 +531,7 @@ mod tests {
                 agent("reader", AgentMode::Subagent, "Reader", IndexMap::new()),
                 agent("writer", AgentMode::Subagent, "Writer", IndexMap::new()),
             ]))
-            .build();
+            .build()?;
 
         let names: Vec<_> = runtime
             .allowed_tools("caller")
@@ -526,10 +540,11 @@ mod tests {
             .collect();
 
         assert_eq!(names, vec![task_meta::NAME]);
+        Ok(())
     }
 
     #[test]
-    fn allowed_tools_omits_task_when_no_targets_are_callable() {
+    fn allowed_tools_omits_task_when_no_targets_are_callable() -> TestResult {
         let runtime = AgentRuntimeBuilder::new()
             .catalog(AgentCatalog::from_entries([
                 agent(
@@ -545,7 +560,7 @@ mod tests {
                     IndexMap::new(),
                 ),
             ]))
-            .build();
+            .build()?;
 
         let names: Vec<_> = runtime
             .allowed_tools("caller")
@@ -555,5 +570,6 @@ mod tests {
 
         assert!(names.contains(&read_meta::NAME));
         assert!(!names.contains(&task_meta::NAME));
+        Ok(())
     }
 }

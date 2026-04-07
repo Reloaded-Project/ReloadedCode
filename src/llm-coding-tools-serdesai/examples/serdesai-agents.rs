@@ -42,7 +42,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let runtime = AgentRuntimeBuilder::new()
         .catalog(catalog)
         .defaults(AgentDefaults::with_model(MODEL_ID))
-        .build();
+        .build()?;
     let build_context = AgentBuildContext::new(
         Arc::new(runtime),
         Arc::new(load_result.catalog),

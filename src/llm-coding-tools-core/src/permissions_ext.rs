@@ -6,18 +6,22 @@
 //! # Example
 //!
 //! ```
-//! use llm_coding_tools_core::permissions::{PermissionAction, Rule, Ruleset};
+//! use llm_coding_tools_core::permissions::{ExpandError, PermissionAction, Rule, Ruleset};
 //! use llm_coding_tools_core::permissions_ext::OptionRulesetExt;
 //!
-//! // With ruleset configured to allow all
+//! # fn main() -> Result<(), ExpandError> {
 //! let mut ruleset = Ruleset::new();
-//! ruleset.push(Rule::new("*", "*", PermissionAction::Allow));
+//! ruleset.push(Rule::new("*", "*", PermissionAction::Allow)?);
+//!
+//! // With ruleset configured to allow all
 //! let result: Option<&Ruleset> = Some(&ruleset);
-//! result.check("bash", "some-command").unwrap();
+//! assert!(result.check("bash", "some-command").is_ok());
 //!
 //! // Without ruleset (always allows)
 //! let no_ruleset: Option<&Ruleset> = None;
-//! no_ruleset.check("bash", "any-command").unwrap(); // Always Ok(())
+//! assert!(no_ruleset.check("bash", "any-command").is_ok()); // Always Ok(())
+//! # Ok(())
+//! # }
 //! ```
 
 use crate::error::{ToolError, ToolResult};
@@ -56,7 +60,9 @@ impl OptionRulesetExt for Option<&Ruleset> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::permissions::Rule;
+    use crate::permissions::{ExpandError, Rule};
+
+    type TestResult = Result<(), ExpandError>;
 
     #[test]
     fn option_ruleset_ext_without_ruleset_allows_access() {
@@ -65,13 +71,13 @@ mod tests {
     }
 
     #[test]
-    fn option_ruleset_ext_returns_permission_denied_for_denied_subject() {
+    fn option_ruleset_ext_returns_permission_denied_for_denied_subject() -> TestResult {
         let mut ruleset = Ruleset::new();
         ruleset.push(Rule::new(
             "read",
             "/tmp/allowed.txt",
             PermissionAction::Allow,
-        ));
+        )?);
 
         let err = Some(&ruleset).check("read", "/tmp/denied.txt").unwrap_err();
 
@@ -82,13 +88,15 @@ mod tests {
                 subject,
             } if subject == "/tmp/denied.txt"
         ));
+        Ok(())
     }
 
     #[test]
-    fn option_ruleset_ext_returns_ok_for_allowed() {
+    fn option_ruleset_ext_returns_ok_for_allowed() -> TestResult {
         let mut ruleset = Ruleset::new();
-        ruleset.push(Rule::new("read", "*", PermissionAction::Allow));
+        ruleset.push(Rule::new("read", "*", PermissionAction::Allow)?);
 
         assert!(Some(&ruleset).check("read", "/tmp/file.txt").is_ok());
+        Ok(())
     }
 }

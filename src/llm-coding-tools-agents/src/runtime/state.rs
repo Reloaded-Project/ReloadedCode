@@ -9,7 +9,7 @@ use super::task::{build_runtime_task_caches, TaskTargetSummary};
 use super::tool_catalog::ToolCatalogEntry;
 use crate::{AgentCatalog, RulesetExt};
 use ahash::AHashMap;
-use llm_coding_tools_core::permissions::Ruleset;
+use llm_coding_tools_core::permissions::{ExpandError, Ruleset};
 use llm_coding_tools_core::TaskSettings;
 use std::sync::Arc;
 
@@ -55,20 +55,20 @@ impl AgentRuntime {
         defaults: AgentDefaults,
         task_settings: TaskSettings,
         tools: Vec<ToolCatalogEntry>,
-    ) -> Self {
+    ) -> Result<Self, ExpandError> {
         let permission_rulesets = catalog
             .iter()
             .map(|agent| {
-                (
+                Ok((
                     agent.name.to_string(),
-                    Arc::new(Ruleset::from_permission_config(&agent.permission)),
-                )
+                    Arc::new(Ruleset::from_permission_config(&agent.permission)?),
+                ))
             })
-            .collect();
+            .collect::<Result<AHashMap<_, _>, ExpandError>>()?;
         let (allowed_tools_by_caller, callable_target_summaries_by_caller) =
             build_runtime_task_caches(&catalog, &permission_rulesets, &tools);
 
-        Self {
+        Ok(Self {
             catalog,
             defaults,
             task_settings,
@@ -76,7 +76,7 @@ impl AgentRuntime {
             permission_rulesets,
             allowed_tools_by_caller,
             callable_target_summaries_by_caller,
-        }
+        })
     }
 
     /// Returns the loaded agent definitions.

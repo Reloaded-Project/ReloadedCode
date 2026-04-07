@@ -320,13 +320,15 @@ mod tests {
         Modality, ModelCatalog, ModelInfo, ProviderIdx, ProviderInfo, ProviderModelSource,
         ProviderSource, ProviderType,
     };
-    use llm_coding_tools_core::permissions::PermissionAction;
+    use llm_coding_tools_core::permissions::{ExpandError, PermissionAction};
     use llm_coding_tools_core::tool_metadata::{
         bash as bash_meta, glob as glob_meta, grep as grep_meta, read as read_meta,
     };
     use serdes_ai::AgentBuilder;
     use serdes_ai_models::MockModel;
     use std::collections::HashSet;
+
+    type TestResult = Result<(), ExpandError>;
 
     /// Builds an agent using a mock model instead of a real one.
     fn build_with_mock(
@@ -427,7 +429,7 @@ mod tests {
     }
 
     #[test]
-    fn build_filters_tools_by_permission() {
+    fn build_filters_tools_by_permission() -> TestResult {
         let credentials = credentials();
         let catalog = catalog();
 
@@ -442,7 +444,7 @@ mod tests {
                 agent("no-tools", IndexMap::new(), "prompt"),
             ]))
             .defaults(AgentDefaults::with_model("openrouter/openai/gpt-4.1-mini"))
-            .build();
+            .build()?;
 
         // Agent with permissions gets only the allowed tools
         let prepared = prepare_build(&runtime, "with-tools", &catalog, &credentials, true)
@@ -458,10 +460,11 @@ mod tests {
             .expect("should succeed");
         let agent = build_with_mock(&prepared, "no-tools");
         assert!(agent.tools().is_empty());
+        Ok(())
     }
 
     #[test]
-    fn build_uses_agent_model_and_sampling_over_defaults() {
+    fn build_uses_agent_model_and_sampling_over_defaults() -> TestResult {
         let credentials = credentials();
         let catalog = catalog();
 
@@ -480,7 +483,7 @@ mod tests {
                 temperature: Some(1.0),
                 top_p: Some(0.95),
             })
-            .build();
+            .build()?;
 
         // Agent-level settings win over defaults
         let prepared = prepare_build(&runtime, "planner", &catalog, &credentials, true)
@@ -488,17 +491,18 @@ mod tests {
         assert_eq!(prepared.model_spec.as_ref(), "openrouter:openai/gpt-4o");
         assert!((prepared.temperature.unwrap() - 0.4).abs() < 1e-6);
         assert!((prepared.top_p.unwrap() - 0.8).abs() < 1e-6);
+        Ok(())
     }
 
     #[test]
-    fn build_handles_catalog_edge_cases() {
+    fn build_handles_catalog_edge_cases() -> TestResult {
         let credentials = credentials();
         let catalog = catalog();
 
         // Unknown agent name returns clear error
         let runtime = AgentRuntimeBuilder::new()
             .defaults(AgentDefaults::with_model("openrouter/openai/gpt-4.1-mini"))
-            .build();
+            .build()?;
         let err = prepare_build(&runtime, "missing", &catalog, &credentials, true)
             .err()
             .expect("should fail");
@@ -525,20 +529,21 @@ mod tests {
                 ),
             ]))
             .defaults(AgentDefaults::default())
-            .build();
+            .build()?;
         let prepared =
             prepare_build(&runtime, "dupe", &catalog, &credentials, true).expect("should succeed");
         assert_eq!(prepared.model_spec.as_ref(), "openrouter:openai/gpt-4o");
         let agent = build_with_mock(&prepared, "dupe");
         assert_eq!(agent.tools().len(), 1);
         assert_eq!(agent.tools()[0].name(), glob_meta::NAME);
+        Ok(())
     }
 
     /// Verifies that `tool_settings.line_numbers` selects the correct generic
     /// tool variant by checking tool descriptions (the only observable difference
     /// between `ReadTool::<true>` and `ReadTool::<false>`).
     #[test]
-    fn build_wires_line_numbers_to_correct_tool_variant() {
+    fn build_wires_line_numbers_to_correct_tool_variant() -> TestResult {
         let credentials = credentials();
         let catalog = catalog();
 
@@ -554,7 +559,7 @@ mod tests {
                 "prompt",
             )]))
             .defaults(AgentDefaults::with_model("openrouter/openai/gpt-4.1-mini"))
-            .build();
+            .build()?;
 
         let prepared = prepare_build(&runtime_true, "numbered", &catalog, &credentials, true)
             .expect("should succeed");
@@ -590,7 +595,7 @@ mod tests {
                 prompt: "prompt".into(),
             }]))
             .defaults(AgentDefaults::with_model("openrouter/openai/gpt-4.1-mini"))
-            .build();
+            .build()?;
 
         let prepared = prepare_build(&runtime_false, "raw", &catalog, &credentials, true)
             .expect("should succeed");
@@ -609,5 +614,6 @@ mod tests {
             !tools[grep_meta::NAME].contains("line numbers"),
             "grep with line_numbers=false should not mention line numbers"
         );
+        Ok(())
     }
 }

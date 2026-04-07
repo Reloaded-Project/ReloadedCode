@@ -113,7 +113,7 @@ let runtime = AgentRuntimeBuilder::new()
     .catalog(catalog)
     .defaults(AgentDefaults::with_model("openrouter/openai/gpt-4o-mini"))
     // .max_task_depth(5) // Optional: defaults to 3 Task hops
-    .build();
+    .build()?;
 
 let build_context = AgentBuildContext::new(
     Arc::new(runtime),

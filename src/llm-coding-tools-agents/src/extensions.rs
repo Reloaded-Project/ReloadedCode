@@ -9,7 +9,7 @@
 
 use crate::types::PermissionRule;
 use indexmap::IndexMap;
-use llm_coding_tools_core::permissions::{Rule, Ruleset};
+use llm_coding_tools_core::permissions::{ExpandError, Rule, Ruleset};
 
 /// Extension trait for building [`Ruleset`] from agent permission configs.
 pub trait RulesetExt {
@@ -34,30 +34,34 @@ pub trait RulesetExt {
     ///     PermissionRule::Action(PermissionAction::Allow),
     /// );
     ///
-    /// let ruleset = Ruleset::from_permission_config(&config);
+    /// let ruleset = Ruleset::from_permission_config(&config).unwrap();
     /// assert!(ruleset.is_allowed("bash", "*"));
     /// ```
-    fn from_permission_config(config: &IndexMap<String, PermissionRule>) -> Ruleset;
+    fn from_permission_config(
+        config: &IndexMap<String, PermissionRule>,
+    ) -> Result<Ruleset, ExpandError>;
 }
 
 impl RulesetExt for Ruleset {
-    fn from_permission_config(config: &IndexMap<String, PermissionRule>) -> Ruleset {
+    fn from_permission_config(
+        config: &IndexMap<String, PermissionRule>,
+    ) -> Result<Ruleset, ExpandError> {
         let mut ruleset = Ruleset::with_capacity(config.len() * 2);
 
         for (key, rule) in config {
             match rule {
                 PermissionRule::Action(action) => {
-                    ruleset.push(Rule::new(key.as_str(), "*", *action));
+                    ruleset.push(Rule::new(key.as_str(), "*", *action)?);
                 }
                 PermissionRule::Pattern(patterns) => {
                     for (pattern, action) in patterns {
-                        ruleset.push(Rule::new(key.as_str(), pattern.as_str(), *action));
+                        ruleset.push(Rule::new(key.as_str(), pattern.as_str(), *action)?);
                     }
                 }
             }
         }
 
-        ruleset
+        Ok(ruleset)
     }
 }
 
@@ -66,23 +70,26 @@ mod tests {
     use super::*;
     use llm_coding_tools_core::permissions::PermissionAction;
 
+    type TestResult = Result<(), ExpandError>;
+
     #[test]
-    fn from_permission_config_simple_action() {
+    fn from_permission_config_simple_action() -> TestResult {
         let mut config = IndexMap::new();
         config.insert(
             "bash".to_string(),
             PermissionRule::Action(PermissionAction::Allow),
         );
 
-        let ruleset = Ruleset::from_permission_config(&config);
+        let ruleset = Ruleset::from_permission_config(&config)?;
 
         assert_eq!(ruleset.len(), 1);
         assert!(ruleset.is_allowed("bash", "*"));
         assert!(!ruleset.is_allowed("task", "*"));
+        Ok(())
     }
 
     #[test]
-    fn from_permission_config_pattern_map() {
+    fn from_permission_config_pattern_map() -> TestResult {
         let mut patterns = IndexMap::new();
         patterns.insert("*".to_string(), PermissionAction::Deny);
         patterns.insert("orchestrator-*".to_string(), PermissionAction::Allow);
@@ -90,7 +97,7 @@ mod tests {
         let mut config = IndexMap::new();
         config.insert("task".to_string(), PermissionRule::Pattern(patterns));
 
-        let ruleset = Ruleset::from_permission_config(&config);
+        let ruleset = Ruleset::from_permission_config(&config)?;
 
         assert_eq!(ruleset.len(), 2);
         assert_eq!(
@@ -101,12 +108,13 @@ mod tests {
             ruleset.evaluate("task", "other-agent"),
             PermissionAction::Deny
         );
+        Ok(())
     }
 
     /// Verifies that wildcard permission keys in config are correctly converted
     /// to rules and match various permissions at runtime.
     #[test]
-    fn from_permission_config_wildcard_permission_key() {
+    fn from_permission_config_wildcard_permission_key() -> TestResult {
         let mut config = IndexMap::new();
         // "*": allow - wildcard permission key matches any tool
         config.insert(
@@ -119,7 +127,7 @@ mod tests {
             PermissionRule::Action(PermissionAction::Deny),
         );
 
-        let ruleset = Ruleset::from_permission_config(&config);
+        let ruleset = Ruleset::from_permission_config(&config)?;
 
         // Rules are added in IndexMap iteration order (preserved)
         // Rule 0: ("*", "*", Allow) - wildcard
@@ -151,11 +159,12 @@ mod tests {
             "*".to_string(),
             PermissionRule::Action(PermissionAction::Allow),
         );
-        let ruleset2 = Ruleset::from_permission_config(&config2);
+        let ruleset2 = Ruleset::from_permission_config(&config2)?;
         // Now "*" comes last and wins, so bash is allowed
         assert!(
             ruleset2.is_allowed("bash", "*"),
             "wildcard last should allow bash"
         );
+        Ok(())
     }
 }

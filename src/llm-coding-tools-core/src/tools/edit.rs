@@ -201,9 +201,11 @@ pub async fn edit_file<R: PathResolver>(
 mod tests {
     use super::*;
     use crate::path::AbsolutePathResolver;
-    use crate::permissions::{PermissionAction, Rule};
+    use crate::permissions::{ExpandError, PermissionAction, Rule};
     use std::io::Write;
     use tempfile::NamedTempFile;
+
+    type TestResult = Result<(), ExpandError>;
 
     fn create_temp_file(content: &str) -> NamedTempFile {
         let mut file = NamedTempFile::new().unwrap();
@@ -256,17 +258,17 @@ mod tests {
     }
 
     #[maybe_async::test(feature = "blocking", async(feature = "tokio", tokio::test))]
-    async fn edit_rejects_denied_path() {
+    async fn edit_rejects_denied_path() -> TestResult {
         let file = create_temp_file("hello world");
         let resolver = AbsolutePathResolver;
 
         let mut ruleset = Ruleset::new();
-        ruleset.push(Rule::new("edit", "*", PermissionAction::Allow));
+        ruleset.push(Rule::new("edit", "*", PermissionAction::Allow)?);
         ruleset.push(Rule::new(
             "edit",
             file.path().to_string_lossy().into_owned(),
             PermissionAction::Deny,
-        ));
+        )?);
 
         let err = edit_file(
             &resolver,
@@ -285,5 +287,6 @@ mod tests {
             err,
             EditError::Tool(ToolError::PermissionDenied { tool: "edit", .. })
         ));
+        Ok(())
     }
 }

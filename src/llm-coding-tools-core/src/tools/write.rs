@@ -111,8 +111,10 @@ pub async fn write_file<R: PathResolver>(
 mod tests {
     use super::*;
     use crate::path::AbsolutePathResolver;
-    use crate::permissions::{PermissionAction, Rule};
+    use crate::permissions::{ExpandError, PermissionAction, Rule};
     use tempfile::TempDir;
+
+    type TestResult = Result<(), ExpandError>;
 
     #[maybe_async::test(feature = "blocking", async(feature = "tokio", tokio::test))]
     async fn write_creates_new_file() {
@@ -156,18 +158,18 @@ mod tests {
     }
 
     #[maybe_async::test(feature = "blocking", async(feature = "tokio", tokio::test))]
-    async fn write_rejects_denied_path() {
+    async fn write_rejects_denied_path() -> TestResult {
         let temp = TempDir::new().unwrap();
         let file_path = temp.path().join("denied.txt");
         let resolver = AbsolutePathResolver;
 
         let mut ruleset = Ruleset::new();
-        ruleset.push(Rule::new("write", "*", PermissionAction::Allow));
+        ruleset.push(Rule::new("write", "*", PermissionAction::Allow)?);
         ruleset.push(Rule::new(
             "write",
             file_path.to_string_lossy().into_owned(),
             PermissionAction::Deny,
-        ));
+        )?);
 
         let err = write_file(
             &resolver,
@@ -184,5 +186,6 @@ mod tests {
             err,
             ToolError::PermissionDenied { tool: "write", .. }
         ));
+        Ok(())
     }
 }

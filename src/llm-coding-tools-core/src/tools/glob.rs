@@ -240,12 +240,14 @@ pub fn glob_files<R: PathResolver>(
 mod tests {
     use super::*;
     use crate::path::AbsolutePathResolver;
-    use crate::permissions::{PermissionAction, Rule};
+    use crate::permissions::{ExpandError, PermissionAction, Rule};
     use rstest::rstest;
     use std::fs::{self, File, FileTimes};
     use std::io::Write;
     use std::time::{Duration, SystemTime};
     use tempfile::TempDir;
+
+    type TestResult = Result<(), ExpandError>;
 
     fn create_test_tree() -> TempDir {
         let dir = TempDir::new().unwrap();
@@ -433,7 +435,7 @@ mod tests {
     }
 
     #[test]
-    fn glob_filters_denied_files_before_returning_output() {
+    fn glob_filters_denied_files_before_returning_output() -> TestResult {
         let dir = TempDir::new().unwrap();
         let resolver = AbsolutePathResolver;
         let allowed = dir.path().join("allowed.txt");
@@ -442,12 +444,12 @@ mod tests {
         File::create(&denied).unwrap();
 
         let mut ruleset = Ruleset::new();
-        ruleset.push(Rule::new(glob_meta::NAME, "*", PermissionAction::Allow));
+        ruleset.push(Rule::new(glob_meta::NAME, "*", PermissionAction::Allow)?);
         ruleset.push(Rule::new(
             glob_meta::NAME,
             denied.to_string_lossy().into_owned(),
             PermissionAction::Deny,
-        ));
+        )?);
 
         let result = glob_files(
             &resolver,
@@ -460,5 +462,6 @@ mod tests {
         .unwrap();
 
         assert_eq!(result.files, vec!["allowed.txt".to_string()]);
+        Ok(())
     }
 }

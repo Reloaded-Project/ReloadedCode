@@ -37,18 +37,20 @@ fn build_ruleset(
     let mut ruleset = Ruleset::with_capacity(rule_count);
 
     for idx in 0..(rule_count - 1) {
-        ruleset.push(Rule::new(
-            format!("tool-{idx}"),
-            format!("/workspace/other-{idx}.txt"),
-            PermissionAction::Deny,
-        ));
+        ruleset.push(
+            Rule::new(
+                format!("tool-{idx}"),
+                format!("/workspace/other-{idx}.txt"),
+                PermissionAction::Deny,
+            )
+            .expect("benchmark fixture patterns should not fail expansion"),
+        );
     }
 
-    ruleset.push(Rule::new(
-        final_permission,
-        final_pattern,
-        PermissionAction::Allow,
-    ));
+    ruleset.push(
+        Rule::new(final_permission, final_pattern, PermissionAction::Allow)
+            .expect("benchmark fixture patterns should not fail expansion"),
+    );
     ruleset
 }
 

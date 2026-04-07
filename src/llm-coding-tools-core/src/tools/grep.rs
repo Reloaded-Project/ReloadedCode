@@ -472,9 +472,11 @@ fn collect_file_matches(
 mod tests {
     use super::*;
     use crate::path::AbsolutePathResolver;
-    use crate::permissions::{PermissionAction, Rule};
+    use crate::permissions::{ExpandError, PermissionAction, Rule};
     use rstest::rstest;
     use tempfile::tempdir;
+
+    type TestResult = Result<(), ExpandError>;
 
     // GrepSettings and GrepFormattingSettings tests
     #[test]
@@ -814,7 +816,7 @@ mod tests {
     }
 
     #[test]
-    fn grep_skips_denied_files_before_counting_matches() {
+    fn grep_skips_denied_files_before_counting_matches() -> TestResult {
         let temp = tempdir().unwrap();
         let allowed = temp.path().join("allowed.txt");
         let denied = temp.path().join("denied.txt");
@@ -823,12 +825,12 @@ mod tests {
         let resolver = AbsolutePathResolver;
 
         let mut ruleset = Ruleset::new();
-        ruleset.push(Rule::new(grep_meta::NAME, "*", PermissionAction::Allow));
+        ruleset.push(Rule::new(grep_meta::NAME, "*", PermissionAction::Allow)?);
         ruleset.push(Rule::new(
             grep_meta::NAME,
             denied.to_string_lossy().into_owned(),
             PermissionAction::Deny,
-        ));
+        )?);
 
         let result = grep_search(
             &resolver,
@@ -845,5 +847,6 @@ mod tests {
         assert_eq!(result.match_count, 1);
         assert_eq!(result.files.len(), 1);
         assert_eq!(result.files[0].path, allowed.to_string_lossy());
+        Ok(())
     }
 }
