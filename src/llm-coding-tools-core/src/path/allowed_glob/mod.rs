@@ -208,10 +208,7 @@ impl PathResolver for AllowedGlobResolver {
 
         let analysis = path_analysis(input_path);
         if analysis.escapes {
-            return Err(ToolError::InvalidPath(format!(
-                "path '{}' is not within allowed directories",
-                path
-            )));
+            return Err(not_allowed_error(path));
         }
 
         if input_path.is_absolute() {
@@ -328,10 +325,7 @@ fn resolve_relative(
         }
     }
 
-    Err(ToolError::InvalidPath(format!(
-        "path '{}' is not within allowed directories",
-        path
-    )))
+    Err(not_allowed_error(path))
 }
 
 /// Absolute-path branch - same three resolution tiers as [`resolve_relative`]
@@ -350,10 +344,12 @@ fn resolve_absolute(
 ) -> ToolResult<PathBuf> {
     // Step 1: canonicalize for existing files.
     if let Ok(resolved) = input_path.canonicalize() {
+        let mut inside_any_base = false;
         let accepted = base_directories.iter().any(|base_dir| {
             if !resolved.starts_with(base_dir) {
                 return false;
             }
+            inside_any_base = true;
             if let Some(policy) = policy {
                 let relative_path = resolved.strip_prefix(base_dir).unwrap_or(Path::new(""));
                 let normalized_relative = normalize::normalize_path(relative_path);
@@ -365,16 +361,22 @@ fn resolve_absolute(
         });
         if accepted {
             return Ok(resolved);
+        }
+        if inside_any_base {
+            // in base directory but denied by glob policy; must NOT be approved via external_permission
+            return Err(not_allowed_error(path));
         }
         return try_external(external_permission, path, resolved);
     }
 
     // Step 2: fast path for new files in existing directories.
     if let Some(resolved) = resolve_new_file_fast(input_path) {
+        let mut inside_any_base = false;
         let accepted = base_directories.iter().any(|base_dir| {
             if !resolved.starts_with(base_dir) {
                 return false;
             }
+            inside_any_base = true;
             if let Some(policy) = policy {
                 let relative_path = resolved.strip_prefix(base_dir).unwrap_or(Path::new(""));
                 let normalized_relative = normalize::normalize_path(relative_path);
@@ -387,15 +389,21 @@ fn resolve_absolute(
         if accepted {
             return Ok(resolved);
         }
+        if inside_any_base {
+            // in base directory but denied by glob policy; must NOT be approved via external_permission
+            return Err(not_allowed_error(path));
+        }
         return try_external(external_permission, path, resolved);
     }
 
     // Step 3: fallback for paths with missing parent dirs.
     if let Ok(resolved) = soft_canonicalize(input_path) {
+        let mut inside_any_base = false;
         let accepted = base_directories.iter().any(|base_dir| {
             if !resolved.starts_with(base_dir) {
                 return false;
             }
+            inside_any_base = true;
             if let Some(policy) = policy {
                 let relative_path = resolved.strip_prefix(base_dir).unwrap_or(Path::new(""));
                 let normalized_relative = normalize::normalize_path(relative_path);
@@ -407,6 +415,10 @@ fn resolve_absolute(
         });
         if accepted {
             return Ok(resolved);
+        }
+        if inside_any_base {
+            // in base directory but denied by glob policy; must NOT be approved via external_permission
+            return Err(not_allowed_error(path));
         }
         return try_external(external_permission, path, resolved);
     }
@@ -432,19 +444,14 @@ fn try_external(
     let perm = match external_permission {
         Some(p) if !p.is_empty() => p,
         _ => {
-            return Err(ToolError::InvalidPath(format!(
-                "path '{}' is not within allowed directories",
-                path
-            )));
+            return Err(not_allowed_error(path));
         }
     };
 
     // Step 2: use cached canonical form, or soft_canonicalize now.
     let canon = match cached_canonical.into() {
         Some(c) => c,
-        None => soft_canonicalize(Path::new(path)).map_err(|_| {
-            ToolError::InvalidPath(format!("path '{}' is not within allowed directories", path))
-        })?,
+        None => soft_canonicalize(Path::new(path)).map_err(|_| not_allowed_error(path))?,
     };
 
     // Step 3: evaluate the canonicalized path against the external_directory ruleset.
@@ -452,10 +459,13 @@ fn try_external(
         return Ok(canon);
     }
 
-    Err(ToolError::InvalidPath(format!(
-        "path '{}' is not within allowed directories",
-        path
-    )))
+    Err(not_allowed_error(path))
+}
+
+/// Creates a standard "path not within allowed directories" error.
+#[inline]
+fn not_allowed_error(path: &str) -> ToolError {
+    ToolError::InvalidPath(format!("path '{}' is not within allowed directories", path))
 }
 
 #[cfg(test)]
@@ -833,6 +843,37 @@ mod tests {
         assert!(
             result.is_err(),
             "relative paths must not be resolved externally"
+        );
+        let err = result.unwrap_err();
+        assert!(err.to_string().contains("not within allowed"));
+    }
+
+    /// A path inside a base directory that is denied by the glob
+    /// policy must NOT be approved via `external_permission`.
+    #[test]
+    fn rejects_in_base_path_denied_by_policy_even_with_external_permission() {
+        let dir = setup_test_dir();
+
+        let policy = GlobPolicy::builder()
+            .allow("src/**")
+            .unwrap()
+            .build()
+            .unwrap();
+
+        let mut ruleset = Ruleset::new();
+        ruleset.push(Rule::new("external_directory", "*", PermissionAction::Allow).unwrap());
+
+        let resolver = AllowedGlobResolver::new(vec![dir.path().to_path_buf()])
+            .unwrap()
+            .with_policy(policy)
+            .with_external_permission(Arc::new(ruleset));
+
+        let cargo_path = dir.path().join("Cargo.toml");
+        let result = resolver.resolve(cargo_path.to_str().unwrap());
+        assert!(
+            result.is_err(),
+            "Cargo.toml is inside base but denied by 'src/**' policy; \
+             external_permission must not override that"
         );
         let err = result.unwrap_err();
         assert!(err.to_string().contains("not within allowed"));
