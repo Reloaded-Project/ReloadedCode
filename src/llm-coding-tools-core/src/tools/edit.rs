@@ -156,15 +156,13 @@ pub async fn edit_file<R: PathResolver>(
 
     let (new_content, replacement_count) = if request.replace_all {
         // Single-pass: build the result string while counting every match.
-        let needle = &request.old_string;
-        let needle_len = needle.len();
-        let replacement = &request.new_string;
+        let needle_len = request.old_string.len();
         let mut result = String::with_capacity(content.len());
         let mut last_end = 0;
         let mut count: usize = 0;
-        for (idx, _) in content.match_indices(needle) {
+        for (idx, _) in content.match_indices(&request.old_string) {
             result.push_str(&content[last_end..idx]);
-            result.push_str(replacement);
+            result.push_str(&request.new_string);
             last_end = idx + needle_len;
             count += 1;
         }
@@ -175,12 +173,12 @@ pub async fn edit_file<R: PathResolver>(
         (result, count)
     } else {
         // Fast path for single replacement: find the first match, then check for a second to detect ambiguity.
-        let needle = &request.old_string;
-        let needle_len = needle.len();
-        let Some(first_idx) = content.find(needle) else {
+        let needle_len = request.old_string.len();
+        let Some(first_idx) = content.find(&request.old_string) else {
             return Err(EditError::NotFound);
         };
-        if content[first_idx + 1..].contains(needle) {
+        // E.g. "aa" in "aaa" — two overlapping occurrences starting at 0 and 1.
+        if content[first_idx + 1..].contains(&request.old_string) {
             return Err(EditError::AmbiguousMatch);
         }
         // Build the edited string directly from slices to avoid rescanning.
