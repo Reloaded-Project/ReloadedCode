@@ -7,8 +7,9 @@
 //! - `resolvers`: Compares [`AllowedPathResolver`] and [`AllowedGlobResolver`] on the same paths
 //! - `multiple_bases`: Tests [`AllowedPathResolver`] with multiple base directories
 //! - `canonicalize`: Isolates `canonicalize` vs `soft_canonicalize` performance
+//! - `external_directory`: Tests external directory permission fallback for absolute paths
 //!
-//! # Test Cases
+//! # Test Cases (resolvers)
 //!
 //! ```text
 //! | Case                   | Path                                               | What it tests                                  |
@@ -16,7 +17,7 @@
 //! | existing_file          | src/lib.rs                                         | Fast path: file exists, canonicalize succeeds  |
 //! | new_file_existing_dir  | src/new_file_test.rs                               | Fast path: parent exists, canonicalize parent   |
 //! | new_file_missing_dir   | src/new_dir/nested/new_file_test.rs                | Slow path: soft-canonicalize for non-existent  |
-//! | policy_reject          | benchmarks/new_file_test.rs                        | Early rejection via fast policy check          |
+//! | policy_reject          | benchmarks/new_file_test.rs                        | Rejection via glob policy after resolution     |
 //! | deep_nested            | src/llm-coding-tools-core/src/path/.../policy.rs   | Longer path, more components to process        |
 //! | traversal_reject       | ../../../outside.txt                               | Early rejection via lexical escape check       |
 //! ```
@@ -24,24 +25,48 @@
 //! # Reference Results (Linux, optimized build)
 //!
 //! ```text
-//! resolvers/AllowedPathResolver/existing_file          ~1.7 µs
-//! resolvers/AllowedPathResolver/new_file_existing_dir ~3.5 µs  (optimized: parent canonicalize)
-//! resolvers/AllowedPathResolver/new_file_missing_dir  ~9.7 µs  (fallback: soft_canonicalize)
-//! resolvers/AllowedPathResolver/policy_reject         ~8.0 µs  (no policy, resolves normally)
-//! resolvers/AllowedPathResolver/deep_nested           ~10.9 µs
-//! resolvers/AllowedPathResolver/traversal_reject      ~20 ns
+//! resolvers/AllowedPathResolver/existing_file          ~2.1 µs
+//! resolvers/AllowedPathResolver/new_file_existing_dir ~4.1 µs  (optimized: parent canonicalize)
+//! resolvers/AllowedPathResolver/new_file_missing_dir  ~11.7 µs (fallback: soft_canonicalize)
+//! resolvers/AllowedPathResolver/policy_reject         ~9.8 µs  (no policy, resolves normally)
+//! resolvers/AllowedPathResolver/deep_nested           ~12.7 µs
+//! resolvers/AllowedPathResolver/traversal_reject      ~21 ns
 //!
-//! resolvers/AllowedGlobResolver_simple_policy/existing_file          ~1.8 µs  (overhead: ~100 ns)
-//! resolvers/AllowedGlobResolver_simple_policy/new_file_existing_dir  ~3.5 µs  (overhead: ~40 ns)
-//! resolvers/AllowedGlobResolver_simple_policy/new_file_missing_dir   ~9.8 µs  (overhead: ~90 ns)
-//! resolvers/AllowedGlobResolver_simple_policy/policy_reject          ~54 ns   (150x faster!)
-//! resolvers/AllowedGlobResolver_simple_policy/deep_nested            ~10.8 µs
-//! resolvers/AllowedGlobResolver_simple_policy/traversal_reject       ~28 ns
+//! resolvers/AllowedGlobResolver_simple_policy/existing_file          ~2.3 µs  (overhead: ~200 ns)
+//! resolvers/AllowedGlobResolver_simple_policy/new_file_existing_dir  ~4.4 µs  (overhead: ~300 ns)
+//! resolvers/AllowedGlobResolver_simple_policy/new_file_missing_dir   ~12.0 µs (overhead: ~300 ns)
+//! resolvers/AllowedGlobResolver_simple_policy/policy_reject          ~10.0 µs (must resolve to check policy)
+//! resolvers/AllowedGlobResolver_simple_policy/deep_nested            ~12.9 µs
+//! resolvers/AllowedGlobResolver_simple_policy/traversal_reject       ~21 ns
 //!
-//! canonicalize/existing_file_canonicalize         ~1.6 µs
-//! canonicalize/existing_file_soft_canonicalize    ~4.4 µs  (2.7x slower than canonicalize)
-//! canonicalize/new_file_shallow_soft_canonicalize ~5.9 µs
-//! canonicalize/new_file_deep_soft_canonicalize    ~6.9 µs
+//! resolvers/AllowedGlobResolver_complex_policy/existing_file          ~2.6 µs
+//! resolvers/AllowedGlobResolver_complex_policy/new_file_existing_dir  ~4.6 µs
+//! resolvers/AllowedGlobResolver_complex_policy/new_file_missing_dir   ~12.2 µs
+//! resolvers/AllowedGlobResolver_complex_policy/policy_reject          ~10.5 µs (must resolve to check policy)
+//! resolvers/AllowedGlobResolver_complex_policy/deep_nested            ~13.2 µs
+//! resolvers/AllowedGlobResolver_complex_policy/traversal_reject       ~21 ns
+//!
+//! multiple_bases/first_base    ~2.1 µs
+//! multiple_bases/second_base   ~3.6 µs
+//! multiple_bases/third_base    ~3.6 µs
+//! multiple_bases/not_found     ~3.6 µs
+//!
+//! canonicalize/existing_file_canonicalize         ~1.9 µs
+//! canonicalize/existing_file_soft_canonicalize    ~5.3 µs  (2.7x slower than canonicalize)
+//! canonicalize/new_file_shallow_soft_canonicalize ~7.2 µs
+//! canonicalize/new_file_deep_soft_canonicalize    ~8.4 µs
+//!
+//! external_directory/AllowedPathResolver/external_existing_file  ~548 ns  (canonicalize + permission)
+//! external_directory/AllowedPathResolver/external_new_file       ~3.3 µs  (soft_canonicalize + permission)
+//! external_directory/AllowedPathResolver/external_rejected       ~2.4 µs  (canonicalize + deny)
+//! external_directory/AllowedPathResolver/external_no_ruleset     ~2.3 µs  (canonicalize, no permission)
+//! external_directory/AllowedPathResolver/relative_still_fails    ~9.8 µs  (soft_canonicalize, not external)
+//!
+//! external_directory/AllowedGlobResolver/external_existing_file  ~535 ns  (canonicalize + permission)
+//! external_directory/AllowedGlobResolver/external_new_file       ~3.3 µs  (soft_canonicalize + permission)
+//! external_directory/AllowedGlobResolver/external_rejected       ~2.3 µs  (canonicalize + deny)
+//! external_directory/AllowedGlobResolver/external_no_ruleset     ~2.3 µs  (canonicalize, no permission)
+//! external_directory/AllowedGlobResolver/relative_still_fails    ~9.8 µs  (soft_canonicalize, not external)
 //! ```
 //!
 //! # Platform Differences
@@ -68,8 +93,10 @@ use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion, Through
 use llm_coding_tools_core::path::{
     AllowedGlobResolver, AllowedPathResolver, GlobPolicy, GlobPolicyBuilder, PathResolver,
 };
+use llm_coding_tools_core::permissions::{PermissionAction, Rule, Ruleset};
 use soft_canonicalize::soft_canonicalize;
 use std::fs;
+use std::sync::Arc;
 use tempfile::TempDir;
 
 const EXISTING_FILE: &str = "src/lib.rs";
@@ -279,11 +306,117 @@ fn bench_canonicalize_vs_soft(c: &mut Criterion) {
     group.finish();
 }
 
+/// Benchmarks the external directory permission fallback path.
+///
+/// Tests the performance of resolving paths that are outside all base
+/// directories but may be allowed via an `"external_directory"` permission rule.
+///
+/// # Test Cases
+///
+/// ```text
+/// | Case                    | Description                                              |
+/// |-------------------------|----------------------------------------------------------|
+/// | external_existing_file  | Absolute path to file in allowed temp dir (fast path)    |
+/// | external_new_file       | Absolute path to new file in allowed temp dir (soft_can) |
+/// | external_rejected       | Absolute path denied by permission ruleset (early exit)  |
+/// | external_no_ruleset     | Absolute path with no external_permission configured     |
+/// | relative_still_fails    | Relative path even when external_permission is set       |
+/// ```
+fn bench_external_directory(c: &mut Criterion) {
+    let mut group = c.benchmark_group("external_directory");
+
+    let current_dir = std::env::current_dir().unwrap();
+    let external_dir = TempDir::new().unwrap();
+    let existing_file = external_dir.path().join("existing.txt");
+    fs::write(&existing_file, "content").unwrap();
+    let new_file = external_dir.path().join("subdir/new_file.txt");
+
+    let canon_external = soft_canonicalize(external_dir.path()).unwrap();
+    let allow_pattern = canon_external.join("*").to_str().unwrap().to_owned();
+
+    let mut allow_ruleset = Ruleset::new();
+    allow_ruleset.push(
+        Rule::new(
+            "external_directory",
+            allow_pattern.as_str(),
+            PermissionAction::Allow,
+        )
+        .unwrap(),
+    );
+
+    let mut deny_ruleset = Ruleset::new();
+    deny_ruleset.push(Rule::new("external_directory", "*", PermissionAction::Deny).unwrap());
+
+    let existing_file_str = existing_file.to_str().unwrap().to_owned();
+    let new_file_str = new_file.to_str().unwrap().to_owned();
+    let rejected_path = std::env::temp_dir()
+        .join("rejected_external")
+        .join("path.txt")
+        .to_str()
+        .unwrap()
+        .to_owned();
+
+    let allowed_path_resolver = AllowedPathResolver::new(vec![current_dir.clone()])
+        .unwrap()
+        .with_external_permission(Arc::new(allow_ruleset.clone()));
+
+    let denied_path_resolver = AllowedPathResolver::new(vec![current_dir.clone()])
+        .unwrap()
+        .with_external_permission(Arc::new(deny_ruleset.clone()));
+
+    let no_permission_resolver = AllowedPathResolver::new(vec![current_dir.clone()]).unwrap();
+
+    let allowed_glob_resolver = AllowedGlobResolver::new(vec![current_dir.clone()])
+        .unwrap()
+        .with_external_permission(Arc::new(allow_ruleset));
+
+    let denied_glob_resolver = AllowedGlobResolver::new(vec![current_dir.clone()])
+        .unwrap()
+        .with_external_permission(Arc::new(deny_ruleset));
+
+    let no_permission_glob_resolver = AllowedGlobResolver::new(vec![current_dir.clone()]).unwrap();
+
+    group.throughput(Throughput::Elements(1));
+
+    for (case_name, path_input) in [
+        ("external_existing_file", existing_file_str.as_str()),
+        ("external_new_file", new_file_str.as_str()),
+        ("external_rejected", rejected_path.as_str()),
+        ("external_no_ruleset", rejected_path.as_str()),
+        ("relative_still_fails", "relative/path.txt"),
+    ] {
+        let (path_resolver, glob_resolver) = match case_name {
+            "external_existing_file" | "external_new_file" => {
+                (&allowed_path_resolver, &allowed_glob_resolver)
+            }
+            "external_rejected" => (&denied_path_resolver, &denied_glob_resolver),
+            "external_no_ruleset" => (&no_permission_resolver, &no_permission_glob_resolver),
+            "relative_still_fails" => (&allowed_path_resolver, &allowed_glob_resolver),
+            _ => unreachable!(),
+        };
+
+        group.bench_with_input(
+            BenchmarkId::new("AllowedPathResolver", case_name),
+            path_resolver,
+            |b, resolver| b.iter(|| resolver.resolve(black_box(path_input))),
+        );
+
+        group.bench_with_input(
+            BenchmarkId::new("AllowedGlobResolver", case_name),
+            glob_resolver,
+            |b, resolver| b.iter(|| resolver.resolve(black_box(path_input))),
+        );
+    }
+
+    group.finish();
+}
+
 criterion_group!(
     benches,
     bench_resolvers_same_paths,
     bench_multiple_bases,
-    bench_canonicalize_vs_soft
+    bench_canonicalize_vs_soft,
+    bench_external_directory
 );
 
 criterion_main!(benches);

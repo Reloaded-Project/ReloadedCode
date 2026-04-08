@@ -1,4 +1,32 @@
 //! Allowed directory path resolver implementation.
+//!
+//! # Resolution algorithm
+//!
+//! The entry point (`PathResolver::resolve`) rejects paths that lexically escape
+//! the base directory, then dispatches to one of two branches:
+//!
+//! ## Relative paths - `resolve_relative`
+//!
+//! For each configured base directory, try in order:
+//!
+//! 1. **Canonicalize** - if the file exists on disk, resolve symlinks and
+//!    normalize. Accept if the result stays inside the base.
+//! 2. **New-file fast path** - if only the file is new but its parent
+//!    directory exists, canonicalize the parent and join the filename.
+//!    Accept if the result stays inside the base.
+//! 3. **Soft canonicalize** - for paths where even the parent doesn't exist,
+//!    resolve as far as possible. Accept if the result stays inside the base.
+//!
+//! If no base directory accepts the path, reject.
+//!
+//! ## Absolute paths - `resolve_absolute`
+//!
+//! Same three resolution tiers. Since `base.join(absolute)` equals the
+//! absolute path itself, we canonicalize once and check all bases - no
+//! per-base filesystem calls.
+//!
+//! If no base accepts, fall through to [`try_external`] which checks the
+//! optional external-directory permission ruleset as a last resort.
 
 use super::{relative_path_escapes_base, resolve_new_file_fast, PathResolver};
 use crate::context::PathMode;
@@ -136,61 +164,154 @@ impl PathResolver for AllowedPathResolver {
             )));
         }
 
-        // Try each allowed base directory in order
-        for base in self.allowed_paths.iter() {
-            let candidate = base.join(input_path);
-
-            // Try to canonicalize for existing paths
-            if let Ok(canonical) = candidate.canonicalize() {
-                // Security check: resolved path must stay within allowed base
-                if canonical.starts_with(base) {
-                    return Ok(canonical);
-                }
-                // Path escaped allowed directory - try next base
-                continue;
-            }
-
-            // Fast path for new files in existing directories.
-            // Canonicalizes parent directory, then joins filename.
-            // This avoids soft_canonicalize's expensive walk-up logic.
-            if let Some(resolved) = resolve_new_file_fast(&candidate) {
-                if resolved.starts_with(base) {
-                    return Ok(resolved);
-                }
-                continue;
-            }
-
-            // Fallback for paths where parent doesn't exist.
-            if let Ok(resolved) = soft_canonicalize(&candidate) {
-                if resolved.starts_with(base) {
-                    return Ok(resolved);
-                }
-            }
-        }
-
-        // External directory fallback: check "external_directory" permission.
-        // Only absolute paths are eligible.
         if input_path.is_absolute() {
-            if let Some(perm) = &self.external_permission {
-                let canon = soft_canonicalize(input_path).map_err(|_| {
-                    ToolError::InvalidPath(format!(
-                        "path '{}' is not within allowed directories",
-                        path
-                    ))
-                })?;
-                if perm.evaluate("external_directory", &canon.to_string_lossy())
-                    == PermissionAction::Allow
-                {
-                    return Ok(canon);
-                }
-            }
+            return resolve_absolute(
+                &self.allowed_paths,
+                self.external_permission.as_deref(),
+                path,
+                input_path,
+            );
         }
 
-        Err(ToolError::InvalidPath(format!(
-            "path '{}' is not within allowed directories",
-            path
-        )))
+        resolve_relative(&self.allowed_paths, path, input_path)
     }
+}
+
+/// For each configured base directory, try to resolve the relative input.
+///
+/// Three resolution tiers, cheapest first:
+/// 1. `canonicalize()` for existing files
+/// 2. `resolve_new_file_fast()` for new files in existing dirs
+/// 3. `soft_canonicalize()` fallback for missing parent dirs
+///
+/// Accept the first base that resolves and stays within bounds.
+fn resolve_relative(
+    allowed_paths: &[PathBuf],
+    path: &str,
+    input_path: &Path,
+) -> ToolResult<PathBuf> {
+    for base in allowed_paths.iter() {
+        let candidate = base.join(input_path);
+
+        // Step 1: canonicalize for existing files - handles symlinks and normalizes.
+        if let Ok(canonical) = candidate.canonicalize() {
+            if canonical.starts_with(base) {
+                return Ok(canonical);
+            }
+            // Path escaped allowed directory - try next base.
+            continue;
+        }
+
+        // Step 2: fast path for new files in existing directories.
+        if let Some(resolved) = resolve_new_file_fast(&candidate) {
+            if resolved.starts_with(base) {
+                return Ok(resolved);
+            }
+            continue;
+        }
+
+        // Step 3: fallback for paths with missing parent dirs.
+        if let Ok(resolved) = soft_canonicalize(&candidate) {
+            if resolved.starts_with(base) {
+                return Ok(resolved);
+            }
+        }
+    }
+
+    Err(ToolError::InvalidPath(format!(
+        "path '{}' is not within allowed directories",
+        path
+    )))
+}
+
+/// For absolute paths, `base.join(input) == input` regardless of base.
+/// Canonicalize once, then check all bases - avoids redundant FS calls.
+///
+/// Resolution strategy (same as `resolve_relative` but without per-base join):
+///
+/// 1. Try `canonicalize()` for existing files - handles symlinks and normalizes.
+/// 2. Try `resolve_new_file_fast()` for new files in existing directories.
+/// 3. Fall back to `soft_canonicalize()` for paths with missing parent dirs.
+///
+/// If the resolved path lands inside any allowed base, accept it.
+/// Otherwise, hand off to [`try_external`] as a last resort.
+fn resolve_absolute(
+    allowed_paths: &[PathBuf],
+    external_permission: Option<&Ruleset>,
+    path: &str,
+    input_path: &Path,
+) -> ToolResult<PathBuf> {
+    // Step 1: canonicalize for existing files - handles symlinks and normalizes.
+    if let Ok(canonical) = input_path.canonicalize() {
+        if allowed_paths.iter().any(|base| canonical.starts_with(base)) {
+            return Ok(canonical);
+        }
+        return try_external(external_permission, path, canonical);
+    }
+
+    // Step 2: fast path for new files in existing directories.
+    if let Some(resolved) = resolve_new_file_fast(input_path) {
+        if allowed_paths.iter().any(|base| resolved.starts_with(base)) {
+            return Ok(resolved);
+        }
+        return try_external(external_permission, path, resolved);
+    }
+
+    // Step 3: fallback for paths with missing parent dirs.
+    if let Ok(resolved) = soft_canonicalize(input_path) {
+        if allowed_paths.iter().any(|base| resolved.starts_with(base)) {
+            return Ok(resolved);
+        }
+        return try_external(external_permission, path, resolved);
+    }
+
+    // Nothing resolved the path - still try external in case the ruleset
+    // permits the raw input via soft_canonicalize inside try_external.
+    try_external(external_permission, path, None)
+}
+
+/// Last-resort check for paths that didn't land inside any allowed base.
+///
+/// Steps:
+/// 1. If no `external_permission` ruleset is configured, reject immediately.
+/// 2. Use the caller's cached canonical form if available, otherwise
+///    `soft_canonicalize` the raw input.
+/// 3. Evaluate the canonicalized path against the `"external_directory"` key
+///    in the permission ruleset. Return `Ok` if allowed, otherwise reject.
+#[inline]
+fn try_external(
+    external_permission: Option<&Ruleset>,
+    path: &str,
+    cached_canonical: impl Into<Option<PathBuf>>,
+) -> ToolResult<PathBuf> {
+    // Step 1: no ruleset or empty ruleset - reject immediately.
+    let perm = match external_permission {
+        Some(p) if !p.is_empty() => p,
+        _ => {
+            return Err(ToolError::InvalidPath(format!(
+                "path '{}' is not within allowed directories",
+                path
+            )));
+        }
+    };
+
+    // Step 2: use cached canonical form, or soft_canonicalize now.
+    let canon = match cached_canonical.into() {
+        Some(c) => c,
+        None => soft_canonicalize(Path::new(path)).map_err(|_| {
+            ToolError::InvalidPath(format!("path '{}' is not within allowed directories", path))
+        })?,
+    };
+
+    // Step 3: evaluate the canonicalized path against the external_directory ruleset.
+    if perm.evaluate("external_directory", super::path_as_str(&canon)) == PermissionAction::Allow {
+        return Ok(canon);
+    }
+
+    Err(ToolError::InvalidPath(format!(
+        "path '{}' is not within allowed directories",
+        path
+    )))
 }
 
 #[cfg(test)]
@@ -353,7 +474,7 @@ mod tests {
         let mut ruleset = Ruleset::new();
         ruleset.push(Rule::new("external_directory", "*", PermissionAction::Allow).unwrap());
 
-        // No base directories — external permission allows everything, but only
+        // No base directories - external permission allows everything, but only
         // absolute paths. Relative paths must still be rejected.
         let resolver = AllowedPathResolver::from_canonical(Vec::<PathBuf>::new())
             .with_external_permission(Arc::new(ruleset));

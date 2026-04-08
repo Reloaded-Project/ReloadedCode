@@ -52,62 +52,41 @@ pub(crate) fn relative_path_escapes_base(path: &Path) -> bool {
     path_analysis(path).escapes
 }
 
-/// Result of analyzing a path for traversal and dot components.
+/// Result of analyzing a path for traversal attacks.
 pub(crate) struct PathAnalysis {
     /// Whether the path would escape its base directory.
     pub(crate) escapes: bool,
-    /// Whether the path contains `.` or `..` components.
-    pub(crate) has_dots: bool,
 }
 
-/// Analyzes a path for traversal attacks and dot components.
+/// Analyzes a path for traversal attacks.
 ///
-/// This is a single-pass analysis that checks both:
-/// 1. Whether the path escapes its base (for security)
-/// 2. Whether the path has `.` or `..` components (for optimization)
-///
-/// The `has_dots` flag is used by `AllowedGlobResolver` to decide whether
-/// to check the glob policy on the input path (fast) or the canonical path
-/// (correct for paths like `src/../lib.rs`).
+/// This is a single-pass analysis that checks whether the path escapes
+/// its base directory (for security).
 #[inline]
 pub(crate) fn path_analysis(path: &Path) -> PathAnalysis {
     if path.is_absolute() {
-        return PathAnalysis {
-            escapes: false,
-            has_dots: false,
-        };
+        return PathAnalysis { escapes: false };
     }
 
     let mut depth = 0usize;
-    let mut has_dots = false;
 
     for component in path.components() {
         match component {
             Component::Normal(_) => depth += 1,
-            Component::CurDir => has_dots = true,
+            Component::CurDir => {}
             Component::ParentDir => {
-                has_dots = true;
                 if depth == 0 {
-                    return PathAnalysis {
-                        escapes: true,
-                        has_dots: true,
-                    };
+                    return PathAnalysis { escapes: true };
                 }
                 depth -= 1;
             }
             Component::RootDir | Component::Prefix(_) => {
-                return PathAnalysis {
-                    escapes: false,
-                    has_dots: false,
-                };
+                return PathAnalysis { escapes: false };
             }
         }
     }
 
-    PathAnalysis {
-        escapes: false,
-        has_dots,
-    }
+    PathAnalysis { escapes: false }
 }
 
 /// Resolves a path for a new file when the parent directory exists.
@@ -147,4 +126,21 @@ pub(crate) fn resolve_new_file_fast(candidate: &Path) -> Option<PathBuf> {
         }
         None
     }
+}
+
+#[cfg(unix)]
+#[inline]
+pub(crate) fn path_as_str(path: &Path) -> &str {
+    use std::os::unix::ffi::OsStrExt;
+    let os_str = path.as_os_str();
+    match std::str::from_utf8(os_str.as_bytes()) {
+        Ok(s) => s,
+        Err(_) => path.to_str().unwrap_or(""),
+    }
+}
+
+#[cfg(not(unix))]
+#[inline]
+pub(crate) fn path_as_str(path: &Path) -> &str {
+    path.to_str().unwrap_or("")
 }

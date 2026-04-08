@@ -2,6 +2,40 @@
 //!
 //! Provides [`AllowedGlobResolver`] which restricts path access to allowed
 //! directories with glob pattern filtering.
+//!
+//! # Resolution algorithm
+//!
+//! The entry point (`PathResolver::resolve`) rejects paths that lexically
+//! escape the base directory, then dispatches to one of two branches:
+//!
+//! ## Relative paths - `resolve_relative`
+//!
+//! For each configured base directory, try in order:
+//!
+//! 1. **Canonicalize** - if the file exists, resolve symlinks and normalize.
+//!    Accept if the result stays inside the base and passes policy.
+//! 2. **New-file fast path** - if only the file is new but its parent
+//!    directory exists, canonicalize the parent and join the filename.
+//!    Accept if the result stays inside the base and passes policy.
+//! 3. **Soft canonicalize** - for paths where even the parent doesn't exist,
+//!    resolve as far as possible. Accept if the result stays inside the
+//!    base and passes policy.
+//!
+//! After each resolution tier, re-check glob policy if normalization or
+//! symlinks changed the relative path the policy would see.
+//!
+//! If no base directory accepts the path, reject.
+//!
+//! ## Absolute paths - `resolve_absolute`
+//!
+//! Same three resolution tiers (canonicalize, new-file-fast, soft_canonicalize).
+//! Since `base.join(absolute)` equals the absolute path itself, we canonicalize
+//! once and check all bases - no per-base filesystem calls.
+//!
+//! For each candidate we also verify glob policy.
+//!
+//! If no base accepts, fall through to [`try_external`] which checks the
+//! optional external-directory permission ruleset as a last resort.
 
 pub(crate) mod normalize;
 mod policy;
@@ -172,118 +206,239 @@ impl PathResolver for AllowedGlobResolver {
 
         let analysis = path_analysis(input_path);
         if analysis.escapes {
-            return Err(ToolError::InvalidPath(format!(
-                "path '{}' is not within allowed directories",
-                path
-            )));
+            return Err(not_allowed_error(path));
         }
 
-        // Optimization: if path has no `.` or `..` components, we can check the glob
-        // policy on the input path directly and only fall back to the resolved path
-        // check when canonicalization changes what the policy should see.
-        let fast_policy_input = if !analysis.has_dots { Some(path) } else { None };
-
-        for base_dir in self.base_directories.iter() {
-            // Fast policy check before filesystem operations.
-            if let (Some(policy), Some(input)) = (policy, fast_policy_input) {
-                if !policy.is_allowed(input) {
-                    continue;
-                }
-            }
-
-            // Relative input joins base_dir; absolute input overrides it.
-            let candidate = base_dir.join(input_path);
-
-            // Existing file/dir: canonicalize resolves symlinks and normalizes.
-            if let Ok(resolved) = candidate.canonicalize() {
-                // Reject if symlink escapes outside base_dir.
-                if !resolved.starts_with(base_dir) {
-                    continue;
-                }
-
-                // Re-check policy after resolution if normalization or symlinks changed
-                // the path seen by glob matching.
-                if let Some(policy) = policy {
-                    let relative_path = resolved.strip_prefix(base_dir).unwrap_or(Path::new(""));
-                    let normalized_relative = normalize::normalize_path(relative_path);
-                    if fast_policy_input != Some(normalized_relative.as_ref())
-                        && !policy.is_allowed(&normalized_relative)
-                    {
-                        continue;
-                    }
-                }
-
-                return Ok(resolved);
-            }
-
-            // Fast path for new files in existing directories.
-            // Canonicalizes parent directory, then joins filename.
-            // This avoids soft_canonicalize's expensive walk-up logic.
-            if let Some(resolved) = resolve_new_file_fast(&candidate) {
-                if !resolved.starts_with(base_dir) {
-                    continue;
-                }
-
-                // Re-check policy after resolution if normalization or symlinks changed
-                // the path seen by glob matching.
-                if let Some(policy) = policy {
-                    let relative_path = resolved.strip_prefix(base_dir).unwrap_or(Path::new(""));
-                    let normalized_relative = normalize::normalize_path(relative_path);
-                    if fast_policy_input != Some(normalized_relative.as_ref())
-                        && !policy.is_allowed(&normalized_relative)
-                    {
-                        continue;
-                    }
-                }
-
-                return Ok(resolved);
-            }
-
-            // Fallback for paths where parent doesn't exist.
-            if let Ok(target_path) = soft_canonicalize(&candidate) {
-                if !target_path.starts_with(base_dir) {
-                    continue;
-                }
-
-                // Re-check policy after resolution if normalization or symlinks changed
-                // the path seen by glob matching.
-                if let Some(policy) = policy {
-                    let relative_path = target_path.strip_prefix(base_dir).unwrap_or(Path::new(""));
-                    let normalized_relative = normalize::normalize_path(relative_path);
-                    if fast_policy_input != Some(normalized_relative.as_ref())
-                        && !policy.is_allowed(&normalized_relative)
-                    {
-                        continue;
-                    }
-                }
-
-                return Ok(target_path);
-            }
-        }
-
-        // External directory fallback: check "external_directory" permission.
-        // Only absolute paths are eligible.
         if input_path.is_absolute() {
-            if let Some(perm) = &self.external_permission {
-                let canon = soft_canonicalize(input_path).map_err(|_| {
-                    ToolError::InvalidPath(format!(
-                        "path '{}' is not within allowed directories",
-                        path
-                    ))
-                })?;
-                if perm.evaluate("external_directory", &canon.to_string_lossy())
-                    == PermissionAction::Allow
-                {
-                    return Ok(canon);
-                }
-            }
+            return resolve_absolute(
+                &self.base_directories,
+                self.external_permission.as_deref(),
+                policy,
+                path,
+                input_path,
+            );
         }
 
-        Err(ToolError::InvalidPath(format!(
-            "path '{}' is not within allowed directories",
-            path
-        )))
+        resolve_relative(&self.base_directories, policy, path, input_path)
     }
+}
+
+/// For each configured base directory, try to resolve the relative input.
+///
+/// Three resolution tiers, cheapest first:
+///
+/// 1. `canonicalize()` for existing files.
+/// 2. `resolve_new_file_fast()` for new files in existing dirs.
+/// 3. `soft_canonicalize()` fallback for missing parent dirs.
+///
+/// After each tier, re-check glob policy if the resolved relative path
+/// differs from the raw input. Accept the first base that passes both
+/// the containment check and policy.
+fn resolve_relative(
+    base_directories: &[Arc<Path>],
+    policy: Option<&GlobPolicy>,
+    path: &str,
+    input_path: &Path,
+) -> ToolResult<PathBuf> {
+    for base_dir in base_directories.iter() {
+        let candidate = base_dir.join(input_path);
+
+        // Step 1: canonicalize for existing files - resolves symlinks and normalizes.
+        if let Ok(resolved) = candidate.canonicalize() {
+            if !resolved.starts_with(base_dir) {
+                continue;
+            }
+
+            // Re-check policy if resolution changed the relative path.
+            if let Some(policy) = policy {
+                let relative_path = resolved.strip_prefix(base_dir).unwrap_or(Path::new(""));
+                let normalized_relative = normalize::normalize_path(relative_path);
+                if !policy.is_allowed(&normalized_relative) {
+                    continue;
+                }
+            }
+
+            return Ok(resolved);
+        }
+
+        // Step 2: fast path for new files in existing directories.
+        if let Some(resolved) = resolve_new_file_fast(&candidate) {
+            if !resolved.starts_with(base_dir) {
+                continue;
+            }
+
+            // Re-check policy if resolution changed the relative path.
+            if let Some(policy) = policy {
+                let relative_path = resolved.strip_prefix(base_dir).unwrap_or(Path::new(""));
+                let normalized_relative = normalize::normalize_path(relative_path);
+                if !policy.is_allowed(&normalized_relative) {
+                    continue;
+                }
+            }
+
+            return Ok(resolved);
+        }
+
+        // Step 3: fallback for paths with missing parent dirs.
+        if let Ok(target_path) = soft_canonicalize(&candidate) {
+            if !target_path.starts_with(base_dir) {
+                continue;
+            }
+
+            // Re-check policy if resolution changed the relative path.
+            if let Some(policy) = policy {
+                let relative_path = target_path.strip_prefix(base_dir).unwrap_or(Path::new(""));
+                let normalized_relative = normalize::normalize_path(relative_path);
+                if !policy.is_allowed(&normalized_relative) {
+                    continue;
+                }
+            }
+
+            return Ok(target_path);
+        }
+    }
+
+    Err(not_allowed_error(path))
+}
+
+/// Absolute-path branch - same three resolution tiers as [`resolve_relative`]
+/// but canonicalize once and check all bases (no per-base FS calls).
+///
+/// For each candidate, verify glob policy. Every tier calls
+/// [`GlobPolicy::is_allowed`] with the normalized relative form.
+///
+/// If no base accepts, fall through to [`try_external`].
+fn resolve_absolute(
+    base_directories: &[Arc<Path>],
+    external_permission: Option<&Ruleset>,
+    policy: Option<&GlobPolicy>,
+    path: &str,
+    input_path: &Path,
+) -> ToolResult<PathBuf> {
+    // Step 1: canonicalize for existing files.
+    if let Ok(resolved) = input_path.canonicalize() {
+        let mut inside_any_base = false;
+        let accepted = base_directories.iter().any(|base_dir| {
+            if !resolved.starts_with(base_dir) {
+                return false;
+            }
+            inside_any_base = true;
+            if let Some(policy) = policy {
+                let relative_path = resolved.strip_prefix(base_dir).unwrap_or(Path::new(""));
+                let normalized_relative = normalize::normalize_path(relative_path);
+                if !policy.is_allowed(&normalized_relative) {
+                    return false;
+                }
+            }
+            true
+        });
+        if accepted {
+            return Ok(resolved);
+        }
+        if inside_any_base {
+            // in base directory but denied by glob policy; must NOT be approved via external_permission
+            return Err(not_allowed_error(path));
+        }
+        return try_external(external_permission, path, resolved);
+    }
+
+    // Step 2: fast path for new files in existing directories.
+    if let Some(resolved) = resolve_new_file_fast(input_path) {
+        let mut inside_any_base = false;
+        let accepted = base_directories.iter().any(|base_dir| {
+            if !resolved.starts_with(base_dir) {
+                return false;
+            }
+            inside_any_base = true;
+            if let Some(policy) = policy {
+                let relative_path = resolved.strip_prefix(base_dir).unwrap_or(Path::new(""));
+                let normalized_relative = normalize::normalize_path(relative_path);
+                if !policy.is_allowed(&normalized_relative) {
+                    return false;
+                }
+            }
+            true
+        });
+        if accepted {
+            return Ok(resolved);
+        }
+        if inside_any_base {
+            // in base directory but denied by glob policy; must NOT be approved via external_permission
+            return Err(not_allowed_error(path));
+        }
+        return try_external(external_permission, path, resolved);
+    }
+
+    // Step 3: fallback for paths with missing parent dirs.
+    if let Ok(resolved) = soft_canonicalize(input_path) {
+        let mut inside_any_base = false;
+        let accepted = base_directories.iter().any(|base_dir| {
+            if !resolved.starts_with(base_dir) {
+                return false;
+            }
+            inside_any_base = true;
+            if let Some(policy) = policy {
+                let relative_path = resolved.strip_prefix(base_dir).unwrap_or(Path::new(""));
+                let normalized_relative = normalize::normalize_path(relative_path);
+                if !policy.is_allowed(&normalized_relative) {
+                    return false;
+                }
+            }
+            true
+        });
+        if accepted {
+            return Ok(resolved);
+        }
+        if inside_any_base {
+            // in base directory but denied by glob policy; must NOT be approved via external_permission
+            return Err(not_allowed_error(path));
+        }
+        return try_external(external_permission, path, resolved);
+    }
+
+    try_external(external_permission, path, None)
+}
+
+/// Last-resort check for paths that didn't land inside any allowed base.
+///
+/// Steps:
+/// 1. If no `external_permission` ruleset is configured, reject immediately.
+/// 2. Use the caller's cached canonical form if available, otherwise
+///    `soft_canonicalize` the raw input.
+/// 3. Evaluate the canonicalized path against the `"external_directory"` key
+///    in the permission ruleset. Return `Ok` if allowed, otherwise reject.
+#[inline]
+fn try_external(
+    external_permission: Option<&Ruleset>,
+    path: &str,
+    cached_canonical: impl Into<Option<PathBuf>>,
+) -> ToolResult<PathBuf> {
+    // Step 1: no ruleset or empty ruleset - reject immediately.
+    let perm = match external_permission {
+        Some(p) if !p.is_empty() => p,
+        _ => {
+            return Err(not_allowed_error(path));
+        }
+    };
+
+    // Step 2: use cached canonical form, or soft_canonicalize now.
+    let canon = match cached_canonical.into() {
+        Some(c) => c,
+        None => soft_canonicalize(Path::new(path)).map_err(|_| not_allowed_error(path))?,
+    };
+
+    // Step 3: evaluate the canonicalized path against the external_directory ruleset.
+    if perm.evaluate("external_directory", super::path_as_str(&canon)) == PermissionAction::Allow {
+        return Ok(canon);
+    }
+
+    Err(not_allowed_error(path))
+}
+
+/// Creates a standard "path not within allowed directories" error.
+#[inline]
+fn not_allowed_error(path: &str) -> ToolError {
+    ToolError::InvalidPath(format!("path '{}' is not within allowed directories", path))
 }
 
 #[cfg(test)]
@@ -652,7 +807,7 @@ mod tests {
         let mut ruleset = Ruleset::new();
         ruleset.push(Rule::new("external_directory", "*", PermissionAction::Allow).unwrap());
 
-        // No base directories — external permission allows everything, but only
+        // No base directories - external permission allows everything, but only
         // absolute paths. Relative paths must still be rejected.
         let resolver = AllowedGlobResolver::from_canonical(Vec::<PathBuf>::new())
             .with_external_permission(Arc::new(ruleset));
@@ -661,6 +816,37 @@ mod tests {
         assert!(
             result.is_err(),
             "relative paths must not be resolved externally"
+        );
+        let err = result.unwrap_err();
+        assert!(err.to_string().contains("not within allowed"));
+    }
+
+    /// A path inside a base directory that is denied by the glob
+    /// policy must NOT be approved via `external_permission`.
+    #[test]
+    fn rejects_in_base_path_denied_by_policy_even_with_external_permission() {
+        let dir = setup_test_dir();
+
+        let policy = GlobPolicy::builder()
+            .allow("src/**")
+            .unwrap()
+            .build()
+            .unwrap();
+
+        let mut ruleset = Ruleset::new();
+        ruleset.push(Rule::new("external_directory", "*", PermissionAction::Allow).unwrap());
+
+        let resolver = AllowedGlobResolver::new(vec![dir.path().to_path_buf()])
+            .unwrap()
+            .with_policy(policy)
+            .with_external_permission(Arc::new(ruleset));
+
+        let cargo_path = dir.path().join("Cargo.toml");
+        let result = resolver.resolve(cargo_path.to_str().unwrap());
+        assert!(
+            result.is_err(),
+            "Cargo.toml is inside base but denied by 'src/**' policy; \
+             external_permission must not override that"
         );
         let err = result.unwrap_err();
         assert!(err.to_string().contains("not within allowed"));
