@@ -155,34 +155,38 @@ pub async fn edit_file<R: PathResolver>(
     let content = fs::read_to_string(&path).await?;
 
     let (new_content, replacement_count) = if request.replace_all {
-        // replace_all reports the exact number of replacements, so this path
-        // counts every match.
-        let count = content.matches(&request.old_string).count();
+        // Single-pass: build the result string while counting every match.
+        let needle = &request.old_string;
+        let needle_len = needle.len();
+        let replacement = &request.new_string;
+        let mut result = String::with_capacity(content.len());
+        let mut last_end = 0;
+        let mut count: usize = 0;
+        for (idx, _) in content.match_indices(needle) {
+            result.push_str(&content[last_end..idx]);
+            result.push_str(replacement);
+            last_end = idx + needle_len;
+            count += 1;
+        }
         if count == 0 {
             return Err(EditError::NotFound);
         }
-
-        (
-            content.replace(&request.old_string, &request.new_string),
-            count,
-        )
+        result.push_str(&content[last_end..]);
+        (result, count)
     } else {
-        // Fast path for single replacement: advance a single non-overlapping
-        // matcher until the second match (if any), then stop.
-        let mut matches = content.match_indices(&request.old_string);
-        let Some((first_idx, _)) = matches.next() else {
+        // Fast path for single replacement: find the first match, then check for a second to detect ambiguity.
+        let needle = &request.old_string;
+        let needle_len = needle.len();
+        let Some(first_idx) = content.find(needle) else {
             return Err(EditError::NotFound);
         };
-        if matches.next().is_some() {
+        if content[first_idx + 1..].contains(needle) {
             return Err(EditError::AmbiguousMatch);
         }
-
-        let tail_start = first_idx + request.old_string.len();
-
         // Build the edited string directly from slices to avoid rescanning.
-        let mut replaced = String::with_capacity(
-            content.len() - request.old_string.len() + request.new_string.len(),
-        );
+        let tail_start = first_idx + needle_len;
+        let mut replaced =
+            String::with_capacity(content.len() - needle_len + request.new_string.len());
         replaced.push_str(&content[..first_idx]);
         replaced.push_str(&request.new_string);
         replaced.push_str(&content[tail_start..]);
@@ -191,10 +195,12 @@ pub async fn edit_file<R: PathResolver>(
 
     fs::write(&path, &new_content).await?;
 
-    Ok(format!(
-        "Successfully replaced {} occurrence(s)",
-        replacement_count
-    ))
+    let mut msg = String::with_capacity(38);
+    let _ = core::fmt::write(
+        &mut msg,
+        core::format_args!("Successfully replaced {} occurrence(s)", replacement_count),
+    );
+    Ok(msg)
 }
 
 #[cfg(test)]
@@ -255,6 +261,30 @@ mod tests {
         .await
         .unwrap_err();
         assert!(matches!(err, EditError::NotFound));
+    }
+
+    #[maybe_async::test(feature = "blocking", async(feature = "tokio", tokio::test))]
+    async fn overlapping_match_is_ambiguous() {
+        let file = create_temp_file("aaa");
+        let resolver = AbsolutePathResolver;
+
+        let err = edit_file(
+            &resolver,
+            EditRequest {
+                file_path: file.path().to_str().unwrap().to_string(),
+                old_string: "aa".to_string(),
+                new_string: "x".to_string(),
+                replace_all: false,
+            },
+            &EditSettings::new(),
+        )
+        .await
+        .unwrap_err();
+        assert!(
+            matches!(err, EditError::AmbiguousMatch),
+            "expected AmbiguousMatch for overlapping occurrences of 'aa' in 'aaa', got {:?}",
+            err
+        );
     }
 
     #[maybe_async::test(feature = "blocking", async(feature = "tokio", tokio::test))]

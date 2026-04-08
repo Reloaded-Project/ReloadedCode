@@ -97,14 +97,16 @@ pub async fn write_file<R: PathResolver>(
         }
     }
 
-    let bytes = request.content.as_bytes();
-    fs::write(&path, bytes).await?;
+    fs::write(&path, request.content.as_bytes()).await?;
 
-    Ok(format!(
-        "Successfully wrote {} bytes to {}",
-        bytes.len(),
-        path.display()
-    ))
+    let len = request.content.len();
+    // 32: literal overhead ("Successfully wrote  bytes to "), 20: max usize digits, remainder: path
+    let mut out = String::with_capacity(32 + 20 + path.as_os_str().len());
+    let _ = core::fmt::write(
+        &mut out,
+        core::format_args!("Successfully wrote {} bytes to {}", len, path.display()),
+    );
+    Ok(out)
 }
 
 #[cfg(test)]

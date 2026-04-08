@@ -12,10 +12,10 @@
 //! ```text
 //! | Case         | Files | Pattern      | Matches | What it tests                         |
 //! |--------------|-------|--------------|---------|---------------------------------------|
-//! | small_tree   | ~10   | **/*.rs      | ~10     | Small project, fast walk              |
-//! | large_tree   | ~300  | **/*.rs      | ~300    | Large monorepo, many matches          |
-//! | no_matches   | ~300  | *.xyz        | 0       | Walk with no matches, full traversal  |
-//! | deep_nesting | ~10   | **/*.rs      | ~10     | Deep directory nesting, path handling |
+//! | small_tree   | 8     | **/*.rs      | 5       | Small project, fast walk              |
+//! | large_tree   | 300   | **/*.rs      | 150     | Large monorepo, many matches          |
+//! | no_matches   | 300   | *.xyz        | 0       | Walk with no matches, full traversal  |
+//! | deep_nesting | 10    | **/*.rs      | 10      | Deep directory nesting, path handling |
 //! ```
 //!
 //! # Running Benchmarks

@@ -8,22 +8,90 @@ use crate::permissions::Ruleset;
 use crate::permissions_ext::OptionRulesetExt;
 use crate::tool_metadata::read as read_meta;
 use crate::util::{truncate_line_with_ellipsis, ESTIMATED_CHARS_PER_LINE, TRUNCATION_ELLIPSIS};
-use memchr::memchr;
+use memchr::{memchr, memchr_iter};
 use serde::Deserialize;
 use serde_json::Value;
-use std::borrow::Cow;
-use std::fmt::Write;
 use std::sync::Arc;
 
 /// Strips trailing CR from a line (for CRLF handling).
 #[inline]
 fn strip_cr(line: &[u8]) -> &[u8] {
-    line.strip_suffix(b"\r").unwrap_or(line)
+    if line.last() == Some(&b'\r') {
+        &line[..line.len() - 1]
+    } else {
+        line
+    }
+}
+
+#[inline]
+fn push_usize(output: &mut String, mut n: usize) {
+    if n == 0 {
+        output.push('0');
+        return;
+    }
+    let mut buf = [0u8; 20];
+    let mut pos = 20usize;
+    while n > 0 {
+        pos -= 1;
+        buf[pos] = b'0' + (n % 10) as u8;
+        n /= 10;
+    }
+    unsafe {
+        output.push_str(core::str::from_utf8_unchecked(&buf[pos..]));
+    }
+}
+
+#[inline]
+fn append_line_content(output: &mut String, content: &str, max_line_length: usize) {
+    let (display_content, was_truncated) = truncate_line_with_ellipsis(content, max_line_length);
+    output.push_str(display_content);
+    if was_truncated {
+        output.push_str(TRUNCATION_ELLIPSIS);
+    }
 }
 
 /// Processes a single line, appending it to output with optional line numbers.
+///
+/// Const-generic over `LINE_NUMBERS` so the compiler can eliminate the
+/// branch at compile time and monomorphize two tight loops.
 #[inline]
-fn process_line(
+fn process_line<const LINE_NUMBERS: bool>(
+    line_bytes: &[u8],
+    line_number: usize,
+    output: &mut String,
+    lines_output: &mut usize,
+    max_line_length: usize,
+) {
+    let line_bytes = strip_cr(line_bytes);
+
+    if *lines_output > 0 {
+        output.push('\n');
+    }
+
+    if LINE_NUMBERS {
+        output.push('L');
+        push_usize(output, line_number);
+        output.push_str(": ");
+    }
+
+    // ASCII fast path: SIMD-accelerated check avoids full UTF-8 validation.
+    // SAFETY: ASCII is always valid UTF-8.
+    if line_bytes.is_ascii() {
+        let content = unsafe { core::str::from_utf8_unchecked(line_bytes) };
+        append_line_content(output, content, max_line_length);
+    } else if let Ok(content) = core::str::from_utf8(line_bytes) {
+        append_line_content(output, content, max_line_length);
+    } else {
+        let content = String::from_utf8_lossy(line_bytes);
+        append_line_content(output, &content, max_line_length);
+    }
+
+    *lines_output += 1;
+}
+
+/// Dispatches to the correct const-generic `process_line` monomorphization.
+#[inline(always)]
+fn emit_line(
     line_bytes: &[u8],
     line_number: usize,
     output: &mut String,
@@ -31,25 +99,23 @@ fn process_line(
     max_line_length: usize,
     line_numbers: bool,
 ) {
-    let line_bytes = strip_cr(line_bytes);
-    let content: Cow<'_, str> = String::from_utf8_lossy(line_bytes);
-    let (display_content, was_truncated) = truncate_line_with_ellipsis(&content, max_line_length);
-
-    if *lines_output > 0 {
-        output.push('\n');
-    }
-
     if line_numbers {
-        let _ = write!(output, "L{}: {}", line_number, display_content);
+        process_line::<true>(
+            line_bytes,
+            line_number,
+            output,
+            lines_output,
+            max_line_length,
+        );
     } else {
-        output.push_str(display_content);
+        process_line::<false>(
+            line_bytes,
+            line_number,
+            output,
+            lines_output,
+            max_line_length,
+        );
     }
-
-    if was_truncated {
-        output.push_str(TRUNCATION_ELLIPSIS);
-    }
-
-    *lines_output += 1;
 }
 
 /// Serde-friendly read request owned by the core crate.
@@ -320,15 +386,59 @@ pub async fn read_file<R: PathResolver>(
     settings
         .permission()
         .check(read_meta::NAME, subject.as_ref())?;
-    let buf_capacity = (limit * ESTIMATED_CHARS_PER_LINE).next_power_of_two();
+    let buf_capacity = limit.saturating_mul(ESTIMATED_CHARS_PER_LINE).min(1 << 20);
     let mut reader = fs::open_buffered(&path, buf_capacity).await?;
 
-    let estimated_capacity = limit * ESTIMATED_CHARS_PER_LINE;
+    let line_prefix_len = if line_numbers {
+        let last_line = offset.saturating_add(limit).saturating_sub(1);
+        last_line.checked_ilog10().unwrap_or(0) as usize + 3
+    } else {
+        0
+    };
+    let estimated_capacity = limit.saturating_mul(ESTIMATED_CHARS_PER_LINE + line_prefix_len);
     let mut output = String::with_capacity(estimated_capacity);
     // Holds a partial line that spans multiple buffers.
     let mut overflow: Vec<u8> = Vec::new();
     let mut line_number = 0usize;
     let mut lines_output = 0usize;
+
+    // Fast skip: when offset > 1, count newlines in bulk via SIMD without
+    // processing line content. This avoids the per-line overhead of strip_cr,
+    // UTF-8 validation, and output formatting for skipped lines.
+    if offset > 1 {
+        let skip_target = offset - 1;
+        let mut trailing_content = false;
+        while line_number < skip_target {
+            let consume = {
+                let buf = reader.fill_buf().await?;
+                if buf.is_empty() {
+                    if trailing_content {
+                        line_number += 1;
+                    }
+                    break;
+                }
+                let remaining = skip_target - line_number;
+                let mut count = 0usize;
+                let mut last_pos = 0usize;
+                for pos in memchr_iter(b'\n', buf) {
+                    count += 1;
+                    last_pos = pos;
+                    if count >= remaining {
+                        break;
+                    }
+                }
+                line_number += count;
+                if count >= remaining {
+                    trailing_content = false;
+                    last_pos + 1
+                } else {
+                    trailing_content = buf.last() != Some(&b'\n');
+                    buf.len()
+                }
+            };
+            reader.consume(consume);
+        }
+    }
 
     // Stream buffered chunks, splitting into lines as we go.
     loop {
@@ -338,7 +448,7 @@ pub async fn read_file<R: PathResolver>(
             if !overflow.is_empty() {
                 line_number += 1;
                 if line_number >= offset && lines_output < limit {
-                    process_line(
+                    emit_line(
                         &overflow,
                         line_number,
                         &mut output,
@@ -360,9 +470,9 @@ pub async fn read_file<R: PathResolver>(
 
                 // Only emit lines within the requested window.
                 if line_number >= offset && lines_output < limit {
+                    // Fast path: line is fully in this buffer.
                     if overflow.is_empty() {
-                        // Fast path: line is fully in this buffer.
-                        process_line(
+                        emit_line(
                             &buf[pos..newline_pos],
                             line_number,
                             &mut output,
@@ -373,7 +483,7 @@ pub async fn read_file<R: PathResolver>(
                     } else {
                         // Slow path: prepend buffered fragment.
                         overflow.extend_from_slice(&buf[pos..newline_pos]);
-                        process_line(
+                        emit_line(
                             &overflow,
                             line_number,
                             &mut output,
@@ -519,6 +629,21 @@ mod tests {
     async fn errors_on_offset_zero() {
         let err = read_temp_file(b"test\n", 0, 10, true).await.unwrap_err();
         assert!(matches!(err, ToolError::OutOfBounds(_)));
+    }
+
+    #[maybe_async::test(feature = "blocking", async(feature = "tokio", tokio::test))]
+    async fn out_of_bounds_reports_correct_line_count_without_trailing_newline() {
+        let err = read_temp_file(b"line1\nline2\nline3", 5, 10, true)
+            .await
+            .unwrap_err();
+        let msg = match &err {
+            ToolError::OutOfBounds(msg) => msg.clone(),
+            other => panic!("expected OutOfBounds, got: {other:?}"),
+        };
+        assert!(
+            msg.contains("3 lines"),
+            "expected '3 lines' in error, got: {msg}"
+        );
     }
 
     #[maybe_async::test(feature = "blocking", async(feature = "tokio", tokio::test))]

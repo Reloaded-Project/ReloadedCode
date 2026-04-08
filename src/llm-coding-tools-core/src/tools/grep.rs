@@ -13,7 +13,6 @@ use grep_searcher::{BinaryDetection, Searcher, SearcherBuilder};
 use ignore::WalkBuilder;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
-use std::fmt::Write;
 use std::path::Path;
 use std::sync::Arc;
 use std::time::SystemTime;
@@ -241,18 +240,27 @@ impl GrepOutput {
         let estimated_capacity = self.match_count * ESTIMATED_CHARS_PER_MATCH;
         let mut output = String::with_capacity(estimated_capacity);
 
-        let _ = writeln!(&mut output, "Found {} matches", self.match_count);
+        output.push_str("Found ");
+        push_u64(&mut output, self.match_count as u64);
+        output.push_str(" matches\n");
 
         for file in &self.files {
-            let _ = writeln!(&mut output, "\n{}:", file.path);
+            output.push('\n');
+            output.push_str(&file.path);
+            output.push_str(":\n");
+
             for m in &file.matches {
                 let (display_text, was_truncated) =
                     truncate_line_with_ellipsis(&m.line_text, max_line_len);
 
                 if line_numbers {
-                    let _ = write!(&mut output, "  L{}: {}", m.line_num, display_text);
+                    output.push_str("  L");
+                    push_u64(&mut output, m.line_num);
+                    output.push_str(": ");
+                    output.push_str(display_text);
                 } else {
-                    let _ = write!(&mut output, "  {}", display_text);
+                    output.push_str("  ");
+                    output.push_str(display_text);
                 }
 
                 if was_truncated {
@@ -264,19 +272,15 @@ impl GrepOutput {
         }
 
         if self.truncated {
-            let _ = write!(
-                &mut output,
-                "\n(Results truncated at {} matches)",
-                self.effective_limit
-            );
+            output.push_str("\n(Results truncated at ");
+            push_u64(&mut output, self.effective_limit as u64);
+            output.push_str(" matches)");
         }
 
         if self.partial {
-            let _ = write!(
-                &mut output,
-                "\n(Partial results: {} file error(s) encountered)",
-                self.errors.len()
-            );
+            output.push_str("\n(Partial results: ");
+            push_u64(&mut output, self.errors.len() as u64);
+            output.push_str(" file error(s) encountered)");
         }
 
         output
@@ -435,6 +439,28 @@ pub fn grep_search<R: PathResolver>(
         errors,
         effective_limit: limit,
     })
+}
+
+/// Formats a [`u64`] as decimal digits and appends them to `output`.
+///
+/// Writes digits into a fixed-size stack buffer right-to-left, then appends
+/// the resulting slice — no intermediate [`String`] or heap allocation.
+#[inline]
+fn push_u64(output: &mut String, mut n: u64) {
+    if n == 0 {
+        output.push('0');
+        return;
+    }
+    let mut buf = [0u8; 20];
+    let mut pos = 20usize;
+    while n > 0 {
+        pos -= 1;
+        buf[pos] = b'0' + (n % 10) as u8;
+        n /= 10;
+    }
+    unsafe {
+        output.push_str(core::str::from_utf8_unchecked(&buf[pos..]));
+    }
 }
 
 struct FileSearchResult {

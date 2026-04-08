@@ -149,7 +149,7 @@ pub fn glob_files<R: PathResolver>(
 
     let matcher = Glob::new(&request.pattern)?.compile_matcher();
 
-    let mut files_with_mtime: Vec<(String, SystemTime)> = Vec::new();
+    let mut entries: Vec<(std::path::PathBuf, SystemTime)> = Vec::new();
     let mut errors: Vec<String> = Vec::with_capacity(8);
 
     let walker = WalkBuilder::new(&path)
@@ -177,7 +177,7 @@ pub fn glob_files<R: PathResolver>(
         }
 
         let rel_path = match entry.path().strip_prefix(&path) {
-            Ok(p) => p.to_string_lossy().into_owned(),
+            Ok(p) => p,
             Err(err) => {
                 errors.push(format!(
                     "failed to make '{}' relative to '{}': {err}",
@@ -188,22 +188,31 @@ pub fn glob_files<R: PathResolver>(
             }
         };
 
-        // Normalise Windows backslashes to forward slashes for glob pattern matching
-        #[cfg(windows)]
-        let rel_path = rel_path.replace('\\', "/");
-
-        if rel_path.is_empty() {
+        if rel_path.as_os_str().is_empty() {
             continue;
         }
 
-        if !matcher.is_match(&rel_path) {
+        let rel_str = rel_path.to_string_lossy();
+
+        // Normalise Windows backslashes to forward slashes for glob pattern matching
+        #[cfg(windows)]
+        let rel_str: std::borrow::Cow<'_, str> = {
+            use std::borrow::Cow;
+            if rel_str.contains('\\') {
+                Cow::Owned(rel_str.replace('\\', "/"))
+            } else {
+                rel_str
+            }
+        };
+
+        if !matcher.is_match(rel_str.as_ref()) {
             continue;
         }
 
         // If target is in a location it's not allowed to access, it needs
         // to be filtered out.
-        let entry_subject = entry.path().to_string_lossy();
         if let Some(ruleset) = settings.permission() {
+            let entry_subject = entry.path().to_string_lossy();
             if !ruleset.is_allowed(glob_meta::NAME, entry_subject.as_ref()) {
                 continue;
             }
@@ -215,17 +224,27 @@ pub fn glob_files<R: PathResolver>(
             .and_then(|m| m.modified().ok())
             .unwrap_or(SystemTime::UNIX_EPOCH);
 
-        files_with_mtime.push((rel_path, mtime));
+        entries.push((rel_path.to_path_buf(), mtime));
     }
 
-    files_with_mtime.sort_by_key(|entry| std::cmp::Reverse(entry.1));
+    let total = entries.len();
+    let truncated = total > limit;
 
-    let truncated = files_with_mtime.len() > limit;
+    if total <= limit {
+        entries.sort_by(|a, b| b.1.cmp(&a.1));
+    } else {
+        entries.select_nth_unstable_by(limit - 1, |a, b| b.1.cmp(&a.1));
+        entries[..limit].sort_by(|a, b| b.1.cmp(&a.1));
+    }
 
-    let files: Vec<String> = files_with_mtime
-        .into_iter()
-        .take(limit)
-        .map(|(path, _)| path)
+    let files: Vec<String> = entries[..limit.min(total)]
+        .iter()
+        .map(|(p, _)| {
+            let s = p.to_string_lossy().into_owned();
+            #[cfg(windows)]
+            let s = s.replace('\\', "/");
+            s
+        })
         .collect();
 
     Ok(GlobOutput {
@@ -463,5 +482,285 @@ mod tests {
 
         assert_eq!(result.files, vec!["allowed.txt".to_string()]);
         Ok(())
+    }
+
+    fn create_nested_gitignore_tree() -> TempDir {
+        let dir = TempDir::new().unwrap();
+        let base = dir.path();
+
+        fs::create_dir_all(base.join(".git")).unwrap();
+
+        let mut root_gi = File::create(base.join(".gitignore")).unwrap();
+        writeln!(root_gi, "build/").unwrap();
+
+        fs::create_dir_all(base.join("src/subdir")).unwrap();
+        File::create(base.join("src/main.rs")).unwrap();
+        File::create(base.join("src/subdir/keep.rs")).unwrap();
+
+        fs::create_dir_all(base.join("build")).unwrap();
+        File::create(base.join("build/output.rs")).unwrap();
+
+        let mut subdir_gi = File::create(base.join("src/subdir/.gitignore")).unwrap();
+        writeln!(subdir_gi, "*.tmp").unwrap();
+        File::create(base.join("src/subdir/test.tmp")).unwrap();
+
+        dir
+    }
+
+    #[test]
+    fn glob_root_gitignore_excludes_build_dir_with_rs_pattern() {
+        let dir = create_nested_gitignore_tree();
+        let resolver = AbsolutePathResolver;
+
+        let result = glob_files(
+            &resolver,
+            GlobRequest {
+                pattern: "**/*.rs".to_string(),
+                path: dir.path().to_str().unwrap().to_string(),
+            },
+            &GlobSettings::new().with_limit(1000).unwrap(),
+        )
+        .unwrap();
+
+        assert!(
+            !result.files.iter().any(|f| f.contains("build")),
+            "root .gitignore excludes build/, but build/output.rs appeared: {:?}",
+            result.files
+        );
+        assert!(
+            result.files.iter().any(|f| f.contains("main.rs")),
+            "expected src/main.rs in results: {:?}",
+            result.files
+        );
+    }
+
+    #[test]
+    fn glob_nested_gitignore_excludes_tmp_files() {
+        let dir = create_nested_gitignore_tree();
+        let resolver = AbsolutePathResolver;
+
+        let result = glob_files(
+            &resolver,
+            GlobRequest {
+                pattern: "**/*".to_string(),
+                path: dir.path().to_str().unwrap().to_string(),
+            },
+            &GlobSettings::new().with_limit(1000).unwrap(),
+        )
+        .unwrap();
+
+        assert!(
+            !result.files.iter().any(|f| f.contains("test.tmp")),
+            "nested .gitignore excludes *.tmp, but src/subdir/test.tmp appeared: {:?}",
+            result.files
+        );
+        assert!(
+            result.files.iter().any(|f| f.contains("keep.rs")),
+            "expected src/subdir/keep.rs in results: {:?}",
+            result.files
+        );
+    }
+
+    #[test]
+    fn glob_handles_empty_directory() {
+        let dir = TempDir::new().unwrap();
+        let resolver = AbsolutePathResolver;
+
+        let result = glob_files(
+            &resolver,
+            GlobRequest {
+                pattern: "**/*".to_string(),
+                path: dir.path().to_str().unwrap().to_string(),
+            },
+            &GlobSettings::new().with_limit(1000).unwrap(),
+        )
+        .unwrap();
+
+        assert!(
+            result.files.is_empty(),
+            "empty dir should yield no files: {:?}",
+            result.files
+        );
+        assert!(!result.truncated);
+        assert!(!result.partial);
+    }
+
+    #[test]
+    fn glob_handles_pattern_matching_nothing() {
+        let dir = create_test_tree();
+        let resolver = AbsolutePathResolver;
+
+        let result = glob_files(
+            &resolver,
+            GlobRequest {
+                pattern: "**/*.xyz".to_string(),
+                path: dir.path().to_str().unwrap().to_string(),
+            },
+            &GlobSettings::new().with_limit(1000).unwrap(),
+        )
+        .unwrap();
+
+        assert!(
+            result.files.is_empty(),
+            "no .xyz files exist: {:?}",
+            result.files
+        );
+        assert!(!result.truncated);
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn glob_does_not_follow_symlinks_to_directories() {
+        use std::os::unix::fs::symlink;
+
+        let dir = TempDir::new().unwrap();
+        let base = dir.path();
+
+        fs::create_dir_all(base.join("real_dir")).unwrap();
+        File::create(base.join("real_dir/inside.txt")).unwrap();
+        File::create(base.join("top.txt")).unwrap();
+
+        symlink(base.join("real_dir"), base.join("link_dir")).unwrap();
+
+        let resolver = AbsolutePathResolver;
+        let result = glob_files(
+            &resolver,
+            GlobRequest {
+                pattern: "**/*.txt".to_string(),
+                path: base.to_str().unwrap().to_string(),
+            },
+            &GlobSettings::new().with_limit(1000).unwrap(),
+        )
+        .unwrap();
+
+        assert!(
+            !result.files.iter().any(|f| f.starts_with("link_dir/")),
+            "symlinked directory contents should not be traversed via link_dir: {:?}",
+            result.files
+        );
+        assert!(
+            result.files.iter().any(|f| f == "real_dir/inside.txt"),
+            "real directory contents should still be traversed: {:?}",
+            result.files
+        );
+        assert!(
+            result.files.iter().any(|f| f == "top.txt"),
+            "expected top.txt in results: {:?}",
+            result.files
+        );
+    }
+
+    #[test]
+    fn glob_sets_truncated_flag_when_results_exceed_limit() {
+        let dir = TempDir::new().unwrap();
+        let base = dir.path();
+        for i in 0..5 {
+            File::create(base.join(format!("file{i}.txt"))).unwrap();
+        }
+
+        let resolver = AbsolutePathResolver;
+        let result = glob_files(
+            &resolver,
+            GlobRequest {
+                pattern: "**/*.txt".to_string(),
+                path: base.to_str().unwrap().to_string(),
+            },
+            &GlobSettings::new().with_limit(3).unwrap(),
+        )
+        .unwrap();
+
+        assert_eq!(result.files.len(), 3, "should return exactly limit items");
+        assert!(result.truncated, "truncated flag should be set");
+    }
+
+    #[test]
+    fn glob_truncated_false_when_within_limit() {
+        let dir = TempDir::new().unwrap();
+        let base = dir.path();
+        File::create(base.join("a.txt")).unwrap();
+        File::create(base.join("b.txt")).unwrap();
+
+        let resolver = AbsolutePathResolver;
+        let result = glob_files(
+            &resolver,
+            GlobRequest {
+                pattern: "**/*.txt".to_string(),
+                path: base.to_str().unwrap().to_string(),
+            },
+            &GlobSettings::new().with_limit(100).unwrap(),
+        )
+        .unwrap();
+
+        assert!(
+            !result.truncated,
+            "truncated should be false when files <= limit"
+        );
+    }
+
+    #[test]
+    fn glob_permission_filtering_with_override_builder_pattern() -> TestResult {
+        let dir = TempDir::new().unwrap();
+        let base = dir.path();
+        let allowed_path = base.join("allowed.rs");
+        let denied_path = base.join("denied.rs");
+        File::create(&allowed_path).unwrap();
+        File::create(&denied_path).unwrap();
+
+        let mut ruleset = Ruleset::new();
+        ruleset.push(Rule::new(glob_meta::NAME, "*", PermissionAction::Allow)?);
+        ruleset.push(Rule::new(
+            glob_meta::NAME,
+            denied_path.to_string_lossy().into_owned(),
+            PermissionAction::Deny,
+        )?);
+
+        let resolver = AbsolutePathResolver;
+        let result = glob_files(
+            &resolver,
+            GlobRequest {
+                pattern: "**/*.rs".to_string(),
+                path: base.to_str().unwrap().to_string(),
+            },
+            &GlobSettings::new()
+                .with_limit(1000)
+                .unwrap()
+                .with_permission(Some(Arc::new(ruleset))),
+        )
+        .unwrap();
+
+        assert_eq!(result.files, vec!["allowed.rs".to_string()]);
+        Ok(())
+    }
+
+    #[test]
+    fn glob_nested_gitignore_without_root_gitignore() {
+        let dir = TempDir::new().unwrap();
+        let base = dir.path();
+
+        fs::create_dir_all(base.join(".git")).unwrap();
+        fs::create_dir_all(base.join("src/subdir")).unwrap();
+        File::create(base.join("src/main.rs")).unwrap();
+        File::create(base.join("src/subdir/keep.rs")).unwrap();
+
+        let mut subdir_gi = File::create(base.join("src/subdir/.gitignore")).unwrap();
+        writeln!(subdir_gi, "*.tmp").unwrap();
+        File::create(base.join("src/subdir/test.tmp")).unwrap();
+
+        let resolver = AbsolutePathResolver;
+        let result = glob_files(
+            &resolver,
+            GlobRequest {
+                pattern: "**/*".to_string(),
+                path: base.to_str().unwrap().to_string(),
+            },
+            &GlobSettings::new().with_limit(1000).unwrap(),
+        )
+        .unwrap();
+
+        assert!(
+            !result.files.iter().any(|f| f.contains("test.tmp")),
+            "nested .gitignore should exclude *.tmp even without root .gitignore: {:?}",
+            result.files
+        );
     }
 }
