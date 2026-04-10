@@ -144,8 +144,8 @@ network access is unavailable, so it can adjust its behavior accordingly.
 System runtime roots are selected from the following paths when present:
 
 - `/usr/bin`, `/usr/lib`, `/lib64`
-- `/run/current-system/sw` (NixOS)
-- `/nix/store`, `/nix/var/nix/profiles/default` (Nix)
+- `/run/current-system/sw` ([NixOS])
+- `/nix/store`, `/nix/var/nix/profiles/default` ([Nix])
 
 #### Environment
 
@@ -167,7 +167,7 @@ profile intentionally leaves it out so nothing persists across sessions.
 #### Why These Mounts
 
 - **System runtime roots**: mounted read-only so the resolved host shell
-  plus common distro/Nix binaries remain available without exposing the
+  plus common distro/[Nix] binaries remain available without exposing the
   full host root.
 - **`/dev`, `/proc`, sandbox `/tmp`**: provide the minimum runtime surface
   for common tools.
@@ -297,3 +297,5 @@ depends on your environment.
 
 [bwrap]: https://github.com/containers/bubblewrap
 [apr]: https://docs.rs/llm-coding-tools-core/latest/llm_coding_tools_core/struct.AllowedPathResolver.html
+[NixOS]: https://nixos.org
+[Nix]: https://nixos.org

@@ -33,7 +33,7 @@
 //! # fn main() -> Result<(), Box<dyn std::error::Error>> {
 //! let runtime = AgentRuntimeBuilder::new()
 //!     .catalog(AgentCatalog::new())
-//!     .defaults(AgentDefaults::with_model("openai/gpt-4o"))
+//!     .defaults(AgentDefaults::with_model("openai/gpt-5.4"))
 //!     .build()?;
 //!
 //! assert!(runtime.catalog().iter().count() == 0);

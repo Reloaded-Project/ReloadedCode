@@ -43,7 +43,7 @@ loader.add_directory(&mut catalog, Path::new("agents"))?;
 // 2. Build the runtime
 let runtime = AgentRuntimeBuilder::new()
     .catalog(catalog)
-    .defaults(AgentDefaults::with_model("openai/gpt-4o"))
+    .defaults(AgentDefaults::with_model("openai/gpt-5.4"))
     .build();
 
 // 3. Use the runtime (e.g., look up agents by name)
@@ -60,7 +60,7 @@ Agent definitions live in markdown files with YAML frontmatter:
 name: code-reviewer
 mode: subagent
 description: Reviews code and flags high-risk issues
-model: openrouter/openai/gpt-4o
+model: ollama-cloud/minimax-m2.7
 permission:
   read: allow
   bash: deny

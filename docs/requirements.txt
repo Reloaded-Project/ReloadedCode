@@ -1,0 +1,5 @@
+mkdocs-material
+mkdocs-redirects
+mkdocs-exclude-unused-files
+mkdocs-exclude
+mkdocs-minify-plugin

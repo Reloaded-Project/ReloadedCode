@@ -1,6 +1,6 @@
 # Architecture: llm-coding-tools-bubblewrap
 
-Linux-only library that builds bubblewrap sandbox profiles, probes host
+Linux-only library that builds [bubblewrap] sandbox profiles, probes host
 capabilities, and produces wrapped command lines.
 
 For the security model, see [SANDBOX-PROFILES.md](../../SANDBOX-PROFILES.md).
@@ -20,7 +20,7 @@ llm-coding-tools-bubblewrap
 │   ├── factory.rs          create_sandbox, create_sandbox_with, create_temp_sandbox, SandboxDirs, CreateSandboxError, TempSandboxDirs
 │   ├── presets.rs          public_bot() & trusted_maintenance() constructors
 │   ├── validation.rs       path/symlink/env/tmp validators
-│   └── layout.rs           SandboxLayout — "is this host path visible inside?"
+│   └── layout.rs           SandboxLayout - "is this host path visible inside?"
 ├── wrap/
 │   ├── mod.rs              module root; cfg(feature) gates, re-exports
 │   ├── command.rs          wrap_command → LinuxBwrapWrappedCommand
@@ -121,7 +121,7 @@ inside the sandbox.
 
 `probe_backend_uncached()` spawns `bwrap --version` then a minimal sandbox to verify
 namespace support. `probe_backend()` caches results in a `OnceLock<RwLock<...>>`
-keyed on `$PATH` — a changed PATH invalidates the cache.
+keyed on `$PATH` - a changed PATH invalidates the cache.
 
 Shell search order: `bash` on PATH → `sh` on PATH → hardcoded candidates
 (Nix, FHS) → deduplicated by resolved path.
@@ -155,3 +155,5 @@ Both execution adapters set stdin=null, stdout/stderr=piped, and wrap with
 Fake `bwrap` and `bash` scripts in temp dirs with managed `$PATH`. Tests
 that touch `$PATH` run `#[serial]` to avoid cache contamination. No real
 bubblewrap installation needed.
+
+[bubblewrap]: https://github.com/containers/bubblewrap

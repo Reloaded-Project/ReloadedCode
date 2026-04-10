@@ -2,10 +2,12 @@
 
 [![Crates.io](https://img.shields.io/crates/v/llm-coding-tools-agents.svg)](https://crates.io/crates/llm-coding-tools-agents) [![Docs.rs](https://docs.rs/llm-coding-tools-agents/badge.svg)](https://docs.rs/llm-coding-tools-agents)
 
-Load agent markdown files compatible with the [OpenCode agent schema]:
+Load agent markdown files into a typed catalog with runtime defaults and permission evaluation.
 
-- **Mostly drop-in** - agent files work out of the box
-- **One exception** - [default-deny permissions](#️-default-deny-permissions) (OpenCode uses default-allow)
+[Documentation] · [API Reference]
+
+The agent file format mirrors [OpenCode]'s schema - similar enough that many
+files are drop-in compatible, but [not identical](#differences-from-opencode).
 
 ## Loading agents
 
@@ -30,7 +32,7 @@ for agent in catalog.iter() {
 
 Agent files are markdown with YAML frontmatter.
 
-The format is based on OpenCode's agent schema; so fields like [`mode`], 
+The format is similar to [OpenCode]'s agent schema; so fields like [`mode`], 
 [`model`] and [`permissions`] should be familiar.
 
 ### Complete example
@@ -55,15 +57,6 @@ tool_settings:
 You are a code search assistant. Use grep to find relevant files and code patterns,
 then read the matching files to extract and summarize the content.
 ```
-
-### ⚠️ Default-Deny Permissions
-
-Unlike OpenCode, this library **denies tools unless explicitly allowed**. 
-
-This is because `llm-coding-tools` was designed towards automation/servers,
-where determinism is more valuable.
-
-For default-allow behaviour, [open a PR].
 
 ### Frontmatter fields
 
@@ -110,12 +103,52 @@ permission:
   task: allow  # Required to delegate to subagents
 ```
 
-**Glob patterns in permissions:** Permission values use globs (`*` = one component, `**` = any depth).
-Bare `allow` equals `**`. Patterns are workspace-relative.
+Several tools support **pattern-based rules** instead of a simple `allow`/`deny`.
+Evaluation uses **last-match-wins**: the final matching rule takes effect.
 
-**Note:** `task` is special - when omitted, it allows delegation to all callable
-subagents for OpenCode compatibility. To disable delegation, explicitly set
-`task: deny`.
+| Tool(s)                       | Pattern matches against          | Supports patterns    |
+| ----------------------------- | -------------------------------- | -------------------- |
+| read, write, edit, glob, grep | File path (relative or absolute) | yes                  |
+| bash                          | Command string                   | yes                  |
+| task                          | Target agent name                | yes                  |
+| webfetch, todoread, todowrite | -                                | no (allow/deny only) |
+
+**File tools** - patterns match against the path as given. Absolute paths
+start with `/` or a drive letter like `C:/`. Relative paths have no such
+prefix. `**` matches any file at any depth, relative to the workspace root (catch-all).
+`*` matches files in the workspace root only. `/**` matches any file on the
+system, including other drives on Windows.
+
+```yaml
+permission:
+  read:
+    "src/**": allow
+    "secrets/**": deny
+    "**": allow
+```
+
+**Bash** - patterns match against the command string:
+
+```yaml
+permission:
+  bash:
+    "rm *": deny
+    "curl *": deny
+    "*": allow
+```
+
+**Task delegation** - patterns match against the target agent name:
+
+```yaml
+permission:
+  task:
+    "reader-*": allow
+    "*": deny
+```
+
+**Note:** `task` is special - when omitted entirely (not just set to a pattern),
+it allows delegation to all callable subagents for [OpenCode] compatibility.
+To disable delegation, explicitly set `task: deny`.
 
 #### Tool settings
 
@@ -144,20 +177,20 @@ tool_settings:
 
 **Setting reference:**
 
-| Tool     | Setting                 | Type  | Default  | Min  | Description                                             |
-| -------- | ----------------------- | ----- | -------- | ---- | ------------------------------------------------------- |
-| read     | `line_numbers`          | bool  | `true`   | —    | Show line numbers in output                             |
-| read     | `limit`                 | usize | `2000`   | 1    | Max lines per file read                                 |
-| read     | `max_line_length`       | usize | `2000`   | 4    | Max characters per line (truncates longer lines)        |
-| grep     | `line_numbers`          | bool  | `true`   | —    | Show line numbers in output                             |
-| grep     | `limit`                 | usize | `100`    | 1    | Max matches returned                                    |
-| grep     | `max_line_length`       | usize | `2000`   | 4    | Max characters per match line                           |
-| glob     | `limit`                 | usize | `1000`   | 1    | Max files returned                                      |
-| bash     | `timeout_ms`            | usize | `120000` | 1000 | Default command timeout in milliseconds                 |
-| bash     | `max_timeout_ms`        | usize | `600000` | *    | Maximum timeout LLM can request (must be >= timeout_ms) |
-| webfetch | `timeout_ms`            | usize | `30000`  | 1000 | Fetch timeout in milliseconds                           |
-| webfetch | `max_timeout_ms`        | usize | `600000` | *    | Maximum timeout LLM can request (must be >= timeout_ms) |
-| webfetch | `max_response_size`     | usize | `5242880`| 1    | Max response body size in bytes                         |
+| Tool     | Setting             | Type  | Default   | Min  | Description                                             |
+| -------- | ------------------- | ----- | --------- | ---- | ------------------------------------------------------- |
+| read     | `line_numbers`      | bool  | `true`    | -    | Show line numbers in output                             |
+| read     | `limit`             | usize | `2000`    | 1    | Max lines per file read                                 |
+| read     | `max_line_length`   | usize | `2000`    | 4    | Max characters per line (truncates longer lines)        |
+| grep     | `line_numbers`      | bool  | `true`    | -    | Show line numbers in output                             |
+| grep     | `limit`             | usize | `100`     | 1    | Max matches returned                                    |
+| grep     | `max_line_length`   | usize | `2000`    | 4    | Max characters per match line                           |
+| glob     | `limit`             | usize | `1000`    | 1    | Max files returned                                      |
+| bash     | `timeout_ms`        | usize | `120000`  | 1000 | Default command timeout in milliseconds                 |
+| bash     | `max_timeout_ms`    | usize | `600000`  | *    | Maximum timeout LLM can request (must be >= timeout_ms) |
+| webfetch | `timeout_ms`        | usize | `30000`   | 1000 | Fetch timeout in milliseconds                           |
+| webfetch | `max_timeout_ms`    | usize | `600000`  | *    | Maximum timeout LLM can request (must be >= timeout_ms) |
+| webfetch | `max_response_size` | usize | `5242880` | 1    | Max response body size in bytes                         |
 
 **Output format:**
 
@@ -230,7 +263,7 @@ loader.add_directory(&mut catalog, "/home/user/.opencode")?;
 
 let runtime = AgentRuntimeBuilder::new()
     .catalog(catalog)
-    .defaults(AgentDefaults::with_model("openai/gpt-4o-mini"))
+    .defaults(AgentDefaults::with_model("openai/gpt-5.4"))
     // .max_task_depth(5)  // optional; defaults to 3 Task hops
     // .tools(my_custom_tools)  // optional; defaults to read/write/edit/glob/grep/bash/webfetch/todoread/todowrite/task
     .build();
@@ -239,16 +272,37 @@ let runtime = AgentRuntimeBuilder::new()
 # Ok::<(), llm_coding_tools_agents::AgentLoadError>(())
 ```
 
-## Compatibility notes
+## Differences from OpenCode
+
+The agent file format mirrors [OpenCode]'s. Many files are drop-in
+compatible, but there are differences:
+
+### Default-deny permissions
+
+This library **denies tools unless explicitly allowed**. OpenCode uses
+default-allow. This is because `llm-coding-tools` targets
+automation/servers, where determinism is more valuable.
+
+For default-allow behaviour, [open a PR].
+
+### File path matching
+
+File tool patterns (`read`, `write`, `edit`, `glob`, `grep`) match against
+the path as given, supporting both absolute (`/home/user/...`, `C:/...`)
+and relative paths. OpenCode instead provides `external_directory` for
+granting access outside the workspace. This library omits that in favour
+of more granular pattern control.
+
+### Interactive settings
 
 This library does not provide interactive UX extensions (for example, TUI
-approval flows).
+approval flows). To avoid false expectations, settings that require
+interaction are rejected, while settings with no runtime effect are
+accepted and ignored:
 
-To avoid false expectations, settings that require interaction are rejected,
-while settings with no runtime effect are accepted and ignored:
-
-- `permission.task: ask` - Rejected with a schema validation error (`allow`/`deny`
-  only), because `ask` is an interactive approval mode in OpenCode.
+- `permission.task: ask` - Rejected with a schema validation error
+  (`allow`/`deny` only), because `ask` is an interactive approval mode in
+  [OpenCode].
 - `hidden` - Accepted for compatibility, but ignored at runtime.
 
 For the internal architecture, see [ARCHITECTURE.md](https://github.com/Sewer56/llm-coding-tools/blob/main/src/llm-coding-tools-agents/ARCHITECTURE.md).
@@ -259,3 +313,6 @@ For the internal architecture, see [ARCHITECTURE.md](https://github.com/Sewer56/
 [models.dev]: https://models.dev
 [OpenCode agent schema]: https://opencode.ai/docs/agents/
 [open a PR]: https://github.com/Sewer56/llm-coding-tools/pulls
+[OpenCode]: https://opencode.ai/
+[Documentation]: https://sewer56.github.io/llm-coding-tools/agents
+[API Reference]: https://docs.rs/llm-coding-tools-agents

@@ -1,10 +1,10 @@
 # Architecture: llm-coding-tools-serdesai (Agent Runtime)
 
-SerdesAI adapter that builds runnable [`serdes_ai::Agent`] instances from the
+[SerdesAI] adapter that builds runnable [`serdes_ai::Agent`] instances from the
 framework-agnostic [`AgentRuntime`] provided by `llm-coding-tools-agents`.
 
 The crate also contains standalone tools (read, write, edit, glob, grep,
-bash, webfetch, todo) and Linux bubblewrap sandboxing. This document focuses
+bash, webfetch, todo) and Linux [bubblewrap] sandboxing. This document focuses
 on the **agent runtime** subsystem.
 
 For the foundation crate, see
@@ -67,7 +67,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
 ## Phase 1: Building Agents
 
-Transform framework-agnostic agent configurations into runnable SerdesAI
+Transform framework-agnostic agent configurations into runnable [SerdesAI]
 agents with tools.
 
 `AgentBuildContext::build()` is the single public build entrypoint.
@@ -94,8 +94,8 @@ This context holds references to shared resources and can build multiple agents.
 
 ### Building a SerdesAI Agent (Runtime)
 
-Build individual SerdesAI agents from the context (can be called multiple times).
-Transforms the framework-agnostic [`AgentConfig`] into a runnable SerdesAI
+Build individual [SerdesAI] agents from the context (can be called multiple times).
+Transforms the framework-agnostic [`AgentConfig`] into a runnable [SerdesAI]
 [`Agent`]:
 
 ```text
@@ -126,7 +126,7 @@ Transforms the framework-agnostic [`AgentConfig`] into a runnable SerdesAI
                SerdesAI Agent<(), String>
 ```
 
-Results in a runnable SerdesAI `Agent<(), String>` ready to call `.run()`.
+Results in a runnable [SerdesAI] `Agent<(), String>` ready to call `.run()`.
 
 Internally shares the build context (via Arc) so delegated sub-agents can
 recursively build each other at runtime.
@@ -134,7 +134,7 @@ recursively build each other at runtime.
 ### Shared: prepare_build()
 
 Central helper that gathers all configuration from the runtime catalog
-([`AgentConfig`]) to construct a runnable SerdesAI [`Agent`].
+([`AgentConfig`]) to construct a runnable [SerdesAI] [`Agent`].
 
 ```text
 prepare_build(runtime, name, model_catalog, credentials)
@@ -178,7 +178,7 @@ Precedence: **agent override** wins over **runtime default**.
 
 #### Provider Bridge: `build_serdes_model`
 
-Connects framework-agnostic [`ResolvedModel`] to concrete SerdesAI
+Connects framework-agnostic [`ResolvedModel`] to concrete [SerdesAI]
 [`BoxedModel`] implementations:
 
 ```text
@@ -302,3 +302,6 @@ llm-coding-tools-serdesai/src/
 ├── agent_ext.rs            AgentBuilderExt - bridges serdes_ai::tools::Tool -> ToolExecutor
 └── lib.rs                  crate root, re-exports
 ```
+
+[SerdesAI]: https://crates.io/crates/serdes-ai
+[bubblewrap]: https://github.com/containers/bubblewrap

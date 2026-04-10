@@ -2,9 +2,12 @@
 
 [![Crates.io](https://img.shields.io/crates/v/llm-coding-tools-core.svg)](https://crates.io/crates/llm-coding-tools-core) [![Docs.rs](https://docs.rs/llm-coding-tools-core/badge.svg)](https://docs.rs/llm-coding-tools-core)
 
-Framework-agnostic core library of standard tools used by coding agents - headless, TUI, or anything in between.
+Framework-agnostic core tools for building coding agents - file operations,
+search, shell execution, sandboxing, permissions, and system prompt generation.
 
-`llm-coding-tools-core` provides reviewed, production-grade implementations of common coding-agent tools, plus shared safety, prompt, and policy primitives.
+Headless, TUI, or anything in between. Production-grade implementations with minimal overhead.
+
+[Documentation] · [API Reference]
 
 ## Table of contents
 
@@ -46,7 +49,7 @@ llm-coding-tools-core = { version = "0.2", default-features = false, features = 
 Canonical tool metadata lives in [`tool_metadata`].
 
 Each grouped module exposes the model-facing tool name plus the provider-facing
-metadata used by wrappers such as SerdesAI: [`read`], [`write`], [`edit`],
+metadata used by wrappers such as [SerdesAI]: [`read`], [`write`], [`edit`],
 [`glob`], [`grep`], [`bash`], [`webfetch`], [`todoread`], [`todowrite`],
 and [`task`].
 
@@ -107,7 +110,8 @@ fn demo() -> ToolResult<()> {
 #### Permission glob semantics
 
 - `*` matches any characters within a single path component (e.g., `*.rs` matches `lib.rs` but not `src/lib.rs`).
-- `**` matches any number of path components (e.g., `src/**/*.rs` matches `src/deep/nested/mod.rs`).
+- `**` matches any number of path components, relative to the workspace root (e.g., `src/**/*.rs` matches `src/deep/nested/mod.rs`).
+- `/**` matches any absolute path on the system (e.g., matches `/etc/passwd`, `C:/Windows/system32`).
 - Bare `allow` maps to `**` (all files under the workspace root).
 - Relative patterns are implicitly joined with the workspace root at construction time.
 - Absolute patterns (leading `/` or drive-root like `C:/`) are treated as-is.
@@ -285,11 +289,12 @@ use llm_coding_tools_core::permissions::{ExpandError, PermissionAction, Rule, Ru
 # fn main() -> Result<(), ExpandError> {
 let mut rules = Ruleset::new();
 rules.push(Rule::new("bash", "*", PermissionAction::Allow)?);
-rules.push(Rule::new("task", "orchestrator-*", PermissionAction::Allow)?);
-rules.push(Rule::new("task", "*", PermissionAction::Deny)?);
+rules.push(Rule::new("task", "*", PermissionAction::Deny)?);               // catch-all
+rules.push(Rule::new("task", "orchestrator-*", PermissionAction::Allow)?); // specific (last match wins)
 
 assert_eq!(rules.evaluate("bash", "any-agent"), PermissionAction::Allow);
-assert_eq!(rules.evaluate("task", "orchestrator-review"), PermissionAction::Deny); // last-match-wins
+assert_eq!(rules.evaluate("task", "orchestrator-review"), PermissionAction::Allow); // last-match-wins
+assert_eq!(rules.evaluate("task", "other-agent"), PermissionAction::Deny); // no match, defaults to deny
 # Ok(())
 # }
 ```
@@ -354,3 +359,6 @@ let key = resolver.resolve("OPENAI_API_KEY");
 [`CredentialResolver::new()`]: crate::CredentialResolver::new
 [`CredentialResolver::without_env()`]: crate::CredentialResolver::without_env
 [`set_override`]: crate::CredentialResolver::set_override
+[SerdesAI]: https://crates.io/crates/serdes-ai
+[Documentation]: https://sewer56.github.io/llm-coding-tools/
+[API Reference]: https://docs.rs/llm-coding-tools-core

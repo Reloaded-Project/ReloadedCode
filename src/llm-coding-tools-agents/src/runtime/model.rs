@@ -17,8 +17,8 @@
 //!
 //! # Identifier Format
 //!
-//! Models use `provider/model-id` format, like `openai/gpt-4o` or
-//! `openrouter/anthropic/claude-3-5-sonnet`. Invalid formats (missing `/`
+//! Models use `provider/model-id` format, like `openai/gpt-5.4` or
+//! `ollama-cloud/minimax-m2.7`. Invalid formats (missing `/`
 //! or empty segments) produce [`ModelResolutionError::MalformedModelIdentifier`].
 //!
 //! # Validation
@@ -196,9 +196,9 @@ pub fn resolve_model_with_catalog(
 /// # Examples
 ///
 /// ```text
-/// Agent has its own model set: "openai/gpt-4o"
-/// Defaults also has a model set: "anthropic/claude-3-5-sonnet"
-/// Result: ("openai", "gpt-4o", "agent override")
+/// Agent has its own model set: "openai/gpt-5.4"
+/// Defaults also has a model set: "ollama-cloud/minimax-m2.7"
+/// Result: ("openai", "gpt-5.4", "agent override")
 /// The agent's model wins because it was set directly.
 /// ```
 ///

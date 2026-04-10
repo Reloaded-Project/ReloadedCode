@@ -2,7 +2,7 @@
 name = "llm-coding-tools-agents"
 version = "0.1.0"
 edition = "2021"
-description = "Agent configuration loading from OpenCode-style markdown files with YAML frontmatter"
+description = "Agent configuration loading from markdown files with YAML frontmatter (similar to OpenCode)"
 repository = "https://github.com/Sewer56/llm-coding-tools"
 license = "Apache-2.0"
 include = ["src/**/*", "README.md"]

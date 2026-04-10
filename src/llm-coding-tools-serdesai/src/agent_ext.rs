@@ -11,7 +11,7 @@
 //! use serdes_ai::prelude::*;
 //!
 //! # fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
-//! let agent = AgentBuilder::<(), String>::from_model("openai:gpt-4o")?
+//! let agent = AgentBuilder::<(), String>::from_model("openai:gpt-5.4")?
 //!     .tool(ReadTool::new(AbsolutePathResolver))
 //!     .tool(GlobTool::new(AbsolutePathResolver))
 //!     .system_prompt("You are helpful.")
@@ -65,7 +65,7 @@ pub trait AgentBuilderExt<Deps, Output> {
     /// use serdes_ai::prelude::*;
     ///
     /// # fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
-    /// let agent = AgentBuilder::<(), String>::from_model("openai:gpt-4o")?
+    /// let agent = AgentBuilder::<(), String>::from_model("openai:gpt-5.4")?
     ///     .tool(ReadTool::new(AbsolutePathResolver))
     ///     .tool(GlobTool::new(AbsolutePathResolver))
     ///     .build();

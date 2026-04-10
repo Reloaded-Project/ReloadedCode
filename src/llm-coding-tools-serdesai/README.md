@@ -2,7 +2,10 @@
 
 [![Crates.io](https://img.shields.io/crates/v/llm-coding-tools-serdesai.svg)](https://crates.io/crates/llm-coding-tools-serdesai) [![Docs.rs](https://docs.rs/llm-coding-tools-serdesai/badge.svg)](https://docs.rs/llm-coding-tools-serdesai)
 
-Lightweight, high-performance serdesAI implementation for [llm-coding-tools].
+Ready-to-use [SerdesAI] integration for [llm-coding-tools]. Tool adapters,
+agent build context, 15 provider bridges, and multi-agent task delegation.
+
+[Documentation] · [API Reference]
 
 ## Installation
 
@@ -29,7 +32,7 @@ let (todo_read, todo_write, _state) = create_todo_tools();
 let mut pb = SystemPromptBuilder::new();
 
 // Build agent with tools - call .system_prompt() last
-let agent = AgentBuilder::<(), String>::from_model("openai:gpt-4o")?
+let agent = AgentBuilder::<(), String>::from_model("openai:gpt-5.4")?
     .tool(pb.track(ReadTool::new(AbsolutePathResolver)))
     .tool(pb.track(GlobTool::new(AbsolutePathResolver)))
     .tool(pb.track(GrepTool::new(AbsolutePathResolver)))
@@ -85,13 +88,32 @@ let write = WriteTool::new(resolver.clone());
 let edit = EditTool::new(resolver);
 ```
 
+For fine-grained glob-based allow/deny rules, use [`AllowedGlobResolver`]:
+
+```rust,no_run
+use llm_coding_tools_serdesai::ReadTool;
+use llm_coding_tools_core::path::{AllowedGlobResolver, GlobPolicy, RuleAction};
+
+# fn example() -> Result<(), Box<dyn std::error::Error>> {
+let resolver = AllowedGlobResolver::new("/home/user/project")?
+    .with_policy(
+        GlobPolicy::builder()
+            .add("src/**", RuleAction::Allow)?
+            .add("target/**", RuleAction::Deny)?
+            .build()?
+    );
+let read = ReadTool::new(resolver);
+# Ok(())
+# }
+```
+
 Use `SystemPromptBuilder` to track tools and generate context-aware prompts.
 Context strings are re-exported in `llm_coding_tools_serdesai::context`
 (e.g., `BASH`, `READ_ABSOLUTE`, `READ_ALLOWED`).
 
 ## Build and Run Agents
 
-Load agents, load the models.dev catalog, then build by name from a shared
+Load agents, load the [models.dev] catalog, then build by name from a shared
 [`AgentBuildContext`]:
 
 ```rust,no_run
@@ -111,7 +133,7 @@ let load_result = ModelsDevCatalog::load().await?;
 
 let runtime = AgentRuntimeBuilder::new()
     .catalog(catalog)
-    .defaults(AgentDefaults::with_model("openrouter/openai/gpt-4o-mini"))
+    .defaults(AgentDefaults::with_model("ollama-cloud/minimax-m2.7"))
     // .max_task_depth(5) // Optional: defaults to 3 Task hops
     .build()?;
 
@@ -142,6 +164,10 @@ See [examples/serdesai-agents.rs](examples/serdesai-agents.rs) and
 
 ## Linux Shell Sandboxing
 
+Sandboxing is **not enabled by default** for the `bash` tool - it runs
+unsandboxed on the host unless you explicitly configure a bubblewrap profile.
+File tools are sandboxed to the workspace root by default.
+
 Enable the `linux-bubblewrap` feature flag to use Linux `bwrap` sandbox profiles:
 
 ```toml
@@ -149,7 +175,7 @@ Enable the `linux-bubblewrap` feature flag to use Linux `bwrap` sandbox profiles
 llm-coding-tools-serdesai = { version = "0.2", features = ["linux-bubblewrap"] }
 ```
 
-Out of the box, 2 profiles are available:
+Two profiles are available:
 
 - **Public Bot**: Assumes anyone can call; and thus defaults to the strictest containment.
     - No full host filesystem access, synthetic home, memory-backed `/tmp`, network disabled, sanitized system `PATH`.
@@ -188,3 +214,7 @@ For agent runtime architecture, see [AGENTS-ARCHITECTURE.md](AGENTS-ARCHITECTURE
 Apache 2.0
 
 [llm-coding-tools]: https://github.com/Sewer56/llm-coding-tools
+[SerdesAI]: https://crates.io/crates/serdes-ai
+[models.dev]: https://models.dev
+[Documentation]: https://sewer56.github.io/llm-coding-tools/
+[API Reference]: https://docs.rs/llm-coding-tools-serdesai

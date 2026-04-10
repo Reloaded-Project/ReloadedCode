@@ -1,13 +1,17 @@
 # llm-coding-tools-bubblewrap
 
-Builds bubblewrap profiles, availability checks, and wrapped commands for `llm-coding-tools`.
+Builds [bubblewrap] profiles, availability checks, and wrapped commands for
+`llm-coding-tools`.
 
-**Linux only.**
+**Linux only.** Two preset profiles: Public Bot (untrusted input, no network) and
+Trusted Maintenance (trusted automation, network enabled).
+
+[Documentation] · [API Reference]
 
 ## Main Types
 
-- [`Builder`] - Builds a bubblewrap profile.
-- [`Profile`] - A validated bubblewrap profile ready for reuse.
+- [`Builder`] - Builds a [bubblewrap] profile.
+- [`Profile`] - A validated [bubblewrap] profile ready for reuse.
 - [`Availability::detect`] - Checks whether `bwrap` can run.
 - [`wrap::wrap_command`] - Builds a `bwrap` command from a profile.
 - `tokio::build_command_wrap` - Builds the async wrapped command.
@@ -127,7 +131,7 @@ and precomputes the reusable `bwrap` argv prefix.
 [`TmpBacking::BindHost`] to mount a host directory at `/tmp`.
 
 [`wrap::wrap_command`] tries a visible host `bash` first and falls back to `sh`.
-On Nix systems that is often under `/nix/store/...`. On FHS systems it is often
+On [Nix] systems that is often under `/nix/store/...`. On FHS systems it is often
 under `/usr/bin` or `/bin`.
 
 [`Preset::PublicBot`] filters out user-home, temp, wrapper, and
@@ -156,3 +160,7 @@ For the internal architecture and module layout, see [ARCHITECTURE.md](ARCHITECT
 [`Profile`]: crate::Profile
 [`Builder`]: crate::Builder
 [`wrap::wrap_command`]: crate::wrap::wrap_command
+[bubblewrap]: https://github.com/containers/bubblewrap
+[Nix]: https://nixos.org
+[Documentation]: https://sewer56.github.io/llm-coding-tools/sandboxing
+[API Reference]: https://docs.rs/llm-coding-tools-bubblewrap

@@ -24,7 +24,7 @@ think hard
 - `objectives_path` (optional): additional objectives file
 - Review context from orchestrator:
   - Task intent (one-line summary)
-  - Coder's concerns (areas of uncertainty — focus review here)
+  - Coder's concerns (areas of uncertainty - focus review here)
   - Related files reviewed by coder
 
 # Process
@@ -48,7 +48,7 @@ think hard
 
 ## 4) Review code semantics
 
-Analyze each changed file deeply. Reason through whether issues exist before concluding — don't just scan for patterns. Be comprehensive; flag anything suspicious.
+Analyze each changed file deeply. Reason through whether issues exist before concluding - don't just scan for patterns. Be comprehensive; flag anything suspicious.
 
 Severity levels:
 - CRITICAL: immediate security vulnerabilities, data loss risks, system crashes
@@ -64,7 +64,7 @@ Severity levels:
 
 ## 5) Review coder concerns
 If the coder flagged concerns, examine those areas with extra scrutiny.
-These are areas where the implementer was uncertain — validate the approach or flag issues.
+These are areas where the implementer was uncertain - validate the approach or flag issues.
 
 ## 6) Review objectives
 - Read all objectives from prompt file
@@ -96,12 +96,12 @@ Provide this exact structure in the final message:
 # QUALITY GATE REPORT (GPT-5)
 
 ## Summary
-[PASS|PARTIAL|FAIL] — X files, C critical, H high, M medium, L low
+[PASS|PARTIAL|FAIL] - X files, C critical, H high, M medium, L low
 
 ## Objectives
 
 ### "Objective description"
-[MET|NOT_MET|PARTIAL] — evidence: file:line or explanation
+[MET|NOT_MET|PARTIAL] - evidence: file:line or explanation
 Issue: ... (if not met)
 Suggestion: ... (if not met)
 
@@ -114,7 +114,7 @@ Description of issue
 
 ## Code Review Findings
 
-### path/to/file:line — Title
+### path/to/file:line - Title
 [SECURITY|CORRECTNESS|PERFORMANCE|ERROR_HANDLING|ARCHITECTURE|CROSS_FILE] [CRITICAL|HIGH|MEDIUM|LOW]
 Detailed explanation of the problem and why it matters
 **Impact:** What could go wrong
@@ -124,7 +124,7 @@ Detailed explanation of the problem and why it matters
 ```
 
 ## Test Issues
-[basic|no] — [PASS|FAIL|FORBIDDEN_TESTS_FOUND]
+[basic|no] - [PASS|FAIL|FORBIDDEN_TESTS_FOUND]
 
 ### path/to/test:line
 [DUPLICATE|NON_DETERMINISTIC|MISSING_COVERAGE|OVERENGINEERED]
@@ -133,19 +133,19 @@ Description
 ## Verification Checks
 
 ### Formatting
-[PASS|FAIL] — X issues
+[PASS|FAIL] - X issues
 Details if failed
 
 ### Linting
-[PASS|FAIL] — X errors, Y warnings
+[PASS|FAIL] - X errors, Y warnings
 Details if failed
 
 ### Type/Build
-[PASS|FAIL] — X errors
+[PASS|FAIL] - X errors
 Details if failed
 
 ### Tests
-[PASS|FAIL|SKIPPED|FORBIDDEN_TESTS_FOUND] — X passed, Y failed
+[PASS|FAIL|SKIPPED|FORBIDDEN_TESTS_FOUND] - X passed, Y failed
 Details if failed
 
 ## Recommendation

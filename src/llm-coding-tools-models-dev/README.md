@@ -2,15 +2,17 @@
 
 [![Crates.io](https://img.shields.io/crates/v/llm-coding-tools-models-dev.svg)](https://crates.io/crates/llm-coding-tools-models-dev) [![Docs.rs](https://docs.rs/llm-coding-tools-models-dev/badge.svg)](https://docs.rs/llm-coding-tools-models-dev)
 
-Reads the online models.dev catalog into llm-coding-tools-core; with support
-for a cached fallback and caching via ETag(s).
+Sync the online [models.dev] catalog into a compact `ModelCatalog` with
+ETag caching, zstd compression, and offline fallback. ~3000 models in ~24 KiB.
+
+[Documentation] · [API Reference]
 
 ## Why this exists
 
 If you run coding agents against many providers, you want to have fresh data.
 [models.dev][models.dev] is one such source of data.
 
-This crate downloads from models.dev, keeps only the fields we need, and
+This crate downloads from [models.dev], keeps only the fields we need, and
 builds a `llm_coding_tools_core::models::ModelCatalog`.
 
 ## Usage
@@ -18,7 +20,7 @@ builds a `llm_coding_tools_core::models::ModelCatalog`.
 ### Load flow (simple)
 
 1. Read cache header (if present) and get the old ETag.
-2. Send request to models.dev with `If-None-Match` when ETag exists.
+2. Send request to [models.dev] with `If-None-Match` when ETag exists.
 3. If server returns `304 Not Modified`, load catalog from cache.
 4. If server returns `200 OK`, parse JSON, map it into catalog sources,
    write fresh cache, then build catalog.
@@ -130,10 +132,10 @@ Set `LLM_CODING_TOOLS_MODELS_DEV_CACHE_PATH` to override this path.
 
 ## Cache size and performance
 
-Current ballpark from a recent `models.dev/api.json` snapshot:
+Current ballpark from a recent [models.dev/api.json] snapshot:
 
 - Size: about `1.31 MiB` JSON -> `109 KiB` serialized payload -> `23.7 KiB` compressed cache
-- Compression: about `10.1 ms` with current `zstd` level `17`
+- Compression: about `10.1 ms` with current [zstd] level `17`
 - Decompression: about `0.057 ms` (`57 us`) in `--release`
 - Cache load into `ModelCatalog`: about `0.31 ms` (`read + decompress + decode + build`)
 
@@ -150,4 +152,7 @@ Exactly one runtime mode must be enabled.
 
 Apache-2.0
 
-[models.dev]: https://models.dev
+[models.dev/api.json]: https://models.dev/api.json
+[zstd]: https://facebook.github.io/zstd/
+[Documentation]: https://sewer56.github.io/llm-coding-tools/models-catalog
+[API Reference]: https://docs.rs/llm-coding-tools-models-dev
