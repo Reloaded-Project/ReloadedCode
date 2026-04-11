@@ -12,6 +12,6 @@ mod definition;
 mod handle;
 mod tool;
 
-pub use definition::{render_task_targets, task_tool_definition};
+pub(crate) use definition::task_tool_definition;
 pub(crate) use handle::TaskHandle;
 pub(crate) use tool::TaskTool;

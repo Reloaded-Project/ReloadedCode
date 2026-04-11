@@ -9,7 +9,7 @@ use llm_coding_tools_core::tool_metadata::task as task_meta;
 use serdes_ai::tools::{SchemaBuilder, ToolDefinition};
 
 /// Renders callable target summaries in a stable, user-facing format.
-pub fn render_task_targets(targets: &[TaskTargetSummary]) -> String {
+pub(crate) fn render_task_targets(targets: &[TaskTargetSummary]) -> String {
     if targets.is_empty() {
         return "No callable subagents are available.".to_string();
     }
@@ -30,7 +30,7 @@ pub fn render_task_targets(targets: &[TaskTargetSummary]) -> String {
 }
 
 /// Builds a SerdesAI Task definition using the shared target summaries.
-pub fn task_tool_definition(targets: &[TaskTargetSummary]) -> ToolDefinition {
+pub(crate) fn task_tool_definition(targets: &[TaskTargetSummary]) -> ToolDefinition {
     let rendered_targets = render_task_targets(targets);
     let mut description =
         String::with_capacity(task_meta::DESCRIPTION_PREFIX.len() + rendered_targets.len() + 2);
