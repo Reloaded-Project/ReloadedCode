@@ -10,7 +10,6 @@
 //! |------------------------------------|-------------------------------|------------------|
 //! | No config for tool                 | `AllowedPathResolver([root])` | prefix check     |
 //! | `Action(Allow)`                    | `AllowedPathResolver([root])` | prefix check     |
-//! | All `<prefix>/**` + Allow, no deny | `AllowedPathResolver(dirs)`   | prefix check     |
 //! | `/**` with Allow                   | `AbsolutePathResolver`        | zero             |
 //! | Otherwise                          | `AllowedGlobResolver`         | glob matching    |
 
@@ -72,8 +71,6 @@ impl PathResolver for FileToolResolver {
 /// - No config for tool -> `AllowedPathResolver([workspace_root])` (workspace only)
 /// - `Action(Allow)` -> `AllowedPathResolver([workspace_root])`
 /// - `"/**"` -> `AbsolutePathResolver` (any absolute path)
-/// - `is_traversal_tool == false` and all patterns are `<prefix>/**` with `Allow`, no denies
-///   -> `AllowedPathResolver(dirs)`
 /// - Otherwise -> `AllowedGlobResolver` with `GlobPolicy`
 ///
 /// # Arguments
@@ -81,9 +78,6 @@ impl PathResolver for FileToolResolver {
 /// - `config` - Permission config mapping tool names to [`PermissionRule`].
 /// - `tool_name` - Name of the tool to look up in `config`.
 /// - `workspace_root` - Workspace root used for relative-pattern resolution.
-/// - `is_traversal_tool` - `true` for tools that walk directory trees (glob,
-///   grep). These tools call `resolve(".")` and need the workspace root as the
-///   search root, so the prefix-globstar optimisation must not be applied.
 ///
 /// # Returns
 ///
@@ -98,7 +92,6 @@ pub fn build_resolver_for_tool(
     config: &IndexMap<String, PermissionRule>,
     tool_name: &str,
     workspace_root: &Path,
-    is_traversal_tool: bool,
 ) -> Result<FileToolResolver, ToolError> {
     let workspace_root = soft_canonicalize(workspace_root).map_err(|e| {
         ToolError::InvalidPath(format!(
@@ -124,21 +117,10 @@ pub fn build_resolver_for_tool(
             Ok(FileToolResolver::Allowed(resolver))
         }
         PermissionRule::Pattern(patterns) => {
-            // Optimisation: all-allow + all patterns are <prefix>/**
+            // Optimisation: all-allow + "/**" -> unrestricted access
             if patterns.values().all(|a| *a == PermissionAction::Allow) {
-                // "/**" -> unrestricted access
                 if let Some(resolver) = try_globstar_optimisation(patterns)? {
                     return Ok(FileToolResolver::Absolute(resolver));
-                }
-                // All "<prefix>/**" -> prefix-check access.
-                // Skipped for traversal tools: resolve(".") must return the
-                // workspace root so the walker can traverse the full tree.
-                if !is_traversal_tool {
-                    if let Some(resolver) =
-                        try_prefix_globstar_optimisation(patterns, &workspace_root)?
-                    {
-                        return Ok(FileToolResolver::Allowed(resolver));
-                    }
                 }
             }
             // Fall through to full glob policy
@@ -162,58 +144,6 @@ fn try_globstar_optimisation(
         }
     }
     Ok(None)
-}
-
-/// Checks if all patterns are `<prefix>/**` allows and collects the directories.
-///
-/// Returns `Some(AllowedPathResolver)` with the collected dirs if every pattern
-/// matches `<prefix>/**` form, `None` otherwise.
-fn try_prefix_globstar_optimisation(
-    patterns: &IndexMap<String, PermissionAction>,
-    workspace_root: &Path,
-) -> Result<Option<AllowedPathResolver>, ToolError> {
-    let mut dirs = Vec::with_capacity(patterns.len());
-    for pattern in patterns.keys() {
-        let expanded = expand_shell(pattern)?;
-        let expanded_str = expanded.to_string_lossy();
-        // "/**" is handled by try_globstar_optimisation; skip here
-        if expanded_str == "/**" {
-            return Ok(None);
-        }
-        if let Some(dir) = strip_trailing_globstar(&expanded_str, workspace_root) {
-            dirs.push(dir);
-        } else {
-            return Ok(None);
-        }
-    }
-    if dirs.is_empty() {
-        return Ok(None);
-    }
-    Ok(Some(AllowedPathResolver::from_canonical(dirs)))
-}
-
-/// Strips a trailing `/**` (or bare `**`) from an expanded pattern and joins
-/// relative prefixes with `workspace_root`.
-///
-/// Returns `None` if the pattern does not end with `/**` and is not bare `**`.
-fn strip_trailing_globstar(expanded: &str, workspace_root: &Path) -> Option<PathBuf> {
-    // Bare "**" -> workspace root
-    if expanded == "**" {
-        return Some(workspace_root.to_path_buf());
-    }
-    if !expanded.ends_with("/**") {
-        return None;
-    }
-    let prefix = &expanded[..expanded.len() - 3]; // strip /**
-    if prefix.is_empty() {
-        // "/**" => root directory
-        Some(PathBuf::from("/"))
-    } else if Path::new(prefix).is_absolute() {
-        Some(PathBuf::from(prefix))
-    } else {
-        // relative prefix -> join with workspace root
-        Some(workspace_root.join(prefix))
-    }
 }
 
 /// Builds a `GlobPolicy` from a pattern map.
@@ -250,7 +180,7 @@ mod tests {
         let temp = tempfile::TempDir::new().unwrap();
 
         let config = IndexMap::new();
-        let resolver = build_resolver_for_tool(&config, "read", temp.path(), false)?;
+        let resolver = build_resolver_for_tool(&config, "read", temp.path())?;
 
         let FileToolResolver::Allowed(inner) = &resolver else {
             panic!("expected Allowed, got {resolver:?}");
@@ -278,7 +208,7 @@ mod tests {
             PermissionRule::Action(PermissionAction::Allow),
         );
 
-        let resolver = build_resolver_for_tool(&config, "read", temp.path(), false)?;
+        let resolver = build_resolver_for_tool(&config, "read", temp.path())?;
 
         let FileToolResolver::Allowed(inner) = &resolver else {
             panic!("expected Allowed, got {resolver:?}");
@@ -305,7 +235,7 @@ mod tests {
         let mut config = IndexMap::new();
         config.insert("read".to_string(), PermissionRule::Pattern(patterns));
 
-        let resolver = build_resolver_for_tool(&config, "read", temp.path(), false)?;
+        let resolver = build_resolver_for_tool(&config, "read", temp.path())?;
 
         // Any absolute path is allowed, even outside the workspace.
         assert!(resolver.is_path_allowed(Path::new("/etc/passwd")));
@@ -315,11 +245,11 @@ mod tests {
 
     // ---------------------------------------------------------------
     // build_resolver_for_tool: pattern "**" (bare globstar)
-    // Workspace only (AllowedPathResolver).
+    // Bare ** pattern falls through to AllowedGlobResolver.
     // ---------------------------------------------------------------
 
     #[test]
-    fn bare_globstar_returns_allowed_workspace_root() -> TestResult {
+    fn bare_globstar_returns_glob_workspace_root() -> TestResult {
         let temp = tempfile::TempDir::new().unwrap();
 
         let mut patterns = IndexMap::new();
@@ -327,26 +257,36 @@ mod tests {
         let mut config = IndexMap::new();
         config.insert("read".to_string(), PermissionRule::Pattern(patterns));
 
-        let resolver = build_resolver_for_tool(&config, "read", temp.path(), false)?;
+        let resolver = build_resolver_for_tool(&config, "read", temp.path())?;
 
-        let FileToolResolver::Allowed(inner) = &resolver else {
-            panic!("expected Allowed, got {resolver:?}");
-        };
+        assert!(
+            matches!(resolver, FileToolResolver::Glob(_)),
+            "bare ** should use AllowedGlobResolver"
+        );
 
-        // Bare "**" -> workspace root.
-        let expected = soft_canonicalize(temp.path())?;
-        assert_eq!(inner.allowed_paths(), &[expected]);
+        let root = soft_canonicalize(temp.path())?;
+
+        // Any path within workspace should be allowed.
+        assert!(
+            resolver.is_path_allowed(&root.join("src/lib.rs")),
+            "** should permit src/lib.rs"
+        );
+        assert!(
+            resolver.is_path_allowed(&root.join("any/path/file.txt")),
+            "** should permit any path"
+        );
 
         Ok(())
     }
 
     // ---------------------------------------------------------------
     // build_resolver_for_tool: pattern "src/**"
-    // Subdirectory prefix (AllowedPathResolver).
+    // Prefix patterns now use AllowedGlobResolver (prefix-globstar
+    // optimisation was removed to fix workspace-relative resolution).
     // ---------------------------------------------------------------
 
     #[test]
-    fn prefix_globstar_returns_allowed_subdir() -> TestResult {
+    fn prefix_globstar_returns_glob() -> TestResult {
         let temp = tempfile::TempDir::new().unwrap();
         std::fs::create_dir_all(temp.path().join("src")).unwrap();
 
@@ -355,15 +295,26 @@ mod tests {
         let mut config = IndexMap::new();
         config.insert("read".to_string(), PermissionRule::Pattern(patterns));
 
-        let resolver = build_resolver_for_tool(&config, "read", temp.path(), false)?;
+        let resolver = build_resolver_for_tool(&config, "read", temp.path())?;
 
-        let FileToolResolver::Allowed(inner) = &resolver else {
-            panic!("expected Allowed, got {resolver:?}");
-        };
+        assert!(
+            matches!(resolver, FileToolResolver::Glob(_)),
+            "prefix patterns should use AllowedGlobResolver"
+        );
 
-        // "src/**" -> allowed path is workspace_root/src.
         let root = soft_canonicalize(temp.path())?;
-        assert_eq!(inner.allowed_paths(), &[root.join("src")]);
+
+        // src/** allow should permit src/lib.rs.
+        assert!(
+            resolver.is_path_allowed(&root.join("src/lib.rs")),
+            "src/** should permit src/lib.rs"
+        );
+
+        // Paths outside src/ should be denied.
+        assert!(
+            !resolver.is_path_allowed(&root.join("tests/lib.rs")),
+            "paths outside src/ should be denied"
+        );
 
         Ok(())
     }
@@ -384,7 +335,7 @@ mod tests {
         let mut config = IndexMap::new();
         config.insert("read".to_string(), PermissionRule::Pattern(patterns));
 
-        let resolver = build_resolver_for_tool(&config, "read", temp.path(), false)?;
+        let resolver = build_resolver_for_tool(&config, "read", temp.path())?;
 
         assert!(matches!(resolver, FileToolResolver::Glob(_)));
 
@@ -421,7 +372,7 @@ mod tests {
         let mut config = IndexMap::new();
         config.insert("read".to_string(), PermissionRule::Pattern(patterns));
 
-        let resolver = build_resolver_for_tool(&config, "read", temp.path(), false)?;
+        let resolver = build_resolver_for_tool(&config, "read", temp.path())?;
 
         assert!(matches!(resolver, FileToolResolver::Glob(_)));
 
@@ -430,11 +381,11 @@ mod tests {
 
     // ---------------------------------------------------------------
     // build_resolver_for_tool: multiple <prefix>/** patterns
-    // All are prefix globs -> AllowedPathResolver with multiple dirs.
+    // Prefix patterns now use AllowedGlobResolver.
     // ---------------------------------------------------------------
 
     #[test]
-    fn multiple_prefix_globstars_return_allowed_with_multiple_dirs() -> TestResult {
+    fn multiple_prefix_globstars_return_glob() -> TestResult {
         let temp = tempfile::TempDir::new().unwrap();
         std::fs::create_dir_all(temp.path().join("src")).unwrap();
         std::fs::create_dir_all(temp.path().join("tests")).unwrap();
@@ -445,17 +396,31 @@ mod tests {
         let mut config = IndexMap::new();
         config.insert("read".to_string(), PermissionRule::Pattern(patterns));
 
-        let resolver = build_resolver_for_tool(&config, "read", temp.path(), false)?;
+        let resolver = build_resolver_for_tool(&config, "read", temp.path())?;
 
-        let FileToolResolver::Allowed(inner) = &resolver else {
-            panic!("expected Allowed, got {resolver:?}");
-        };
+        assert!(
+            matches!(resolver, FileToolResolver::Glob(_)),
+            "multiple prefix globs should use AllowedGlobResolver"
+        );
 
-        // "src/**" + "tests/**" -> two allowed directories.
         let root = soft_canonicalize(temp.path())?;
-        assert_eq!(
-            inner.allowed_paths(),
-            &[root.join("src"), root.join("tests")]
+
+        // src/** allow should permit src/lib.rs.
+        assert!(
+            resolver.is_path_allowed(&root.join("src/lib.rs")),
+            "src/** should permit src/lib.rs"
+        );
+
+        // tests/** allow should permit tests/lib.rs.
+        assert!(
+            resolver.is_path_allowed(&root.join("tests/lib.rs")),
+            "tests/** should permit tests/lib.rs"
+        );
+
+        // Paths outside both src/ and tests/ should be denied.
+        assert!(
+            !resolver.is_path_allowed(&root.join("docs/lib.rs")),
+            "paths outside src/ and tests/ should be denied"
         );
 
         Ok(())
@@ -474,7 +439,7 @@ mod tests {
         let mut config = IndexMap::new();
         config.insert("read".to_string(), PermissionRule::Pattern(patterns));
 
-        let resolver = build_resolver_for_tool(&config, "read", temp.path(), false)?;
+        let resolver = build_resolver_for_tool(&config, "read", temp.path())?;
 
         assert!(matches!(resolver, FileToolResolver::Glob(_)));
 
@@ -498,7 +463,7 @@ mod tests {
         let mut config = IndexMap::new();
         config.insert("read".to_string(), PermissionRule::Pattern(patterns));
 
-        let result = build_resolver_for_tool(&config, "read", temp.path(), false);
+        let result = build_resolver_for_tool(&config, "read", temp.path());
         assert!(
             result.is_err(),
             "unresolvable shell variable should produce an error"
@@ -506,13 +471,49 @@ mod tests {
     }
 
     // ---------------------------------------------------------------
-    // Regression: prefix-globstar optimisation breaks resolve(".")
-    // for traversal tools (glob/grep). AllowedPathResolver resolves
-    // "." to the first allowed subdirectory instead of workspace root.
+    // Regression: prefix-globstar optimisation breaks
+    // workspace-relative resolution for non-traversal tools.
+    //
+    // Pattern "src/**" creates an AllowedPathResolver whose only
+    // allowed base is workspace_root/src.  When resolve() is called
+    // with "src/lib.rs" the resolver does base.join("src/lib.rs")
+    // which yields workspace_root/src/src/lib.rs — a doubled "src".
     // ---------------------------------------------------------------
 
     #[test]
-    fn prefix_globstar_optimisation_breaks_resolve_dot_for_traversal() -> TestResult {
+    fn prefix_globstar_doubles_relative_prefix_for_non_traversal() -> TestResult {
+        let temp = tempfile::TempDir::new().unwrap();
+        std::fs::create_dir_all(temp.path().join("src")).unwrap();
+        std::fs::write(temp.path().join("src/lib.rs"), "").unwrap();
+
+        let mut patterns = IndexMap::new();
+        patterns.insert("src/**".to_string(), PermissionAction::Allow);
+        let mut config = IndexMap::new();
+        config.insert("read".to_string(), PermissionRule::Pattern(patterns));
+
+        let resolver = build_resolver_for_tool(&config, "read", temp.path())?;
+        let root = soft_canonicalize(temp.path())?;
+
+        let resolved = resolver.resolve("src/lib.rs")?;
+
+        assert_eq!(
+            resolved,
+            root.join("src/lib.rs"),
+            "resolve(\"src/lib.rs\") should be workspace_root/src/lib.rs, got {:?}",
+            resolved
+        );
+
+        Ok(())
+    }
+
+    // ---------------------------------------------------------------
+    // Regression: prefix-globstar optimisation is removed.
+    // All tools now use AllowedGlobResolver which correctly resolves
+    // "." to the workspace root (not a subdirectory).
+    // ---------------------------------------------------------------
+
+    #[test]
+    fn prefix_patterns_resolve_dot_to_workspace_root() -> TestResult {
         let temp = tempfile::TempDir::new().unwrap();
         std::fs::create_dir_all(temp.path().join("src")).unwrap();
         std::fs::create_dir_all(temp.path().join("tests")).unwrap();
@@ -521,39 +522,18 @@ mod tests {
         patterns.insert("src/**".to_string(), PermissionAction::Allow);
         patterns.insert("tests/**".to_string(), PermissionAction::Allow);
         let mut config = IndexMap::new();
-        config.insert("glob".to_string(), PermissionRule::Pattern(patterns));
+        config.insert("read".to_string(), PermissionRule::Pattern(patterns));
 
-        let resolver = build_resolver_for_tool(&config, "glob", temp.path(), true)?;
+        let resolver = build_resolver_for_tool(&config, "read", temp.path())?;
         let workspace_root = soft_canonicalize(temp.path())?;
         let resolved = resolver.resolve(".")?;
 
         assert_eq!(
             resolved, workspace_root,
-            "resolve('.') must return workspace root for traversal tools, got {:?}",
+            "resolve('.') must return workspace root, got {:?}",
             resolved
         );
 
         Ok(())
-    }
-
-    // ---------------------------------------------------------------
-    // strip_trailing_globstar: unit tests
-    // Verifies the helper extracts the correct directory prefix.
-    // ---------------------------------------------------------------
-
-    #[rstest]
-    #[case::bare("**", "/workspace", Some("/workspace"))]
-    #[case::absolute_root("/**", "/workspace", Some("/"))]
-    #[case::relative("src/**", "/workspace", Some("/workspace/src"))]
-    #[case::non_globstar("*.rs", "/workspace", None)]
-    fn strip_trailing_globstar_should_extract_dir(
-        #[case] pattern: &str,
-        #[case] workspace: &str,
-        #[case] expected: Option<&str>,
-    ) {
-        assert_eq!(
-            strip_trailing_globstar(pattern, Path::new(workspace)),
-            expected.map(PathBuf::from)
-        );
     }
 }

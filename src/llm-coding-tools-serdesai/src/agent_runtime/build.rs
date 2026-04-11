@@ -173,57 +173,37 @@ where
     for entry in prepared.tools.iter() {
         match entry.kind {
             ToolCatalogKind::Read => {
-                let resolver = build_resolver_for_tool(
-                    permission_config,
-                    read_meta::NAME,
-                    workspace_root,
-                    false,
-                )
-                .with_tool(read_meta::NAME)?;
+                let resolver =
+                    build_resolver_for_tool(permission_config, read_meta::NAME, workspace_root)
+                        .with_tool(read_meta::NAME)?;
                 let settings = build_read_settings(&prepared.tool_settings.read)?;
                 builder =
                     builder.tool(prompt_builder.track(ReadTool::with_settings(resolver, settings)));
             }
             ToolCatalogKind::Write => {
-                let resolver = build_resolver_for_tool(
-                    permission_config,
-                    write_meta::NAME,
-                    workspace_root,
-                    false,
-                )
-                .with_tool(write_meta::NAME)?;
+                let resolver =
+                    build_resolver_for_tool(permission_config, write_meta::NAME, workspace_root)
+                        .with_tool(write_meta::NAME)?;
                 builder = builder.tool(prompt_builder.track(WriteTool::new(resolver)));
             }
             ToolCatalogKind::Edit => {
-                let resolver = build_resolver_for_tool(
-                    permission_config,
-                    edit_meta::NAME,
-                    workspace_root,
-                    false,
-                )
-                .with_tool(edit_meta::NAME)?;
+                let resolver =
+                    build_resolver_for_tool(permission_config, edit_meta::NAME, workspace_root)
+                        .with_tool(edit_meta::NAME)?;
                 builder = builder.tool(prompt_builder.track(EditTool::new(resolver)));
             }
             ToolCatalogKind::Glob => {
-                let resolver = build_resolver_for_tool(
-                    permission_config,
-                    glob_meta::NAME,
-                    workspace_root,
-                    true,
-                )
-                .with_tool(glob_meta::NAME)?;
+                let resolver =
+                    build_resolver_for_tool(permission_config, glob_meta::NAME, workspace_root)
+                        .with_tool(glob_meta::NAME)?;
                 let settings = build_glob_settings(&prepared.tool_settings.glob)?;
                 builder =
                     builder.tool(prompt_builder.track(GlobTool::with_settings(resolver, settings)));
             }
             ToolCatalogKind::Grep => {
-                let resolver = build_resolver_for_tool(
-                    permission_config,
-                    grep_meta::NAME,
-                    workspace_root,
-                    true,
-                )
-                .with_tool(grep_meta::NAME)?;
+                let resolver =
+                    build_resolver_for_tool(permission_config, grep_meta::NAME, workspace_root)
+                        .with_tool(grep_meta::NAME)?;
                 let (search_settings, formatting_settings) =
                     build_grep_settings(&prepared.tool_settings.grep)?;
                 builder = builder.tool(prompt_builder.track(GrepTool::with_settings(
