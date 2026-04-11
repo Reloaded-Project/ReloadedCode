@@ -10,6 +10,7 @@
 //! |------------------------------------|-------------------------------|------------------|
 //! | No config for tool                 | `AllowedPathResolver([root])` | prefix check     |
 //! | `Action(Allow)`                    | `AllowedPathResolver([root])` | prefix check     |
+//! | Pattern `**` with Allow            | `AllowedPathResolver([root])` | prefix check     |
 //! | `/**` with Allow                   | `AbsolutePathResolver`        | zero             |
 //! | Otherwise                          | `AllowedGlobResolver`         | glob matching    |
 
@@ -70,6 +71,7 @@ impl PathResolver for FileToolResolver {
 ///
 /// - No config for tool -> `AllowedPathResolver([workspace_root])` (workspace only)
 /// - `Action(Allow)` -> `AllowedPathResolver([workspace_root])`
+/// - Pattern `"**"` with Allow -> `AllowedPathResolver([workspace_root])` (workspace only)
 /// - `"/**"` -> `AbsolutePathResolver` (any absolute path)
 /// - Otherwise -> `AllowedGlobResolver` with `GlobPolicy`
 ///
@@ -117,10 +119,16 @@ pub fn build_resolver_for_tool(
             Ok(FileToolResolver::Allowed(resolver))
         }
         PermissionRule::Pattern(patterns) => {
-            // Optimisation: all-allow + "/**" -> unrestricted access
+            // Optimisation: all-allow patterns
             if patterns.values().all(|a| *a == PermissionAction::Allow) {
+                // "/**" -> unrestricted access to any absolute path
                 if let Some(resolver) = try_globstar_optimisation(patterns)? {
                     return Ok(FileToolResolver::Absolute(resolver));
+                }
+                // "**" -> workspace only (equivalent to Action(Allow))
+                if is_bare_globstar(patterns) {
+                    let resolver = AllowedPathResolver::from_canonical(vec![workspace_root]);
+                    return Ok(FileToolResolver::Allowed(resolver));
                 }
             }
             // Fall through to full glob policy
@@ -146,6 +154,21 @@ fn try_globstar_optimisation(
     Ok(None)
 }
 
+/// Checks if the pattern map contains exactly one pattern "**" (bare globstar).
+///
+/// Returns `true` if there's a single pattern and it expands to "**",
+/// indicating workspace-only access (equivalent to `Action(Allow)`).
+fn is_bare_globstar(patterns: &IndexMap<String, PermissionAction>) -> bool {
+    if patterns.len() != 1 {
+        return false;
+    }
+    let pattern = patterns.keys().next().expect("len == 1");
+    if let Ok(expanded) = expand_shell(pattern) {
+        return expanded.to_string_lossy() == "**";
+    }
+    false
+}
+
 /// Builds a `GlobPolicy` from a pattern map.
 fn build_glob_policy(
     patterns: &IndexMap<String, PermissionAction>,
@@ -165,7 +188,6 @@ fn build_glob_policy(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use rstest::rstest;
     use soft_canonicalize::soft_canonicalize;
 
     type TestResult = Result<(), ToolError>;
@@ -245,11 +267,11 @@ mod tests {
 
     // ---------------------------------------------------------------
     // build_resolver_for_tool: pattern "**" (bare globstar)
-    // Bare ** pattern falls through to AllowedGlobResolver.
+    // Equivalent to Action(Allow): workspace only via AllowedPathResolver.
     // ---------------------------------------------------------------
 
     #[test]
-    fn bare_globstar_returns_glob_workspace_root() -> TestResult {
+    fn bare_globstar_returns_allowed_workspace_root() -> TestResult {
         let temp = tempfile::TempDir::new().unwrap();
 
         let mut patterns = IndexMap::new();
@@ -259,20 +281,21 @@ mod tests {
 
         let resolver = build_resolver_for_tool(&config, "read", temp.path())?;
 
-        assert!(
-            matches!(resolver, FileToolResolver::Glob(_)),
-            "bare ** should use AllowedGlobResolver"
-        );
+        let FileToolResolver::Allowed(inner) = &resolver else {
+            panic!("expected Allowed, got {resolver:?}");
+        };
 
-        let root = soft_canonicalize(temp.path())?;
+        // Bare "**" -> workspace root (same as Action(Allow)).
+        let expected = soft_canonicalize(temp.path())?;
+        assert_eq!(inner.allowed_paths(), &[expected.clone()]);
 
         // Any path within workspace should be allowed.
         assert!(
-            resolver.is_path_allowed(&root.join("src/lib.rs")),
+            resolver.is_path_allowed(&expected.join("src/lib.rs")),
             "** should permit src/lib.rs"
         );
         assert!(
-            resolver.is_path_allowed(&root.join("any/path/file.txt")),
+            resolver.is_path_allowed(&expected.join("any/path/file.txt")),
             "** should permit any path"
         );
 
