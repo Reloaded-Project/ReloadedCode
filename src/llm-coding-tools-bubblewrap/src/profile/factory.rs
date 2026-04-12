@@ -194,6 +194,7 @@ pub fn create_sandbox(
     preset: Preset,
     dirs: &SandboxDirs<'_>,
 ) -> Result<Arc<Profile>, CreateSandboxError> {
+    let availability = detect_availability()?;
     // Select the builder preset for the desired sandbox policy.
     let builder = match preset {
         Preset::TrustedMaintenance => {
@@ -201,22 +202,7 @@ pub fn create_sandbox(
         }
         Preset::PublicBot => Builder::public_bot(workspace, dirs.home(), dirs.cache(), None),
     };
-    // Verify bubblewrap is present and usable on the host before building.
-    let availability = Availability::detect();
-    if !availability.is_available() {
-        return Err(CreateSandboxError::Unavailable(
-            availability
-                .reason()
-                .unwrap_or("unknown reason")
-                .to_string(),
-        ));
-    }
-    // Assemble and validate the profile, surfacing any structural errors.
-    let profile = builder
-        .with_availability(availability)
-        .build()
-        .map_err(CreateSandboxError::Profile)?;
-    Ok(Arc::new(profile))
+    create_sandbox_inner(builder, availability)
 }
 
 /// Creates a sandbox with a custom builder and a directory spec.
@@ -246,27 +232,15 @@ pub fn create_sandbox_with<F>(
 where
     F: FnOnce(&Path, &SandboxDirs<'_>) -> Builder,
 {
+    let availability = detect_availability()?;
     let builder = f(workspace, dirs);
-    let availability = Availability::detect();
-    if !availability.is_available() {
-        return Err(CreateSandboxError::Unavailable(
-            availability
-                .reason()
-                .unwrap_or("unknown reason")
-                .to_string(),
-        ));
-    }
-    let profile = builder
-        .with_availability(availability)
-        .build()
-        .map_err(CreateSandboxError::Profile)?;
-    Ok(Arc::new(profile))
+    create_sandbox_inner(builder, availability)
 }
 
 /// Creates a sandbox from a preset with auto-managed temp directories.
 ///
-/// Convenience wrapper that creates a [`TempSandboxDirs`] and delegates to
-/// [`create_sandbox`]. The temp directory is wrapped in [`Arc`] so it can be
+/// Convenience wrapper that creates a [`TempSandboxDirs`] and builds a
+/// sandbox profile. The temp directory is wrapped in [`Arc`] so it can be
 /// stored alongside the profile in shared state.
 ///
 /// # Directory layout
@@ -293,7 +267,41 @@ pub fn create_temp_sandbox(
     workspace: &Path,
     preset: Preset,
 ) -> Result<(Arc<Profile>, Arc<TempSandboxDirs>), CreateSandboxError> {
+    let availability = detect_availability()?;
     let dirs = TempSandboxDirs::new().map_err(CreateSandboxError::Dirs)?;
-    let profile = create_sandbox(workspace, preset, &dirs.as_dirs())?;
+    // Select the builder preset for the desired sandbox policy.
+    let builder = match preset {
+        Preset::TrustedMaintenance => {
+            Builder::trusted_maintenance(workspace, dirs.home(), dirs.cache(), dirs.host_tmp())
+        }
+        Preset::PublicBot => Builder::public_bot(workspace, dirs.home(), dirs.cache(), None),
+    };
+    let profile = create_sandbox_inner(builder, availability)?;
     Ok((profile, Arc::new(dirs)))
+}
+
+// Check if bwrap is available on the host.
+fn detect_availability() -> Result<Availability, CreateSandboxError> {
+    let availability = Availability::detect();
+    if !availability.is_available() {
+        return Err(CreateSandboxError::Unavailable(
+            availability
+                .reason()
+                .unwrap_or("unknown reason")
+                .to_string(),
+        ));
+    }
+    Ok(availability)
+}
+
+fn create_sandbox_inner(
+    builder: Builder,
+    availability: Availability,
+) -> Result<Arc<Profile>, CreateSandboxError> {
+    // Assemble and validate the profile, surfacing any structural errors.
+    let profile = builder
+        .with_availability(availability)
+        .build()
+        .map_err(CreateSandboxError::Profile)?;
+    Ok(Arc::new(profile))
 }
