@@ -11,6 +11,12 @@ use serdes_ai::{Agent, AgentBuilder};
 use std::path::Path;
 use std::sync::Arc;
 
+#[cfg(all(feature = "linux-bubblewrap", target_os = "linux"))]
+use llm_coding_tools_bubblewrap::{CreateSandboxError, Preset, Profile, TempSandboxDirs};
+
+#[cfg(not(all(feature = "linux-bubblewrap", target_os = "linux")))]
+use super::build::Profile;
+
 /// Reusable shared inputs for building runnable SerdesAI agents.
 ///
 /// Create once and call [`AgentBuildContext::build`] for each catalog agent
@@ -26,9 +32,20 @@ impl<C> AgentBuildContext<C>
 where
     C: CredentialLookup + Send + Sync + 'static,
 {
-    /// Creates a shared build context from runtime state, model catalog, credentials,
-    /// and the workspace root directory.
-    #[inline]
+    /// Creates a shared build context without a sandbox.
+    ///
+    /// [`BashTool`](crate::BashTool) will run commands directly on the host.
+    ///
+    /// # Platform
+    ///
+    /// For sandboxed builds on Linux with the `linux-bubblewrap` feature, use
+    /// `new_with_sandbox` or `new_with_temp_sandbox` instead.
+    ///
+    /// # Arguments
+    /// - `runtime`: Shared agent runtime holding the catalog and defaults.
+    /// - `model_catalog`: Available models for agent resolution.
+    /// - `credentials`: Credential lookup used to authenticate model requests.
+    /// - `workspace_root`: Project directory exposed to tools.
     pub fn new(
         runtime: Arc<AgentRuntime>,
         model_catalog: Arc<ModelCatalog>,
@@ -41,11 +58,120 @@ where
                 model_catalog,
                 credentials,
                 workspace_root,
+                #[cfg(all(feature = "linux-bubblewrap", target_os = "linux"))]
+                bash_sandbox: None,
+                #[cfg(all(feature = "linux-bubblewrap", target_os = "linux"))]
+                _sandbox_tmpdir: None,
             }),
         }
     }
 
+    /// Creates a shared build context with an explicitly-provided sandbox.
+    ///
+    /// Pass `sandbox_tmpdir` to tie the temp directory lifetime to this
+    /// context; omit it when the backing storage is managed elsewhere.
+    ///
+    /// # Arguments
+    /// - `runtime`: Shared agent runtime holding the catalog and defaults.
+    /// - `model_catalog`: Available models for agent resolution.
+    /// - `credentials`: Credential lookup used to authenticate model requests.
+    /// - `workspace_root`: Project directory exposed to tools.
+    /// - `profile`: Pre-built sandbox profile for [`BashTool`](crate::BashTool).
+    /// - `sandbox_tmpdir`: Optional owning temp directories that keep the
+    ///   profile's backing storage alive for the context's lifetime.
+    ///
+    /// # Platform
+    ///
+    /// Only available on Linux with the `linux-bubblewrap` feature enabled.
+    #[cfg(all(feature = "linux-bubblewrap", target_os = "linux"))]
+    pub fn new_with_sandbox(
+        runtime: Arc<AgentRuntime>,
+        model_catalog: Arc<ModelCatalog>,
+        credentials: Arc<C>,
+        workspace_root: Arc<Path>,
+        profile: Arc<Profile>,
+        sandbox_tmpdir: Option<Arc<TempSandboxDirs>>,
+    ) -> Self {
+        Self {
+            context: Arc::new(TaskBuildContext::new_with_sandbox(
+                runtime,
+                model_catalog,
+                credentials,
+                workspace_root,
+                profile,
+                sandbox_tmpdir,
+            )),
+        }
+    }
+
+    /// Creates a shared build context with an auto-managed temp sandbox.
+    ///
+    /// Convenience wrapper that creates a [`TempSandboxDirs`] and builds a
+    /// sandbox profile from the given preset.
+    ///
+    /// # Arguments
+    /// - `runtime`: Shared agent runtime holding the catalog and defaults.
+    /// - `model_catalog`: Available models for agent resolution.
+    /// - `credentials`: Credential lookup used to authenticate model requests.
+    /// - `workspace_root`: Project directory exposed to tools.
+    /// - `preset`: Sandbox preset controlling mount layout and permissions.
+    ///
+    /// # Returns
+    /// - `Ok(`[`AgentBuildContext`]`)`: A shared context backed by the new
+    ///   sandbox.
+    ///
+    /// # Errors
+    /// - Returns [`CreateSandboxError::Dirs`] when the system temp directory or
+    ///   any subdirectory cannot be created.
+    /// - Returns [`CreateSandboxError::Unavailable`] when `bwrap` is not found
+    ///   on `PATH` or is otherwise unusable on the host.
+    /// - Returns [`CreateSandboxError::Profile`] when profile validation or
+    ///   assembly fails (e.g., invalid paths, missing host shell).
+    ///
+    /// # Platform
+    ///
+    /// Only available on Linux with the `linux-bubblewrap` feature enabled.
+    #[cfg(all(feature = "linux-bubblewrap", target_os = "linux"))]
+    pub fn new_with_temp_sandbox(
+        runtime: Arc<AgentRuntime>,
+        model_catalog: Arc<ModelCatalog>,
+        credentials: Arc<C>,
+        workspace_root: Arc<Path>,
+        preset: Preset,
+    ) -> Result<Self, CreateSandboxError> {
+        let (profile, sandbox_tmpdir) =
+            llm_coding_tools_bubblewrap::create_temp_sandbox(&workspace_root, preset)?;
+        Ok(Self {
+            context: Arc::new(TaskBuildContext::new_with_sandbox(
+                runtime,
+                model_catalog,
+                credentials,
+                workspace_root,
+                profile,
+                Some(sandbox_tmpdir),
+            )),
+        })
+    }
+
     /// Builds a runnable SerdesAI agent for the named catalog entry.
+    ///
+    /// # Arguments
+    /// - `name`: Catalog entry name to build.
+    ///
+    /// # Returns
+    /// - `Ok(`[`Agent`]`)`: A fully constructed agent ready to run.
+    ///
+    /// # Errors
+    /// - Returns [`AgentBuildError::UnknownAgent`] when `name` is not in the
+    ///   runtime catalog.
+    /// - Returns [`AgentBuildError::ModelResolution`] when model configuration
+    ///   resolution or validation fails.
+    /// - Returns [`AgentBuildError::ModelInit`] when the SerdesAI model fails to
+    ///   initialise.
+    /// - Returns [`AgentBuildError::ToolSettingsValidation`] when tool settings
+    ///   validation fails during the build.
+    /// - Returns [`AgentBuildError::UnsupportedToolKind`] when the runtime
+    ///   contains a tool kind this adapter cannot materialise.
     #[inline]
     pub fn build(&self, name: &str) -> Result<Agent<(), String>, AgentBuildError> {
         build_agent(Arc::clone(&self.context), name, 0)
@@ -78,6 +204,10 @@ pub(crate) struct TaskBuildContext<C: CredentialLookup + Send + Sync + ?Sized = 
     model_catalog: Arc<ModelCatalog>,
     credentials: Arc<C>,
     workspace_root: Arc<Path>,
+    #[cfg(all(feature = "linux-bubblewrap", target_os = "linux"))]
+    bash_sandbox: Option<Arc<Profile>>,
+    #[cfg(all(feature = "linux-bubblewrap", target_os = "linux"))]
+    _sandbox_tmpdir: Option<Arc<TempSandboxDirs>>,
 }
 
 impl<C> TaskBuildContext<C>
@@ -88,6 +218,38 @@ where
     #[inline]
     pub(crate) fn runtime(&self) -> &AgentRuntime {
         self.runtime.as_ref()
+    }
+
+    /// Creates a task build context with an explicitly-provided sandbox.
+    ///
+    /// Pass `_sandbox_tmpdir` to tie the temp directory lifetime to this
+    /// context; omit it when the backing storage is managed elsewhere.
+    ///
+    /// # Arguments
+    /// - `runtime`: Shared agent runtime holding the catalog and defaults.
+    /// - `model_catalog`: Available models for agent resolution.
+    /// - `credentials`: Credential lookup used to authenticate model requests.
+    /// - `workspace_root`: Project directory exposed to tools.
+    /// - `bash_sandbox`: Pre-built sandbox profile for [`BashTool`](crate::BashTool).
+    /// - `_sandbox_tmpdir`: Optional owning temp directories that keep the
+    ///   profile's backing storage alive.
+    #[cfg(all(feature = "linux-bubblewrap", target_os = "linux"))]
+    pub(crate) fn new_with_sandbox(
+        runtime: Arc<AgentRuntime>,
+        model_catalog: Arc<ModelCatalog>,
+        credentials: Arc<C>,
+        workspace_root: Arc<Path>,
+        bash_sandbox: Arc<Profile>,
+        _sandbox_tmpdir: Option<Arc<TempSandboxDirs>>,
+    ) -> Self {
+        Self {
+            runtime,
+            model_catalog,
+            credentials,
+            workspace_root,
+            bash_sandbox: Some(bash_sandbox),
+            _sandbox_tmpdir,
+        }
     }
 }
 
@@ -108,11 +270,36 @@ where
             model_catalog,
             credentials,
             workspace_root,
+            #[cfg(all(feature = "linux-bubblewrap", target_os = "linux"))]
+            bash_sandbox: None,
+            #[cfg(all(feature = "linux-bubblewrap", target_os = "linux"))]
+            _sandbox_tmpdir: None,
         }
     }
 }
 
 /// Builds one runnable agent using the shared build context.
+///
+/// # Arguments
+/// - `context`: Shared build context holding runtime, model catalog,
+///   credentials, workspace root, and optional sandbox.
+/// - `name`: Catalog entry name to build.
+/// - `current_depth`: Current Task delegation depth (0 for top-level calls).
+///
+/// # Returns
+/// - `Ok(`[`Agent`]`)`: A fully constructed agent ready to run.
+///
+/// # Errors
+/// - Returns [`AgentBuildError::UnknownAgent`] when `name` is not in the
+///   runtime catalog.
+/// - Returns [`AgentBuildError::ModelResolution`] when model configuration
+///   resolution or validation fails.
+/// - Returns [`AgentBuildError::ModelInit`] when the SerdesAI model fails to
+///   initialise.
+/// - Returns [`AgentBuildError::ToolSettingsValidation`] when tool settings
+///   validation fails during the build.
+/// - Returns [`AgentBuildError::UnsupportedToolKind`] when the runtime
+///   contains a tool kind this adapter cannot materialise.
 pub(crate) fn build_agent<C>(
     context: Arc<TaskBuildContext<C>>,
     name: &str,
@@ -121,10 +308,12 @@ pub(crate) fn build_agent<C>(
 where
     C: CredentialLookup + Send + Sync + 'static,
 {
+    // Check whether Task delegation summaries should be included at this depth.
     let with_summaries = context
         .runtime()
         .task_settings()
         .allows_delegation(current_depth);
+    // Resolve model, tools, and prompt from the runtime catalog.
     let prepared = prepare_build(
         context.runtime.as_ref(),
         name,
@@ -132,13 +321,22 @@ where
         context.credentials.as_ref(),
         with_summaries,
     )?;
+    // Create an AgentBuilder pre-loaded with the resolved model.
     let builder = AgentBuilder::<(), String>::from_arc(prepared.model().clone());
+    // Create a TaskHandle for delegation if Task tool is attached later.
     let task_handle = TaskHandle::new(context.clone(), current_depth);
+    // Select the sandbox profile (None on non-Linux or without the feature).
+    #[cfg(all(feature = "linux-bubblewrap", target_os = "linux"))]
+    let sandbox_ref = context.bash_sandbox.as_ref();
+    #[cfg(not(all(feature = "linux-bubblewrap", target_os = "linux")))]
+    let sandbox_ref: Option<&Arc<Profile>> = None;
+    // Attach standard tools and build the system prompt.
     let (builder, prompt_builder) = attach_standard_tools(
         builder,
         &prepared,
         Some(&task_handle),
         &context.workspace_root,
+        sandbox_ref,
     )?;
     Ok(builder.system_prompt(prompt_builder.build()).build())
 }
@@ -257,6 +455,10 @@ mod tests {
             model_catalog,
             credentials,
             workspace_root: workspace_root(),
+            #[cfg(all(feature = "linux-bubblewrap", target_os = "linux"))]
+            bash_sandbox: None,
+            #[cfg(all(feature = "linux-bubblewrap", target_os = "linux"))]
+            _sandbox_tmpdir: None,
         });
 
         let agent = build_agent(context, "caller", 0).expect("build should succeed");
@@ -293,6 +495,10 @@ mod tests {
             model_catalog,
             credentials,
             workspace_root: workspace_root(),
+            #[cfg(all(feature = "linux-bubblewrap", target_os = "linux"))]
+            bash_sandbox: None,
+            #[cfg(all(feature = "linux-bubblewrap", target_os = "linux"))]
+            _sandbox_tmpdir: None,
         });
 
         let agent = build_agent(context, "caller", 0).expect("build should succeed");
@@ -328,6 +534,10 @@ mod tests {
             model_catalog,
             credentials,
             workspace_root: workspace_root(),
+            #[cfg(all(feature = "linux-bubblewrap", target_os = "linux"))]
+            bash_sandbox: None,
+            #[cfg(all(feature = "linux-bubblewrap", target_os = "linux"))]
+            _sandbox_tmpdir: None,
         });
 
         let agent = build_agent(context, "caller", 0).expect("build should succeed");
@@ -359,6 +569,10 @@ mod tests {
             model_catalog,
             credentials,
             workspace_root: workspace_root(),
+            #[cfg(all(feature = "linux-bubblewrap", target_os = "linux"))]
+            bash_sandbox: None,
+            #[cfg(all(feature = "linux-bubblewrap", target_os = "linux"))]
+            _sandbox_tmpdir: None,
         });
 
         let agent = build_agent(context, "caller", 0).expect("build should succeed");
@@ -427,6 +641,10 @@ mod tests {
             model_catalog,
             credentials,
             workspace_root: workspace_root(),
+            #[cfg(all(feature = "linux-bubblewrap", target_os = "linux"))]
+            bash_sandbox: None,
+            #[cfg(all(feature = "linux-bubblewrap", target_os = "linux"))]
+            _sandbox_tmpdir: None,
         });
 
         let agent = build_agent(context, "caller", 1).expect("build should succeed");

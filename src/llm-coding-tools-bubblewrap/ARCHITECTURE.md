@@ -17,6 +17,7 @@ llm-coding-tools-bubblewrap
 │   ├── mod.rs              module root; re-exports public API surface
 │   ├── types.rs            Profile, Preset, TmpBacking, Availability, etc.
 │   ├── builder.rs          Builder + build() + static arg precomputation
+│   ├── factory.rs          create_sandbox, create_sandbox_with, create_temp_sandbox, SandboxDirs, CreateSandboxError, TempSandboxDirs
 │   ├── presets.rs          public_bot() & trusted_maintenance() constructors
 │   ├── validation.rs       path/symlink/env/tmp validators
 │   └── layout.rs           SandboxLayout — "is this host path visible inside?"

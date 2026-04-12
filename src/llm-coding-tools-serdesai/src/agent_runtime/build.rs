@@ -31,6 +31,13 @@ use serdes_ai_models::BoxedModel;
 use std::path::Path;
 use std::sync::Arc;
 
+#[cfg(all(feature = "linux-bubblewrap", target_os = "linux"))]
+use llm_coding_tools_bubblewrap::Profile;
+
+#[cfg(not(all(feature = "linux-bubblewrap", target_os = "linux")))]
+/// Placeholder type so [`attach_standard_tools`] compiles without the feature.
+pub(super) struct Profile;
+
 /// Error returned when a build cannot produce a SerdesAI agent.
 #[derive(Debug, thiserror::Error)]
 pub enum AgentBuildError {
@@ -151,10 +158,14 @@ pub(super) fn attach_standard_tools<'a, C>(
     prepared: &PreparedBuild<'a>,
     task_handle: Option<&TaskHandle<C>>,
     workspace_root: &Path,
+    bash_sandbox: Option<&Arc<Profile>>,
 ) -> Result<(AgentBuilder<(), String>, SystemPromptBuilder), AgentBuildError>
 where
     C: CredentialLookup + Send + Sync + 'static,
 {
+    // Suppress unused-variable warning for bash_sandbox in non-feature builds.
+    #[cfg(not(all(feature = "linux-bubblewrap", target_os = "linux")))]
+    let _ = bash_sandbox;
     let mut prompt_builder = SystemPromptBuilder::new().system_prompt(prepared.prompt.as_ref());
     let (todo_read, todo_write, _todo_state) = create_todo_tools();
 
@@ -214,13 +225,15 @@ where
             }
             ToolCatalogKind::Bash => {
                 let settings = &prepared.tool_settings.bash;
-                builder = builder.tool(
-                    prompt_builder.track(
-                        BashTool::new()
-                            .with_timeouts(Some(settings.timeout_ms), Some(settings.max_timeout_ms))
-                            .with_permission(permission.clone()),
-                    ),
-                );
+                #[allow(unused_mut)]
+                let mut tool = BashTool::new()
+                    .with_timeouts(Some(settings.timeout_ms), Some(settings.max_timeout_ms))
+                    .with_permission(permission.clone());
+                #[cfg(all(feature = "linux-bubblewrap", target_os = "linux"))]
+                if let Some(profile) = bash_sandbox {
+                    tool = tool.with_linux_bwrap(profile.clone());
+                }
+                builder = builder.tool(prompt_builder.track(tool));
             }
             ToolCatalogKind::WebFetch => {
                 let settings = build_webfetch_settings(&prepared.tool_settings.webfetch)?;
@@ -332,6 +345,7 @@ mod tests {
             prepared,
             None,
             &workspace_root,
+            None,
         )
         .expect("build should succeed");
         builder.system_prompt(prompt_builder.build()).build()

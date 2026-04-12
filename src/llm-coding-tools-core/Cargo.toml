@@ -103,7 +103,7 @@ process-wrap = { version = "9.1", default-features = false }
 const_format = "0.2.35"
 
 # Linux sandbox types and runtime
-llm-coding-tools-bubblewrap = { version = "0.1.0", path = "../llm-coding-tools-bubblewrap", optional = true, default-features = false }
+llm-coding-tools-bubblewrap = { version = "0.1.0", path = "../llm-coding-tools-bubblewrap", optional = true }
 
 [dev-dependencies]
 serial_test = "3"

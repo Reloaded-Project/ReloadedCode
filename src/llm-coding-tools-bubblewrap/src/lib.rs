@@ -14,6 +14,10 @@ mod test_helpers;
 
 pub use error::LinuxBwrapError;
 pub use profile::{
+    create_sandbox, create_sandbox_with, create_temp_sandbox, CreateSandboxError, SandboxDirs,
+    TempSandboxDirs,
+};
+pub use profile::{
     Availability, Builder, EnvVar, FileMount, NetworkPolicy, Preset, Profile, Symlink, TmpBacking,
 };
 pub use wrap::LinuxBwrapWrappedCommand;

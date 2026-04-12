@@ -12,11 +12,11 @@ readme = "README.md"
 default = ["tokio"]
 tokio = ["dep:process-wrap", "process-wrap/tokio1", "process-wrap/process-group"]
 blocking = ["dep:process-wrap", "process-wrap/std", "process-wrap/process-group"]
-
 [dependencies]
 parking_lot = "0.12"
 thiserror = "2.0"
 process-wrap = { version = "9", default-features = false, optional = true }
+tempfile = "3.27"
 
 [dev-dependencies]
 rstest = "0.26"
