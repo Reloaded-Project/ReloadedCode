@@ -2,9 +2,9 @@
 
 !!! info "llm-coding-tools supports loading agent definitions from markdown files with YAML frontmatter."
 
-The agent file format mirrors [OpenCode]'s schema - similar enough that many
+The agent file format mirrors [OpenCode]'s schema, similar enough that many
 files are drop-in compatible, but [not identical](migration.md). See
-[Differences from OpenCode](migration.md) for details.
+[Migrating from OpenCode](migration.md) for details.
 
 ## Agent file format
 
@@ -47,7 +47,7 @@ then read the matching files to extract and summarize the content.
 | --------------- | --------------- | ------------------------------------------------------------------------------------------------------------------- |
 | `name`          | filename        | Agent identifier. If omitted, derived from the file path (e.g. `basic/file-reader.md` becomes `basic/file-reader`). |
 | `mode`          | `all`           | Agent behaviour: `all`, `primary`, or `subagent`.                                                                   |
-| `model`         | runtime default | LLM to use. Format: `provider/model` or `synthetic/hf:model-id`.                                                    |
+| `model`         | runtime default | LLM to use. Format: `provider/model-id` or `synthetic/hf:huggingface-model-id`.                                    |
 | `permission`    | all denied      | Map of tool names to `allow`/`deny`.                                                                                |
 | `tool_settings` | defaults        | Per-tool configuration (line numbers, limits, timeouts).                                                            |
 | `temperature`   | model default   | Sampling temperature.                                                                                               |
@@ -78,8 +78,13 @@ permission:
 
 Several tools support wildcard patterns instead of a simple `allow`/`deny`.
 Evaluation uses **last-match-wins**: the final matching rule takes effect.
-Patterns support `**` (any depth, workspace-relative), `*` (workspace root
-only), `/**` (any file on the system), and `?` (exactly one character).
+
+| Pattern | Meaning                        |
+| ------- | ------------------------------ |
+| `**`    | Any depth, workspace-relative  |
+| `*`     | Workspace root only            |
+| `/**`   | Any file on the system         |
+| `?`     | Exactly one character          |
 
 For the full rule table and examples, see
 [Tools > Permission rules](tools.md#permission-rules).
@@ -88,6 +93,9 @@ For the full rule table and examples, see
 
 Format: `provider/model-id` or `synthetic/hf:huggingface-model-id`.
 
+`synthetic` is the provider name; `hf` selects a HuggingFace model by its
+repository ID (e.g. `moonshotai/Kimi-K2.5`).
+
 Examples:
 
 - `openai/gpt-5.4`
@@ -95,14 +103,20 @@ Examples:
 - `ollama-cloud/minimax-m2.7`
 - `synthetic/hf:moonshotai/Kimi-K2.5`
 
-Model names are validated against the [models.dev] catalog at runtime.
+Model names are validated against the [models.dev] catalog at runtime; an
+unrecognized name will produce a load error.
 
-Load the catalog with `llm-coding-tools-models-dev` before resolving agents.
+Load the catalog before resolving agents. See
+[Models Catalog](models-catalog.md) for setup instructions and the
+`llm-coding-tools-models-dev` crate API.
 
 ### Tool settings
 
 Per-tool configuration that overrides defaults. For the full reference with
 types, ranges, and validation rules, see [Tools > Tool Settings](tools.md#tool-settings).
+
+With the agent file format defined, the next sections cover loading those
+files into a catalog and building a runtime.
 
 ## Loading agents
 
@@ -124,8 +138,8 @@ fn main() -> Result<(), llm_coding_tools_agents::AgentLoadError> {
 }
 ```
 
-File discovery walks the directory tree with `.gitignore` support, keeping
-files at `agent/**/*.md` or `agents/**/*.md`.
+File discovery walks the directory tree with `.gitignore` support, selecting
+only files matching `agent/**/*.md` or `agents/**/*.md`.
 
 ## Building an agent runtime
 
@@ -150,15 +164,17 @@ fn main() -> Result<(), llm_coding_tools_agents::AgentLoadError> {
 }
 ```
 
-Then pass the runtime to your framework adapter (e.g.
-`AgentBuildContext::new()` in [SerdesAI]) to build runnable agents by name.
+Then pass the runtime to a framework adapter (a type that wires the catalog,
+model, and tools into a runnable LLM agent), such as
+`AgentBuildContext::new()` from `llm-coding-tools-serdesai` ([SerdesAI])
+to build runnable agents by name.
 
 ## Task delegation
 
-When agents are built with the [SerdesAI] adapter, the `task` tool is
-automatically attached when:
+With the [SerdesAI] adapter, the builder automatically attaches the `task`
+tool when both conditions hold:
 
-1. The agent has callable sub-agents (non-primary agents in the catalog)
+1. The agent has callable sub-agents (agents with mode `subagent` or `all` in the catalog)
 2. The current depth is below `max_task_depth`
 
 The flow:
@@ -169,7 +185,7 @@ The flow:
 4. The sub-agent runs and returns its output
 5. Agent A receives the output as the tool result
 
-Depth is limited to prevent infinite delegation chains. Default is 3 hops.
+Depth is limited to prevent infinite delegation chains. The default is 3.
 
 ```mermaid
 graph TD
