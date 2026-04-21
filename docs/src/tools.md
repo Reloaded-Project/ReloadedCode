@@ -2,15 +2,20 @@
 
 !!! tip "llm-coding-tools provides 10 standard tools that cover the core needs of a coding agent."
 
-Every tool has a plain function implementation in [llm-coding-tools-core] framework adapters such as those in [llm-coding-tools-serdesai].
+Every tool has a plain function implementation in [llm-coding-tools-core]. Adapter
+implementations that integrate those functions with LLM frameworks live in crates
+like [llm-coding-tools-serdesai].
+
+Jump to [Tool overview](#tool-overview) for the tool list, or read on for how
+configuration and permissions work.
 
 ## How it fits together
 
 Tools are configured through [agent files] or in code.
 
-The configuration is easiest to illustrate with an agent file - the example
-below ties the three main concepts together (which tools are available, what
-they may access, and how their defaults are tuned):
+The configuration is best illustrated with an agent file. The example below
+covers three concepts — which tools are available, what they may access, and
+how defaults are configured:
 
 ```yaml
 ---
@@ -19,7 +24,7 @@ mode: subagent
 description: Searches codebases to find relevant files
 
 # (1) Permissions: which tools the agent can use, and optionally which
-#     paths/subjects each tool may access.
+#     file paths, commands, or agent names each tool may access.
 #     Default-deny: every tool is blocked unless explicitly allowed.
 permission:
   read: allow
@@ -43,18 +48,21 @@ You are a code search assistant. Use grep to find relevant files, then read
 the matching files to extract and summarize the content.
 ```
 
-| Concept            | Where configured      | What it controls                                                    |
-| ------------------ | --------------------- | ------------------------------------------------------------------- |
-| Availability       | `permission`          | Which tools the agent may call, and optionally which paths/subjects |
-| Defaults & limits  | `tool_settings`       | Server-side constraints like line counts, timeouts                  |
-| Per-call behaviour | (LLM-supplied params) | `offset`, `limit` within the host's bounds, etc.                    |
+| Concept            | Where configured      | What it controls                                                                                          |
+| ------------------ | --------------------- | --------------------------------------------------------------------------------------------------------- |
+| Availability       | `permission`          | Which tools the agent may call, and optionally which file paths, commands, or agent names they may access |
+| Defaults & limits  | `tool_settings`       | Host-side constraints like line counts, timeouts                                                          |
+| Per-call behaviour | (LLM-supplied params) | `offset`, `limit` within the host's bounds, etc.                                                          |
 
 See [Agents] for the full agent file specification.
 
+The `permission` field is the most nuanced of the three. Beyond simple
+allow/deny, it supports pattern-based rules:
+
 ### Permission rules
 
-Permissions also support **pattern-based rules**, using last-match-wins
-evaluation. Not all tools support this:
+Permissions use **pattern-based rules** with last-match-wins evaluation. Not
+all tools support this:
 
 | Tool(s)                       | Pattern matches against          | Supports patterns    |
 | ----------------------------- | -------------------------------- | -------------------- |
@@ -73,6 +81,7 @@ root if one is found, otherwise the current working directory.
 | `**`    | Any file at any depth, relative to the workspace root     |
 | `*`     | Any file in the workspace root only                       |
 | `/**`   | Any file on the system, including other drives on Windows |
+| `?`     | Exactly one character in a path segment                   |
 
 ```yaml
 permission:
@@ -97,18 +106,18 @@ permission:
 
 ## Tool overview
 
-| Tool          | Core function            | What it does                                            |
-| ------------- | ------------------------ | ------------------------------------------------------- |
-| **read**      | `read_file`              | Read a file with offset/limit and optional line numbers |
-| **write**     | `write_file`             | Create or overwrite a file at a resolved path           |
-| **edit**      | `edit_file`              | Apply exact text replacements (find-and-replace)        |
-| **glob**      | `glob_files`             | Match filesystem paths by glob pattern                  |
-| **grep**      | `grep_search`            | Search file contents by regex with match metadata       |
-| **bash**      | `execute_command`        | Execute shell commands with timeout and captured output |
-| **webfetch**  | `fetch_url`              | Fetch a URL and return content as text or markdown      |
-| **todoread**  | `read_todos`             | Read shared todo list state                             |
-| **todowrite** | `write_todos`            | Update shared todo list state                           |
-| **task**      | `TaskInput`/`TaskOutput` | Delegate work to a named sub-agent                      |
+| Tool                                  | Core function            | What it does                                            |
+| ------------------------------------- | ------------------------ | ------------------------------------------------------- |
+| [**read**](#read)                     | `read_file`              | Read a file with offset/limit and optional line numbers |
+| [**write**](#write)                   | `write_file`             | Create or overwrite a file at a resolved path           |
+| [**edit**](#edit)                     | `edit_file`              | Apply exact text replacements (find-and-replace)        |
+| [**glob**](#glob)                     | `glob_files`             | Match filesystem paths by glob pattern                  |
+| [**grep**](#grep)                     | `grep_search`            | Search file contents by regex with match metadata       |
+| [**bash**](#bash)                     | `execute_command`        | Execute shell commands with timeout and captured output |
+| [**webfetch**](#webfetch)             | `fetch_url`              | Fetch a URL and return content as text or markdown      |
+| [**todoread**](#todoread--todowrite)  | `read_todos`             | Read shared todo list state                             |
+| [**todowrite**](#todoread--todowrite) | `write_todos`            | Update shared todo list state                           |
+| [**task**](#task)                     | `TaskInput`/`TaskOutput` | Delegate work to a named sub-agent                      |
 
 ### read
 
@@ -125,13 +134,8 @@ Reads a file, optionally with line numbers and a windowed range.
 **Output:** Line-numbered file content. Lines beyond `max_line_length` are
 truncated with `...`.
 
-**Configurable via tool settings:**
-
-| Setting           | Default | Description                 |
-| ----------------- | ------- | --------------------------- |
-| `line_numbers`    | `true`  | Show line numbers in output |
-| `limit`           | `2000`  | Max lines per read          |
-| `max_line_length` | `2000`  | Max characters per line     |
+**Configurable via [tool settings](#tool-settings):** `line_numbers`, `limit`,
+`max_line_length`
 
 ### write
 
@@ -181,11 +185,7 @@ crate for fast traversal.
 
 **Output:** List of matching file paths.
 
-**Configurable via tool settings:**
-
-| Setting | Default | Description             |
-| ------- | ------- | ----------------------- |
-| `limit` | `1000`  | Max file paths returned |
+**Configurable via [tool settings](#tool-settings):** `limit`
 
 ### grep
 
@@ -201,13 +201,8 @@ Searches file contents by regex pattern. Returns matching lines with metadata.
 
 **Output:** Matching lines with line numbers and file paths.
 
-**Configurable via tool settings:**
-
-| Setting           | Default | Description                   |
-| ----------------- | ------- | ----------------------------- |
-| `line_numbers`    | `true`  | Show line numbers in output   |
-| `limit`           | `100`   | Max matches returned          |
-| `max_line_length` | `2000`  | Max characters per match line |
+**Configurable via [tool settings](#tool-settings):** `line_numbers`, `limit`,
+`max_line_length`
 
 ### bash
 
@@ -221,14 +216,10 @@ Executes a shell command with timeout and captured output.
 | `timeout_ms` | number | no       | Timeout in milliseconds (default from settings) |
 | `workdir`    | string | no       | Working directory for the command               |
 
-**Output:** Combined stdout + stderr, truncated if it exceeds size limits.
+**Output:** Combined stdout and stderr. Non-zero exit codes are included in
+the output.
 
-**Configurable via tool settings:**
-
-| Setting          | Default  | Description                         |
-| ---------------- | -------- | ----------------------------------- |
-| `timeout_ms`     | `120000` | Default timeout (2 minutes)         |
-| `max_timeout_ms` | `600000` | Maximum timeout the LLM can request |
+**Configurable via [tool settings](#tool-settings):** `timeout_ms`, `max_timeout_ms`
 
 **Sandboxing:** On Linux, you can enable the `linux-bubblewrap` feature to run
 commands inside a [bubblewrap] sandbox. See [Sandboxing](sandboxing.md) for details.
@@ -247,13 +238,8 @@ to markdown.
 
 **Output:** Page content as text or markdown.
 
-**Configurable via tool settings:**
-
-| Setting             | Default   | Description                         |
-| ------------------- | --------- | ----------------------------------- |
-| `timeout_ms`        | `30000`   | Default timeout (30 seconds)        |
-| `max_timeout_ms`    | `600000`  | Maximum timeout the LLM can request |
-| `max_response_size` | `5242880` | Max response body size (5 MiB)      |
+**Configurable via [tool settings](#tool-settings):** `timeout_ms`,
+`max_timeout_ms`, `max_response_size`
 
 ### todoread / todowrite
 
@@ -261,13 +247,48 @@ Shared todo list state for tracking progress across tool calls. Useful for
 agents that plan their work in steps.
 
 **todoread** returns the current todo list. **todowrite** validates and
-updates it. Both are stateless between agent runs unless you provide a shared
-state handle.
+replaces it. Both are stateless between agent runs. Create them with shared
+state via [`create_todo_tools`][create_todo_tools] so that reads and writes
+refer to the same list.
+
+**todoread parameters:**
+
+*(none - takes no parameters)*
+
+**todoread output:** Current todo list as formatted text.
+
+**todowrite parameters:**
+
+| Parameter | Type  | Required | Description                                                    |
+| --------- | ----- | -------- | -------------------------------------------------------------- |
+| `todos`   | array | yes      | Complete list of todo items to set (replaces the current list) |
+
+Each todo item:
+
+| Field      | Type   | Required | Values                                             |
+| ---------- | ------ | -------- | -------------------------------------------------- |
+| `id`       | string | yes      | Stable, non-empty identifier                       |
+| `content`  | string | yes      | Short imperative task text                         |
+| `status`   | string | yes      | `pending`, `in_progress`, `completed`, `cancelled` |
+| `priority` | string | yes      | `high`, `medium`, `low`                            |
+
+**todowrite output:** Confirmation with the number of items set.
 
 ### task
 
 The task tool enables multi-agent delegation. An agent can invoke a named
 sub-agent with a prompt and receive the result.
+
+**Parameters:**
+
+| Parameter       | Type   | Required | Description                                                  |
+| --------------- | ------ | -------- | ------------------------------------------------------------ |
+| `subagent_type` | string | yes      | Exact name of the target subagent                            |
+| `prompt`        | string | yes      | Full instructions for the delegated agent                    |
+| `description`   | string | yes      | Short task label (3-5 words)                                 |
+| `command`       | string | no       | Optional context string identifying what triggered this task |
+
+**Output:** The delegated agent's response as a text summary.
 
 See [Agents] for the full delegation model.
 
@@ -334,7 +355,7 @@ tool_settings:
 
     - `max_timeout_ms` must be greater than or equal to `timeout_ms` (for both
       bash and webfetch).
-    - `max_line_length` minimum of 4 is required to accommodate the `...`
+    - `max_line_length` must be at least 4 to accommodate the `...`
       truncation suffix plus at least one visible character.
 
 ### Override in code
@@ -393,14 +414,13 @@ This controls which paths the tools can access:
 | `AllowedPathResolver`  | Only paths within configured directories. Sandboxed mode. |
 | `AllowedGlobResolver`  | A workspace directory with glob-based allow/deny rules.   |
 
-The `AllowedGlobResolver` is what's used in Agents by default, but you can save
-a few microseconds by using `AllowedPathResolver` or `AbsolutePathResolver` if
-you don't need glob-based rules.
+Agents use `AllowedGlobResolver` by default. If you don't need glob-based rules,
+`AllowedPathResolver` or `AbsolutePathResolver` are slightly faster.
 
-For a deeper dive into path security, see the
-[Getting Started](getting-started.md).
+For a deeper dive into path security, see [Sandboxing](sandboxing.md).
 
 [bubblewrap]: https://github.com/containers/bubblewrap
+[create_todo_tools]: https://docs.rs/llm-coding-tools-serdesai/latest/llm_coding_tools_serdesai/tools/todo/fn.create_todo_tools.html
 [llm-coding-tools-core]: https://docs.rs/llm-coding-tools-core
 [llm-coding-tools-serdesai]: https://docs.rs/llm-coding-tools-serdesai
 [Agents]: agents.md
