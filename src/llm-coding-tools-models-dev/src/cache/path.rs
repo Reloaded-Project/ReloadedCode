@@ -28,10 +28,10 @@ const CACHE_FILENAME: &str = "models.dev.catalog.v1.cache";
 /// The full path to the cache file.
 ///
 /// # Errors
-///
-/// Returns [`CatalogError::CachePathNotFound`] when:
-/// - The environment variable is not set AND
-/// - The platform cache directory cannot be determined
+/// - Returns [`CatalogError::Configuration`] when `LLM_CODING_TOOLS_MODELS_DEV_CACHE_PATH`
+///   is set but empty.
+/// - Returns [`CatalogError::CachePathNotFound`] when the environment variable is not set
+///   and the platform cache directory cannot be determined.
 ///
 /// # Examples
 ///

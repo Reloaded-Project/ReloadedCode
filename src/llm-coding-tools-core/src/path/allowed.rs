@@ -68,6 +68,10 @@ impl AllowedPathResolver {
     /// Each directory is resolved during construction to ensure consistent path
     /// comparison. Returns an error if any directory doesn't exist or can't be
     /// resolved.
+    ///
+    /// # Errors
+    /// - Returns [`ToolError::InvalidPath`] when any provided path is not an existing directory.
+    /// - Returns [`ToolError::InvalidPath`] when path canonicalization fails.
     pub fn new(allowed_paths: impl IntoIterator<Item = impl AsRef<Path>>) -> ToolResult<Self> {
         let canonicalized: Result<Arc<[PathBuf]>, _> = allowed_paths
             .into_iter()

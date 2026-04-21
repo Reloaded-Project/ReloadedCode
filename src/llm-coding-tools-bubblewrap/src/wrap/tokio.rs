@@ -13,8 +13,8 @@ use std::process::Stdio;
 /// Builds an async [`CommandWrap`] from a [`Profile`].
 ///
 /// # Errors
-///
-/// Returns [`LinuxBwrapError`] on invalid per-command workdir.
+/// - Returns [`LinuxBwrapError::InvalidPath`] when `workdir` is not an absolute path,
+///   does not exist, is not a directory, or is not visible inside the sandbox.
 pub fn build_command_wrap(
     profile: &Profile,
     command: &str,

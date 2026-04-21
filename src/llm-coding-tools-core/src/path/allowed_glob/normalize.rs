@@ -40,6 +40,10 @@ pub(crate) fn expand_pattern(
 ///
 /// Wraps the internal expansion logic with fail-fast error handling: returns
 /// `ToolError::InvalidPath` if expansion fails (e.g., unset variable).
+///
+/// # Errors
+/// - Returns [`ToolError::InvalidPath`] when shell expansion fails (e.g., unset
+///   environment variable in the path pattern).
 pub fn expand_shell(path: &str) -> ToolResult<PathBuf> {
     expand_pattern(path)
         .map(|cow| PathBuf::from(cow.into_owned()))

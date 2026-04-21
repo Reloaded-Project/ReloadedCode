@@ -43,6 +43,8 @@ pub trait RulesetExt {
 }
 
 impl RulesetExt for Ruleset {
+    /// # Errors
+    /// - Returns [`ExpandError`] when a permission pattern is invalid (contains `:`, `//`, or empty segments).
     fn from_permission_config(
         config: &IndexMap<String, PermissionRule>,
     ) -> Result<Ruleset, ExpandError> {

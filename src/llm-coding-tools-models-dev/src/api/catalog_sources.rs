@@ -20,6 +20,13 @@ use llm_coding_tools_core::models::{
     Modality, ModelCatalogBuildError, ModelInfo, ProviderIdx, ProviderType,
 };
 
+/// Parses models.dev API JSON bytes into a cache payload.
+///
+/// # Errors
+/// - Returns [`CatalogError::Json`] when `json_bytes` cannot be parsed as valid
+///   models.dev API JSON.
+/// - Returns [`CatalogError::ModelCatalogBuild`] with [`ModelCatalogBuildError::TooManyProviders`]
+///   when the number of providers exceeds `u16::MAX + 1` (65,536).
 pub(crate) fn cache_payload_from_api_json_bytes(
     json_bytes: &[u8],
 ) -> CatalogResult<CatalogCachePayload> {

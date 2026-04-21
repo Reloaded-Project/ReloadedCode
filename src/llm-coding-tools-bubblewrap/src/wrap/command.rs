@@ -72,6 +72,12 @@ fn resolve_sandbox_cwd<'a>(
 
 /// Builds a `bwrap` command line that runs `command` inside the sandbox
 /// described by `profile`.
+///
+/// # Errors
+/// - Returns [`LinuxBwrapError::InvalidPath`] when `workdir` is not an absolute path.
+/// - Returns [`LinuxBwrapError::InvalidPath`] when `workdir` does not exist or is not a directory.
+/// - Returns [`LinuxBwrapError::InvalidPath`] when `workdir` is not visible inside the sandbox
+///   (not under workspace, synthetic home, cache root, or any mounted directory).
 #[inline]
 pub fn wrap_command<'a>(
     profile: &'a Profile,

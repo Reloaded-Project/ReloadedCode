@@ -31,6 +31,9 @@ pub struct TaskTargetSummary {
 /// # Returns
 /// One [`TaskTargetSummary`] per callable target, sorted by name. Empty if
 /// `caller_name` is not in the catalog or no non-primary targets are available.
+///
+/// # Errors
+/// - Returns [`ExpandError`] when the caller's `permission.task` configuration contains invalid patterns.
 pub fn summarize_callable_targets(
     catalog: &AgentCatalog,
     caller_name: &str,
@@ -52,6 +55,9 @@ pub fn summarize_callable_targets(
 /// `mode: all` and `mode: subagent` targets for OpenCode compatibility. When
 /// `permission.task` is present, its rules filter target names with the normal
 /// last-match-wins permission semantics.
+///
+/// # Errors
+/// - Returns [`ExpandError`] when the caller's `permission.task` configuration contains invalid patterns.
 pub fn callable_targets<'a>(
     catalog: &'a AgentCatalog,
     caller_name: &str,
