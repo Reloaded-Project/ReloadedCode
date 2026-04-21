@@ -72,9 +72,17 @@ fn is_transient_status(status: StatusCode) -> bool {
 /// Loads the catalog at `path` using the default models.dev endpoint.
 ///
 /// # Errors
-///
-/// Returns the same errors as [`load_catalog_from_url`] while targeting the
-/// default production URL.
+/// - Returns [`CatalogError::CachePathNotFound`] when the environment variable is not set
+///   and the platform cache directory cannot be determined.
+/// - Returns [`CatalogError::Configuration`] when the environment variable is set but empty.
+/// - Returns [`CatalogError::Io`] when cache file I/O fails without a usable fallback.
+/// - Returns [`CatalogError::Reqwest`] when the HTTP request fails and no cache is available.
+/// - Returns [`CatalogError::CacheFormat`] when the cache file is truncated, has length
+///   mismatches, or contains invalid data.
+/// - Returns [`CatalogError::Zstd`] when zstd decompression of cached data fails.
+/// - Returns [`CatalogError::BitcodeDecode`] when the cached payload cannot be decoded.
+/// - Returns [`CatalogError::ModelCatalogBuild`] when catalog reconstruction from cached
+///   or downloaded data fails.
 pub(crate) async fn load_catalog_at_path(path: &Path) -> CatalogResult<CatalogLoadResult> {
     let url = models_dev_api_url();
     load_catalog_from_url(path, url.as_ref()).await
@@ -99,10 +107,20 @@ pub(crate) async fn load_catalog_at_path(path: &Path) -> CatalogResult<CatalogLo
 /// read generally the faster hot path on modern NVMe-backed systems.
 ///
 /// # Errors
-///
-/// Returns [`CatalogError`] when cache I/O fails without a usable fallback,
-/// response data cannot be decoded, the cache cannot be written, or the server
-/// responds with an unexpected status.
+/// - Returns [`CatalogError::Io`] when cache file read fails without a usable fallback.
+/// - Returns [`CatalogError::CacheFormat`] when the existing cache file is truncated,
+///   has size mismatches, or contains invalid prelude data.
+/// - Returns [`CatalogError::Reqwest`] when the HTTP request fails and no valid cache
+///   is available for fallback.
+/// - Returns [`CatalogError::Json`] when the response body cannot be parsed as valid
+///   models.dev API JSON.
+/// - Returns [`CatalogError::ModelCatalogBuild`] when there are too many providers in
+///   the API response or catalog reconstruction fails.
+/// - Returns [`CatalogError::Zstd`] when compressing the payload for caching fails.
+/// - Returns [`CatalogError::BitcodeDecode`] when decoding the cached or downloaded
+///   payload fails.
+/// - Returns [`CatalogError::Configuration`] when the server returns an unexpected
+///   HTTP status code (not 200, 304, or a recognized transient status).
 pub(crate) async fn load_catalog_from_url(
     path: &Path,
     url: &str,

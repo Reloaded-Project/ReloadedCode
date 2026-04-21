@@ -34,6 +34,8 @@ impl PathResolver for AbsolutePathResolver {
         true
     }
 
+    /// # Errors
+    /// - Returns [`ToolError::InvalidPath`] when `path` is not an absolute path.
     fn resolve(&self, path: &str) -> ToolResult<PathBuf> {
         let path = PathBuf::from(path);
         if !path.is_absolute() {

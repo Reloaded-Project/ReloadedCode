@@ -86,6 +86,10 @@ pub(crate) struct ApiModelLimit {
 ///
 /// Input must match the current models.dev shape: a flat top-level object where
 /// each key is a provider id and each value is a provider entry.
+///
+/// # Errors
+/// - Returns [`CatalogError::Json`] when `json_bytes` is not valid JSON or does not
+///   match the expected models.dev API schema structure.
 #[inline]
 pub(crate) fn parse_api_json(
     json_bytes: &[u8],

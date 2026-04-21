@@ -75,9 +75,20 @@ impl ModelsDevCatalog {
     /// # if let Some(entry) = result.catalog.lookup("openai", "gpt-4") {
     /// #     println!("API URL: {}", entry.0.api_url);
     /// # }
-    /// # Ok(())
     /// # }
     /// ```
+    ///
+    /// # Errors
+    /// - Returns [`CatalogError::CachePathNotFound`] when the environment variable is not set
+    ///   and the platform cache directory cannot be determined.
+    /// - Returns [`CatalogError::Configuration`] when the environment variable is set but empty.
+    /// - Returns [`CatalogError::Io`] when cache file I/O fails without a usable fallback.
+    /// - Returns [`CatalogError::Reqwest`] when the HTTP request fails and no valid cache
+    ///   is available for fallback.
+    /// - Returns [`CatalogError::CacheFormat`] when the cache file is truncated or corrupted.
+    /// - Returns [`CatalogError::Zstd`] when zstd decompression fails.
+    /// - Returns [`CatalogError::BitcodeDecode`] when the cached payload cannot be decoded.
+    /// - Returns [`CatalogError::ModelCatalogBuild`] when catalog reconstruction fails.
     #[maybe_async::maybe_async]
     pub async fn load() -> Result<CatalogLoadResult, CatalogError> {
         let path = shared_cache_path()?;
@@ -103,22 +114,22 @@ impl ModelsDevCatalog {
     /// information.
     ///
     /// # Errors
-    ///
-    /// Returns [`CatalogError`] under the same conditions as [`load`](Self::load),
-    /// plus:
-    /// - The parent directory cannot be created
-    /// - The path is not a valid file path
+    /// - Returns [`CatalogError::Io`] when cache file I/O fails without a usable fallback.
+    /// - Returns [`CatalogError::Reqwest`] when the HTTP request fails and no valid cache
+    ///   is available for fallback.
+    /// - Returns [`CatalogError::CacheFormat`] when the cache file is truncated or corrupted.
+    /// - Returns [`CatalogError::Zstd`] when zstd decompression fails.
+    /// - Returns [`CatalogError::BitcodeDecode`] when the cached payload cannot be decoded.
+    /// - Returns [`CatalogError::ModelCatalogBuild`] when catalog reconstruction fails.
     ///
     /// # Examples
     ///
     /// ```
     /// use llm_coding_tools_models_dev::ModelsDevCatalog;
-    /// use std::path::PathBuf;
     ///
     /// # #[cfg(feature = "tokio")]
     /// # async fn example() -> Result<(), Box<dyn std::error::Error>> {
-    /// let cache_path = PathBuf::from("/tmp/my-cache.cache");
-    /// let result = ModelsDevCatalog::load_at(&cache_path).await?;
+    /// let result = ModelsDevCatalog::load_at("/tmp/models.dev.cache").await?;
     ///
     /// // Use the catalog
     /// if let Some(entry) = result.catalog.lookup("openai", "gpt-4") {
@@ -129,8 +140,7 @@ impl ModelsDevCatalog {
     ///
     /// # #[cfg(feature = "blocking")]
     /// # fn example() -> Result<(), Box<dyn std::error::Error>> {
-    /// # let cache_path = PathBuf::from("/tmp/my-cache.cache");
-    /// # let result = ModelsDevCatalog::load_at(&cache_path)?;
+    /// # let result = ModelsDevCatalog::load_at("/tmp/models.dev.cache")?;
     /// # if let Some(entry) = result.catalog.lookup("openai", "gpt-4") {
     /// #     println!("API URL: {}", entry.0.api_url);
     /// # }

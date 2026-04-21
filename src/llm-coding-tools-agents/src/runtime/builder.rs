@@ -70,6 +70,9 @@ impl AgentRuntimeBuilder {
     }
 
     /// Finishes building and returns the [`AgentRuntime`].
+    ///
+    /// # Errors
+    /// - Returns [`ExpandError`] when any agent's permission configuration contains invalid patterns.
     #[inline]
     pub fn build(self) -> Result<AgentRuntime, ExpandError> {
         AgentRuntime::from_parts(self.catalog, self.defaults, self.task_settings, self.tools)

@@ -15,6 +15,11 @@ pub struct WriteRequest {
 
 impl WriteRequest {
     /// Parses a raw JSON tool payload into a write request.
+    ///
+    /// # Errors
+    /// - Returns [`ToolError::Json`] when the JSON payload cannot be deserialized
+    ///   into a [`WriteRequest`] (e.g., missing required `file_path` or `content`
+    ///   fields, or invalid field types).
     pub fn parse(args: Value) -> ToolResult<Self> {
         serde_json::from_value(args).map_err(ToolError::from)
     }
@@ -37,6 +42,14 @@ impl WriteSettings {
 /// Writes content to a file, creating parent directories if needed.
 ///
 /// Overwrites existing files. Returns a success message with byte count.
+///
+/// # Errors
+/// - Returns [`ToolError::InvalidPath`] when `resolver.resolve()` fails to
+///   resolve `request.file_path` (e.g., path is not absolute or violates policy).
+/// - Returns [`ToolError::Io`] when parent directory creation fails (e.g.,
+///   permission denied, read-only filesystem).
+/// - Returns [`ToolError::Io`] when writing to the file fails (e.g., disk full,
+///   permission denied, I/O error).
 #[maybe_async::maybe_async]
 pub async fn write_file<R: PathResolver>(
     resolver: &R,

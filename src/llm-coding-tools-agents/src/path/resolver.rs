@@ -86,10 +86,10 @@ impl PathResolver for FileToolResolver {
 /// The cheapest [`FileToolResolver`] variant satisfying the tool's permission config.
 ///
 /// # Errors
-///
-/// - Returns [`ToolError::InvalidPath`] when shell expansion fails (e.g., unresolvable `$VAR` in a pattern).
-/// - Returns [`ToolError::InvalidPattern`] when a glob pattern is syntactically invalid.
 /// - Returns [`ToolError::InvalidPath`] when the workspace root does not exist or cannot be canonicalized.
+/// - Returns [`ToolError::PermissionDenied`] when the tool is disabled by configuration (`deny`).
+/// - Returns [`ToolError::InvalidPath`] when shell expansion fails (e.g., unresolvable environment variable).
+/// - Returns [`ToolError::InvalidPattern`] when a glob pattern is syntactically invalid.
 pub fn build_resolver_for_tool(
     config: &IndexMap<String, PermissionRule>,
     tool_name: &str,

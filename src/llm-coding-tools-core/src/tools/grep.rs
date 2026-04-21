@@ -33,6 +33,11 @@ pub struct GrepRequest {
 
 impl GrepRequest {
     /// Parses a raw JSON tool payload into a grep request.
+    ///
+    /// # Errors
+    /// - Returns [`ToolError::Json`] when the JSON payload cannot be deserialized
+    ///   into a [`GrepRequest`] (e.g., missing required `pattern` or `path` fields,
+    ///   or invalid field types).
     pub fn parse(args: Value) -> ToolResult<Self> {
         serde_json::from_value(args).map_err(ToolError::from)
     }

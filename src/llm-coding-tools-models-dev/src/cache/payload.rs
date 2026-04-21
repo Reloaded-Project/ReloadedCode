@@ -105,9 +105,8 @@ pub(crate) fn decode_cache_payload(bytes: &[u8]) -> CatalogResult<CatalogCachePa
 /// Rebuilds a [`ModelCatalog`] from decoded cache rows.
 ///
 /// # Errors
-///
-/// Returns [`CatalogError`] when any cached row data cannot be used to build a
-/// valid catalog, such as when a model references an out-of-range provider.
+/// - Returns [`CatalogError::ModelCatalogBuild`] when cached row data cannot be used to
+///   build a valid catalog, such as when a model references an out-of-range provider.
 pub(crate) fn catalog_from_cache_payload(
     payload: CatalogCachePayload,
 ) -> CatalogResult<ModelCatalog> {

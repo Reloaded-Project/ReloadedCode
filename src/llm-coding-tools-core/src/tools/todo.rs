@@ -75,6 +75,11 @@ pub struct TodoWriteRequest {
 
 impl TodoWriteRequest {
     /// Parses a raw JSON tool payload into a todo-write request.
+    ///
+    /// # Errors
+    /// - Returns [`ToolError::Json`] when the JSON payload cannot be deserialized
+    ///   into a [`TodoWriteRequest`] (e.g., missing `todos` field or invalid todo
+    ///   structure).
     pub fn parse(args: Value) -> ToolResult<Self> {
         serde_json::from_value(args).map_err(ToolError::from)
     }
@@ -86,6 +91,10 @@ pub struct TodoReadRequest {}
 
 impl TodoReadRequest {
     /// Parses a raw JSON tool payload into a todo-read request.
+    ///
+    /// # Errors
+    /// - Returns [`ToolError::Json`] when the JSON payload cannot be deserialized
+    ///   into a [`TodoReadRequest`].
     pub fn parse(args: Value) -> ToolResult<Self> {
         serde_json::from_value(args).map_err(ToolError::from)
     }
@@ -102,6 +111,10 @@ impl TodoState {
 /// Writes/replaces the todo list with new items.
 ///
 /// Validates that all todos have non-empty id and content.
+///
+/// # Errors
+/// - Returns [`ToolError::Validation`] when any todo has an empty or whitespace-only `id`.
+/// - Returns [`ToolError::Validation`] when any todo has empty or whitespace-only `content`.
 pub fn write_todos(state: &TodoState, request: TodoWriteRequest) -> ToolResult<String> {
     for todo in &request.todos {
         if todo.id.trim().is_empty() {

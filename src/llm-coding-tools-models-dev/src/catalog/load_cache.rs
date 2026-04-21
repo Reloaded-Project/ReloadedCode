@@ -12,10 +12,11 @@ use crate::error::{CatalogError, CatalogResult};
 /// Decompresses cache file data and rebuilds a catalog from it.
 ///
 /// # Errors
-///
-/// Returns [`CatalogError`] when zstd decompression fails, the decompressed
-/// length does not match the cache metadata, the serialized payload cannot be
-/// decoded, or catalog reconstruction fails.
+/// - Returns [`CatalogError::Zstd`] when zstd decompression fails.
+/// - Returns [`CatalogError::CacheFormat`] when the decompressed length does not
+///   match the cache metadata.
+/// - Returns [`CatalogError::BitcodeDecode`] when the serialized payload cannot be decoded.
+/// - Returns [`CatalogError::ModelCatalogBuild`] when catalog reconstruction fails.
 pub(crate) fn load_catalog_from_cache_file_data(
     cache_file: &CacheFileData,
     source: CatalogLoadSource,

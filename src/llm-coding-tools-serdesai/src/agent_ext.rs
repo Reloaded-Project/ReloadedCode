@@ -104,10 +104,17 @@ where
 pub trait ToolResultExt<T> {
     /// Maps a [`ToolError`](llm_coding_tools_core::ToolError) to
     /// [`AgentBuildError::ToolSettingsValidation`].
+    ///
+    /// # Errors
+    /// - Returns [`AgentBuildError::ToolSettingsValidation`] when the original result
+    ///   contains a [`ToolError`], preserving the tool name and original error.
     fn with_tool(self, tool: &'static str) -> Result<T, AgentBuildError>;
 }
 
 impl<T> ToolResultExt<T> for Result<T, llm_coding_tools_core::ToolError> {
+    /// # Errors
+    /// - Returns [`AgentBuildError::ToolSettingsValidation`] when the original result
+    ///   contains a [`ToolError`], preserving the tool name and original error.
     fn with_tool(self, tool: &'static str) -> Result<T, AgentBuildError> {
         self.map_err(|source| AgentBuildError::ToolSettingsValidation { tool, source })
     }

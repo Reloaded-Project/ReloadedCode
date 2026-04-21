@@ -57,6 +57,13 @@ pub(crate) fn probe_availability() -> Availability {
 /// If `availability` already indicates unavailability, returns early without
 /// probing again. Otherwise re-checks the host and returns an [`Arc<Path>`] on
 /// success or a [`LinuxBwrapError::Execution`] on failure.
+///
+/// # Errors
+/// - Returns [`LinuxBwrapError::Execution`] when the provided `availability` already
+///   indicates unavailability (via [`Availability::reason`]).
+/// - Returns [`LinuxBwrapError::Execution`] when the `bwrap` binary cannot be found on `PATH`.
+/// - Returns [`LinuxBwrapError::Execution`] when `bwrap` exists but the current environment
+///   cannot create sandboxes (e.g., missing user namespace capabilities).
 pub(crate) fn resolve_backend_or_error_for(
     preset: Option<Preset>,
     availability: &Availability,

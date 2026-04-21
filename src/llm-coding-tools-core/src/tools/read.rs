@@ -24,6 +24,11 @@ pub struct ReadRequest {
 
 impl ReadRequest {
     /// Parses a raw JSON tool payload into a read request.
+    ///
+    /// # Errors
+    /// - Returns [`ToolError::Json`] when the JSON payload cannot be deserialized
+    ///   into a [`ReadRequest`] (e.g., missing required `file_path` field or
+    ///   invalid field types).
     pub fn parse(args: Value) -> ToolResult<Self> {
         serde_json::from_value(args).map_err(ToolError::from)
     }

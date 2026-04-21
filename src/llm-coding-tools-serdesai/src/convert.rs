@@ -47,6 +47,10 @@ fn output_to_return(output: ToolOutput) -> ToolReturn {
 ///
 /// [`ToolResult<ToolOutput>`]: llm_coding_tools_core::ToolResult
 /// [`ToolResult`]: serdes_ai::tools::ToolResult
+///
+/// # Errors
+/// - Returns [`SerdesError`] when the core [`ToolResult`] contains a [`ToolError`],
+///   converted via [`core_error_to_serdes`].
 #[inline]
 pub fn to_serdes_result(
     tool_name: &str,

@@ -45,6 +45,11 @@ pub struct EditRequest {
 
 impl EditRequest {
     /// Parses a raw JSON tool payload into an edit request.
+    ///
+    /// # Errors
+    /// - Returns [`ToolError::Json`] when the JSON payload cannot be deserialized
+    ///   into an [`EditRequest`] (e.g., missing required `file_path`, `old_string`,
+    ///   or `new_string` fields, or invalid field types).
     pub fn parse(args: Value) -> ToolResult<Self> {
         serde_json::from_value(args).map_err(ToolError::from)
     }
@@ -94,6 +99,19 @@ impl EditSettings {
 /// Performs exact string replacement in a file.
 ///
 /// Returns success message with replacement count.
+///
+/// # Errors
+/// - Returns [`EditError::EmptyOldString`] when `request.old_string` is empty.
+/// - Returns [`EditError::IdenticalStrings`] when `old_string` and `new_string`
+///   are identical.
+/// - Returns [`EditError::Tool`] wrapping [`ToolError::InvalidPath`] when path
+///   resolution fails.
+/// - Returns [`EditError::Tool`] wrapping [`ToolError::Io`] when reading the file fails.
+/// - Returns [`EditError::NotFound`] when `old_string` is not found in the file content.
+/// - Returns [`EditError::AmbiguousMatch`] when `replace_all=false` and multiple
+///   occurrences of `old_string` are found (requires more context to identify unique match).
+/// - Returns [`EditError::Tool`] wrapping [`ToolError::Io`] when writing the modified
+///   content back to the file fails.
 #[maybe_async::maybe_async]
 pub async fn edit_file<R: PathResolver>(
     resolver: &R,

@@ -81,8 +81,8 @@ impl AgentLoader {
     /// * `directory` - Root directory to scan
     ///
     /// # Errors
-    ///
-    /// Returns an error only for directory-level failures (e.g., path is not a directory).
+    /// - Returns [`AgentLoadError::Io`] when the directory path exists but is not a directory.
+    /// - Returns [`AgentLoadError::Io`] when the directory cannot be accessed (permissions, etc.).
     pub fn add_directory(
         &self,
         catalog: &mut AgentCatalog,
@@ -103,10 +103,9 @@ impl AgentLoader {
     /// * `on_error` - Callback invoked for each file that fails to load
     ///
     /// # Errors
-    ///
-    /// Returns an error only for directory-level failures (e.g., path is not a directory).
-    /// Individual file load failures are reported via `on_error` and do not fail the overall
-    /// operation.
+    /// - Returns [`AgentLoadError::Io`] when the directory path exists but is not a directory.
+    /// - Returns [`AgentLoadError::Io`] when the directory cannot be accessed (permissions, etc.).
+    /// - Individual file load failures are reported via `on_error` and do not fail the operation.
     pub fn add_directory_with_errors(
         &self,
         catalog: &mut AgentCatalog,
@@ -135,6 +134,12 @@ impl AgentLoader {
     ///
     /// * `catalog` - The catalog to insert the agent into
     /// * `path` - Path to a markdown file with YAML frontmatter
+    ///
+    /// # Errors
+    /// - Returns [`AgentLoadError::SchemaValidation`] when the file name (stem) is empty.
+    /// - Returns [`AgentLoadError::Io`] when the file cannot be read.
+    /// - Returns [`AgentLoadError::Parse`] when frontmatter parsing fails.
+    /// - Returns [`AgentLoadError::SchemaValidation`] when schema validation fails.
     pub fn add_file(
         &self,
         catalog: &mut AgentCatalog,
@@ -165,6 +170,12 @@ impl AgentLoader {
     /// * `catalog` - The catalog to insert the agent into
     /// * `path` - Path to a markdown file with YAML frontmatter
     /// * `name` - Explicit agent name to use
+    ///
+    /// # Errors
+    /// - Returns [`AgentLoadError::SchemaValidation`] when the explicit name is empty.
+    /// - Returns [`AgentLoadError::Io`] when the file cannot be read.
+    /// - Returns [`AgentLoadError::Parse`] when frontmatter parsing fails.
+    /// - Returns [`AgentLoadError::SchemaValidation`] when schema validation fails.
     pub fn add_file_named(
         &self,
         catalog: &mut AgentCatalog,
@@ -213,10 +224,8 @@ impl AgentLoader {
     /// * `default_name` - Agent name to use if not specified in frontmatter
     ///
     /// # Errors
-    ///
-    /// Returns an error if:
-    /// - Parsing fails (propagates the underlying parse error)
-    /// - The resulting agent name is empty
+    /// - Returns [`AgentLoadError::Parse`] when frontmatter parsing fails.
+    /// - Returns [`AgentLoadError::SchemaValidation`] when the resulting agent name is empty.
     pub fn add_from_str(
         &self,
         catalog: &mut AgentCatalog,
@@ -238,6 +247,11 @@ impl AgentLoader {
     /// * `catalog` - The catalog to insert the agent into
     /// * `bytes` - Raw markdown bytes with YAML frontmatter
     /// * `default_name` - Agent name to use if not specified in frontmatter
+    ///
+    /// # Errors
+    /// - Returns [`AgentLoadError::SchemaValidation`] when `bytes` is not valid UTF-8.
+    /// - Returns [`AgentLoadError::Parse`] when frontmatter parsing fails.
+    /// - Returns [`AgentLoadError::SchemaValidation`] when the resulting agent name is empty.
     pub fn add_from_bytes(
         &self,
         catalog: &mut AgentCatalog,
