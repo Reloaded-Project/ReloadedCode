@@ -1,16 +1,17 @@
 # Getting Started
 
-This guide walks you through setting up your first coding agent with
-llm-coding-tools. It assumes you have a Rust project and an LLM API key
-(e.g. `OPENAI_API_KEY`).
+Build sandboxed coding agents in Rust. Define agents in markdown, attach
+tools with permissions, and run them against any LLM provider. You'll need
+a Rust project and an LLM API key (e.g. `OPENAI_API_KEY`).
 
 ## Build your first agent
 
 === "With Agent Files"
 
     !!! info "Agents are defined as markdown files with YAML frontmatter"
-        The agent file format mirrors [OpenCode]'s schema - similar enough that
-        many files are drop-in compatible, but not identical.
+        The agent file format mirrors [OpenCode]'s agent definition format -
+        similar enough that many files are drop-in compatible, but
+        [not identical](migration.md).
 
     **1.** Create an agent file at `agents/coder.md`:
 
@@ -34,7 +35,6 @@ llm-coding-tools. It assumes you have a Rust project and an LLM API key
     ```
 
     **2.** Add the dependencies:
-
     ```toml
     [dependencies]
     llm-coding-tools-serdesai = "0.2"
@@ -87,7 +87,8 @@ llm-coding-tools. It assumes you have a Rust project and an LLM API key
 
 === "Without Agent Files"
 
-    For simpler use cases, attach tools directly to an [SerdesAI] agent builder:
+    For simpler use cases, attach tools directly to a [SerdesAI] agent
+    builder (the LLM agent framework):
 
     ```toml
     [dependencies]
@@ -136,16 +137,16 @@ llm-coding-tools. It assumes you have a Rust project and an LLM API key
 
 !!! note "What just happened?"
 
-    - **Agent markdown** (with agent files) defined the agent's name, permissions
+    - **Agent markdown** (with agent files) defines the agent's name, permissions
       (default-deny), and system prompt in one file
     - **SystemPromptBuilder** (without agent files) generates the system prompt
       with guidance for every attached tool
     - **CredentialResolver** resolves API keys from environment variables or
       explicit overrides (see below)
-    - **AgentBuildContext** (with agent files) wired the model catalog,
+    - **AgentBuildContext** (with agent files) wires the model catalog,
       credentials, and agent definitions together
-    - **`build("coder")`** resolved the agent by name, attached its permitted
-      tools, and generated the system prompt
+    - **`build("coder")`** resolves the agent by name, attaches its permitted
+      tools, and generates the system prompt
 
 !!! tip "Runnable examples"
     The repository includes complete examples for both paths:
@@ -157,8 +158,8 @@ llm-coding-tools. It assumes you have a Rust project and an LLM API key
 ## Credential management
 
 `CredentialResolver` resolves API keys by name (e.g. `"OPENAI_API_KEY"`) -
-overrides first, then environment variables. Empty values are skipped, so an
-empty override falls through to the env var.
+overrides first, then environment variables. The resolver skips empty values,
+so an empty override falls through to the environment variable.
 
 ```rust
 use llm_coding_tools_core::CredentialResolver;
@@ -167,33 +168,8 @@ let mut resolver = CredentialResolver::new();
 resolver.set_override("OPENAI_API_KEY", "sk-...");
 ```
 
-For multi-tenant servers or shared CI runners where env vars should be ignored,
-use `CredentialResolver::without_env()`.
-
-[`CredentialLookup`]: https://docs.rs/llm-coding-tools-core/latest/llm_coding_tools_core/trait.CredentialLookup.html
-
-## Sandboxing for production
-
-For production deployments handling untrusted input, enable sandboxing:
-
-```toml
-[dependencies]
-llm-coding-tools-serdesai = { version = "0.2", features = ["linux-bubblewrap"] }
-```
-
-Use `AllowedPathResolver` to restrict file access and the [bubblewrap] sandbox
-to isolate shell execution. See [Sandboxing](sandboxing.md) for the full guide.
-
-### Embedding patterns
-
-- **Discord bot / chat bot** - Use the Public Bot sandbox profile and
-  `AllowedPathResolver` to limit what the LLM can do with user-provided prompts.
-- **CI/CD pipeline** - Use the Trusted Maintenance profile for build jobs where
-  you control the inputs. Mount cache roots explicitly for build artifacts that
-  should persist between runs.
-
-If you use a framework other than SerdesAI, see [Custom Framework
-Integration](guides/custom-framework.md).
+For multi-tenant servers or shared CI runners where environment variables
+should be ignored, use `CredentialResolver::without_env()`.
 
 ## Run the examples
 
@@ -216,7 +192,33 @@ cargo run --example serdesai-agents -p llm-coding-tools-serdesai
 cargo run --example serdesai-task -p llm-coding-tools-serdesai
 ```
 
-See [Examples](guides/examples.md) for the full list with descriptions and source links.
+See [Examples](guides/examples.md) for the full list with descriptions and
+source links.
+
+## Sandboxing for production
+
+For production deployments handling untrusted input, enable sandboxing:
+
+```toml
+[dependencies]
+llm-coding-tools-serdesai = { version = "0.2", features = ["linux-bubblewrap"] }
+```
+
+Use `AllowedPathResolver` to restrict file access and the [bubblewrap] sandbox
+to isolate shell execution. See [Sandboxing](sandboxing.md) for the full guide.
+
+### Common deployment profiles
+
+- **Discord bot / chat bot** - Use the Public Bot sandbox profile
+  (restrictive; see [Sandboxing](sandboxing.md#the-two-profiles)) and
+  `AllowedPathResolver` to limit what the LLM can do with user-provided prompts.
+- **CI/CD pipeline** - Use the Trusted Maintenance profile
+  (permissive; see [Sandboxing](sandboxing.md#the-two-profiles)) for build jobs
+  where you control the inputs. Explicitly mount the cache directories so that
+  build artifacts persist between runs.
+
+If you use a framework other than SerdesAI, see [Custom Framework
+Integration](guides/custom-framework.md).
 
 ## Blocking mode
 
@@ -237,5 +239,4 @@ llm-coding-tools-core = { version = "0.2", default-features = false, features = 
 
 [SerdesAI]: https://crates.io/crates/serdes-ai
 [OpenCode]: https://opencode.ai/
-[models.dev]: https://models.dev
 [bubblewrap]: https://github.com/containers/bubblewrap
