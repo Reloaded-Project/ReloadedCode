@@ -9,7 +9,7 @@ hide:
   <h1>llm-coding-tools</h1>
   <p class="tagline">
     Production-grade coding agent tools in Rust.<br>
-    <abbr title="~10 MiB PSS on release build, all providers enabled.&#10;  • Code &amp; read-only data: ~6.5 MiB&#10;  • Heap (runtime state): ~2.5 MiB&#10;  • Shared libraries (glibc, libm): ~2.3 MiB&#10;  • Thread stacks: ~0.1 MiB (34 threads)&#10;  Private ~2.5 MiB · RSS ~13 MiB.">~10 MiB</abbr>. No TUI. Embed it anywhere.
+    <abbr title="~10 MiB Proportional Set Size (PSS) on release build, all providers enabled.&#10;  • Code &amp; read-only data: ~6.5 MiB&#10;  • Heap (runtime state): ~2.5 MiB&#10;  • Shared libraries (glibc, libm): ~2.3 MiB&#10;  • Thread stacks: ~0.1 MiB (34 threads)&#10;  Private ~2.5 MiB · RSS ~13 MiB.">~10 MiB</abbr>. No TUI. Embed it anywhere.
   </p>
 </div>
 
@@ -25,7 +25,7 @@ hide:
   <a href="getting-started" class="md-button md-button--primary">Get Started</a>
   <a href="https://github.com/Sewer56/llm-coding-tools" class="md-button">View on GitHub</a>
   <a href="https://docs.rs/llm-coding-tools-core/latest/llm_coding_tools_core/" class="md-button">API Reference</a>
-  <a href="guides/examples/" class="md-button">Examples</a>
+  <a href="guides/examples.md" class="md-button">Examples</a>
 </div>
 
 ---
@@ -33,17 +33,17 @@ hide:
 ## Why this project?
 
 [OpenCode] is a fun, fast-moving TUI coding agent - but it ships breaking changes
-regularly. It's a **TypeScript application** that uses <abbr title="opencode v1.4.2&#10;  • serve: 392 MiB RSS&#10;  • TUI: 679 MiB RSS">~400 MiB</abbr> of RAM, and it runs
+regularly. It's a **TypeScript application** that uses <abbr title="opencode v1.4.2&#10;  • serve: 392 MiB RSS&#10;  • TUI: 679 MiB RSS">~400 MiB</abbr> of RAM and runs
 as a separate process. What if you need the same agent tooling for a server? A Discord bot?
 A CI pipeline? Custom software?
 
-**llm-coding-tools** takes the core agent tooling and ships it as a **lightweight headless Rust
+**llm-coding-tools** ships the core agent tooling as a **lightweight headless Rust
 library** - same tool set, similar agent format, same system prompts - at a fraction
 of the resource cost.
 
 <div class="landing-stats">
   <div class="stat-card">
-    <div class="stat-value"><abbr title="~10 MiB PSS on release build, all providers enabled.&#10;  • Code &amp; read-only data: ~6.5 MiB&#10;  • Heap (runtime state): ~2.5 MiB&#10;  • Shared libraries (glibc, libm): ~2.3 MiB&#10;  • Thread stacks: ~0.1 MiB (34 threads)&#10;  Private ~2.5 MiB · RSS ~13 MiB.">~10 MiB</abbr></div>
+    <div class="stat-value"><abbr title="~10 MiB Proportional Set Size (PSS) on release build, all providers enabled.&#10;  • Code &amp; read-only data: ~6.5 MiB&#10;  • Heap (runtime state): ~2.5 MiB&#10;  • Shared libraries (glibc, libm): ~2.3 MiB&#10;  • Thread stacks: ~0.1 MiB (34 threads)&#10;  Private ~2.5 MiB · RSS ~13 MiB.">~10 MiB</abbr></div>
     <div class="stat-label">Memory usage</div>
   </div>
   <div class="stat-card">
@@ -56,7 +56,7 @@ of the resource cost.
   </div>
   <div class="stat-card">
     <div class="stat-value">6 / 11</div>
-    <div class="stat-label">CI platforms / semver surfaces</div>
+    <div class="stat-label">CI platforms / semver-stable APIs</div>
   </div>
 </div>
 
@@ -85,7 +85,7 @@ of the resource cost.
   </div>
   <div class="feature-card">
     <h3>🤖 Agent Runtime</h3>
-    <p>Load agent markdown files based on [OpenCode]'s schema. Multi-agent delegation with depth guards.</p>
+    <p>Load agent markdown files based on [OpenCode]'s schema. Multi-agent delegation with recursion depth limits.</p>
   </div>
   <div class="feature-card">
     <h3>🗄️ Model Catalog</h3>
@@ -93,7 +93,7 @@ of the resource cost.
   </div>
   <div class="feature-card">
     <h3>🔑 Permissions</h3>
-    <p>Default-deny tool access with last-match-wins rules. Wildcard patterns for delegation control.</p>
+    <p>Default-deny tool access with ordered rules where the last matching rule takes priority. Wildcard patterns for delegation control.</p>
   </div>
   <div class="feature-card">
     <h3>⚡ Async + Sync</h3>
@@ -101,13 +101,24 @@ of the resource cost.
   </div>
   <div class="feature-card">
     <h3>🧩 Embeddable</h3>
-    <p>Framework-agnostic core. Use the <a href="https://crates.io/crates/serdes-ai">serdesAI</a> integration or build your own with the core primitives.</p>
+    <p>Framework-agnostic core. Use the <a href="https://crates.io/crates/serdes-ai">SerdesAI</a> integration or build your own with the core primitives.</p>
   </div>
 </div>
 
 ## Quick Start
 
-**1.** Create an agent file (`agents/coder.md`):
+**1.** Add the dependencies:
+
+```toml
+[dependencies]
+llm-coding-tools-serdesai = "0.2"
+llm-coding-tools-agents = "0.1"
+llm-coding-tools-core = "0.2"
+llm-coding-tools-models-dev = "0.1"
+tokio = { version = "1", features = ["full"] }
+```
+
+**2.** Create an agent file (`agents/coder.md`):
 
 ```markdown
 ---
@@ -128,7 +139,7 @@ permission:
 You are a coding assistant. Use the available tools to complete the user's task.
 ```
 
-**2.** Load the catalog, build the agent, and run:
+**3.** Load the catalog, build the agent, and run:
 
 ```rust
 use llm_coding_tools_agents::{AgentCatalog, AgentLoader, AgentRuntimeBuilder};
@@ -147,7 +158,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let load_result = ModelsDevCatalog::load().await?;
 
     let runtime = AgentRuntimeBuilder::new()
-        .catalog(catalog) // Default model if not specified by agent.
+        .catalog(catalog) // Load agent definitions from the catalog.
         .defaults(AgentDefaults::with_model("synthetic/hf:MiniMaxAI/MiniMax-M2.5"))
         .build()?;
 
@@ -164,7 +175,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 }
 ```
 
-## The Crate Map
+See [Getting Started](getting-started.md) for the full walkthrough with
+dependency setup and an alternate path without agent files.
+
+## Crate Map
 
 <div class="crate-grid">
   <div class="crate-card">
@@ -177,7 +191,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
   </div>
   <div class="crate-card">
     <h3><a href="https://crates.io/crates/llm-coding-tools-serdesai">serdesai</a></h3>
-    <p>Ready-to-use <a href="https://crates.io/crates/serdes-ai">SerdesAI</a> integration. 15 provider bridges, multi-agent task delegation with depth guards.</p>
+    <p>Ready-to-use <a href="https://crates.io/crates/serdes-ai">SerdesAI</a> (LLM serialization framework) integration. 15 LLM provider adapters, multi-agent task delegation with recursion depth limits.</p>
   </div>
   <div class="crate-card">
     <h3><a href="https://crates.io/crates/llm-coding-tools-bubblewrap">bubblewrap</a></h3>
@@ -202,18 +216,17 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
   <tbody>
     <tr><td>Language</td><td>TypeScript</td><td>Rust</td></tr>
     <tr><td>Runtime</td><td>Bun</td><td><a href="https://tokio.rs">tokio</a> / blocking</td></tr>
-    <tr><td>Memory</td><td><abbr title="opencode v1.4.2&#10;  • serve: 392 MiB RSS&#10;  • TUI: 679 MiB RSS">~400 MiB</abbr></td><td><abbr title="~10 MiB PSS on release build, all providers enabled.&#10;  • Code &amp; read-only data: ~6.5 MiB&#10;  • Heap (runtime state): ~2.5 MiB&#10;  • Shared libraries (glibc, libm): ~2.3 MiB&#10;  • Thread stacks: ~0.1 MiB (34 threads)&#10;  Private ~2.5 MiB · RSS ~13 MiB.">~10 MiB</abbr></td></tr>
-    <tr><td>Interface</td><td>TUI / Desktop / IDE</td><td>Library (headless)</td></tr>
+    <tr><td>Memory</td><td><abbr title="opencode v1.4.2&#10;  • serve: 392 MiB RSS&#10;  • TUI: 679 MiB RSS">~400 MiB</abbr></td><td><abbr title="~10 MiB Proportional Set Size (PSS) on release build, all providers enabled.&#10;  • Code &amp; read-only data: ~6.5 MiB&#10;  • Heap (runtime state): ~2.5 MiB&#10;  • Shared libraries (glibc, libm): ~2.3 MiB&#10;  • Thread stacks: ~0.1 MiB (34 threads)&#10;  Private ~2.5 MiB · RSS ~13 MiB.">~10 MiB</abbr></td></tr>
+    <tr><td>Interface</td><td>TUI / Desktop / IDE</td><td>Library (headless, no UI)</td></tr>
     <tr><td>Agent format</td><td>Markdown + YAML</td><td>Similar format</td></tr>
-    <tr><td>Permissions</td><td>Default-allow + ask</td><td>Default-deny</td></tr>
+    <tr><td>Permissions</td><td>Default-allow + interactive ask</td><td>Default-deny</td></tr>
     <tr><td>Tool set</td><td>14 tools</td><td>10 tools (core set)</td></tr>
     <tr><td>LLM framework</td><td>AI SDK (TypeScript)</td><td><a href="https://crates.io/crates/serdes-ai">SerdesAI</a> / bring your own</td></tr>
     <tr><td>Sandboxing</td><td>-</td><td>Linux <a href="https://github.com/containers/bubblewrap">bubblewrap</a> profiles</td></tr>
-    <tr><td>Embeddable</td><td>Client/server API</td><td>Rust library (crate)</td></tr>
+    <tr><td>Embeddable</td><td>Client/server HTTP API</td><td>Rust library (crate)</td></tr>
   </tbody>
 </table>
 
 See [Comparison with OpenCode](comparison.md) for a deeper breakdown.
 
 [OpenCode]: https://opencode.ai/
-[SerdesAI]: https://crates.io/crates/serdes-ai
