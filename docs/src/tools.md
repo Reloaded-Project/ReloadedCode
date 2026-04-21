@@ -290,7 +290,7 @@ sub-agent with a prompt and receive the result.
 
 **Output:** The delegated agent's response as a text summary.
 
-See [Agents] for the full delegation model.
+See [Getting Started](getting-started.md) for the full delegation model.
 
 ## Tool Settings
 
