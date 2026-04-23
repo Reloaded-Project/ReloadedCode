@@ -13,13 +13,13 @@ default = ["tokio"]
 tokio = ["dep:process-wrap", "process-wrap/tokio1", "process-wrap/process-group"]
 blocking = ["dep:process-wrap", "process-wrap/std", "process-wrap/process-group"]
 [dependencies]
-parking_lot = "0.12"
-thiserror = "2.0"
-process-wrap = { version = "9", default-features = false, optional = true }
-tempfile = "3.27"
+parking_lot = { workspace = true }
+thiserror = { workspace = true }
+process-wrap = { workspace = true, optional = true }
+tempfile = { workspace = true }
 
 [dev-dependencies]
-rstest = "0.26"
-serial_test = "3"
-tempfile = "3.27"
-tokio = { version = "1.51", features = ["rt", "macros"] }
+rstest = { workspace = true }
+serial_test = { workspace = true }
+tempfile = { workspace = true }
+tokio = { workspace = true, features = ["rt", "macros"] }

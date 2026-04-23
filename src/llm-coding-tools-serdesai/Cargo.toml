@@ -51,50 +51,45 @@ linux-bubblewrap = [
 
 [dependencies]
 # Core tool operations (file read/write/edit, glob, grep, bash, etc.)
-llm-coding-tools-core = { version = "0.2.0", path = "../llm-coding-tools-core", features = [
-    "tokio",
-] }
+llm-coding-tools-core = { workspace = true, features = ["tokio"] }
 
 # Linux sandboxing via bubblewrap.
 # Provides sandbox profiles, presets, and sandbox availability detection.
-llm-coding-tools-bubblewrap = { version = "0.1.0", path = "../llm-coding-tools-bubblewrap", optional = true }
+llm-coding-tools-bubblewrap = { workspace = true, optional = true }
 
 # Generic agent runtime dependencies
-llm-coding-tools-agents = { version = "0.1.0", path = "../llm-coding-tools-agents" }
+llm-coding-tools-agents = { workspace = true }
 
 # serdes-ai provides Tool trait, ToolDefinition, RunContext
-serdes-ai = { version = "0.2.6", default-features = false }
-serdes-ai-models = { version = "0.2.6", default-features = false }
-serdes-ai-streaming = "0.2"
-futures = "0.3"
+serdes-ai = { workspace = true }
+serdes-ai-models = { workspace = true }
+serdes-ai-streaming = { workspace = true }
+futures = { workspace = true }
 
 # Tool trait is async - async-trait is NOT re-exported from serdes-ai
-async-trait = "0.1"
+async-trait = { workspace = true }
 
 # Error derives
-thiserror = "2.0"
+thiserror = { workspace = true }
 
 # Tool parameters use serde for deserialization, serde_json for schema
-serde = { version = "1.0", features = ["derive"] }
-serde_json = "1.0"
+serde = { workspace = true }
+serde_json = { workspace = true }
 
 # HTTP client for webfetch tool
-reqwest = { version = "0.13", default-features = false, features = [
-    "rustls",
-    "rustls-native-certs",
-] }
+reqwest = { workspace = true }
 
 # Used for IndexMap in build.rs (permission config)
-indexmap = "2"
+indexmap = { workspace = true }
 
 [dev-dependencies]
-serial_test = "3"
-tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
-tempfile = "3"
-wiremock = "0.6"
-ahash = "0.8"
-indexmap = "2"
-temp-env = "0.3.6"
-rstest = "0.26"
+serial_test = { workspace = true }
+tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }
+tempfile = { workspace = true }
+wiremock = { workspace = true }
+ahash = { workspace = true }
+indexmap = { workspace = true }
+temp-env = { workspace = true }
+rstest = { workspace = true }
 # models.dev catalog loader for examples
-llm-coding-tools-models-dev = { version = "0.1.0", path = "../llm-coding-tools-models-dev" }
+llm-coding-tools-models-dev = { workspace = true }

@@ -10,37 +10,36 @@ readme = "README.md"
 
 [dependencies]
 # YAML parsing for frontmatter
-serde = { version = "1.0", features = ["derive"] }
-serde_yaml = "0.9"
-serde_json = "1.0"
+serde = { workspace = true }
+serde_yaml = { workspace = true }
+serde_json = { workspace = true }
 
 # Preserve insertion order for permission maps
-indexmap = { version = "2", features = ["serde"] }
+indexmap = { workspace = true }
 
 # Error handling
-thiserror = "2.0"
+thiserror = { workspace = true }
 
 # Fast CRLF to LF conversion
-crlf-to-lf-inplace = "0.2"
-
+crlf-to-lf-inplace = { workspace = true }
 
 # Directory scanning with gitignore support
-ignore = "0.4.25"
+ignore = { workspace = true }
 
 # High-performance hashing (sync version with core crate)
-ahash = { version = "0.8", features = ["serde"] }
+ahash = { workspace = true }
 
 # Core library for permissions and tool types
-llm-coding-tools-core = { path = "../llm-coding-tools-core", version = "0.2.0" }
+llm-coding-tools-core = { workspace = true }
 
 # Canonicalizes paths, resolving symlinks without requiring the full path to exist
-soft-canonicalize = "0.5"
+soft-canonicalize = { workspace = true }
 
 [dev-dependencies]
-tempfile = "3.27"
-criterion = "0.8"
-indoc = "2"
-rstest = "0.26"
+tempfile = { workspace = true }
+criterion = { workspace = true }
+indoc = { workspace = true }
+rstest = { workspace = true }
 
 [[bench]]
 name = "parser"

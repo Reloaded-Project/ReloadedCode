@@ -24,44 +24,41 @@ blocking = [
 
 [dependencies]
 # Core library for ModelCatalog and related types
-llm-coding-tools-core = { path = "../llm-coding-tools-core", version = "0.2.0", default-features = false }
+llm-coding-tools-core = { workspace = true, default-features = false }
 
 # Cross-platform cache directory detection
-dirs = "6.0.0"
+dirs = { workspace = true }
 
 # HTTP client for conditional GET requests
-reqwest = { version = "0.13", default-features = false, features = [
-    "rustls",
-    "rustls-native-certs",
-], optional = true }
+reqwest = { workspace = true, optional = true }
 
 # Fast binary serialization
-bitcode = "0.6.9"
+bitcode = { workspace = true }
 
 # Compression for cache payload
-zstd = "0.13.3"
+zstd = { workspace = true }
 
 # Shared async/sync implementation for load/cache APIs
-maybe-async = "0.2"
+maybe-async = { workspace = true }
 
 # Endian-aware fixed-header serialization helpers
-endian-writer = "2.2.0"
-endian-writer-derive = "0.1.0"
+endian-writer = { workspace = true }
+endian-writer-derive = { workspace = true }
 
 # JSON parsing for models.dev API responses
-serde = { version = "1.0.228", features = ["derive"] }
-serde_json = "1.0.145"
+serde = { workspace = true }
+serde_json = { workspace = true }
 
 # Ergonomic error definitions
-thiserror = "2.0.18"
+thiserror = { workspace = true }
 
 # Temp file with atomic rename support
-tempfile = "3.27"
+tempfile = { workspace = true }
 
 # Async runtime (when tokio feature enabled)
-tokio = { version = "1.51", features = ["fs", "io-util"], optional = true }
+tokio = { workspace = true, optional = true }
 
 [dev-dependencies]
-tokio = { version = "1.51", features = ["rt", "macros"] }
-serial_test = "3"
-rstest = "0.26"
+tokio = { workspace = true, features = ["rt", "macros"] }
+serial_test = { workspace = true }
+rstest = { workspace = true }

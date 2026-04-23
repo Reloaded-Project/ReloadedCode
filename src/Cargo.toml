@@ -9,6 +9,85 @@ members = [
     "llm-coding-tools-bubblewrap",
 ]
 
+[workspace.dependencies]
+# Serialization
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+serde_yaml = "0.9"
+bitcode = "0.6.9"
+bitflags = "2.11.0"
+
+# Error handling
+thiserror = "2.0"
+
+# Async/Runtime
+tokio = { version = "1.51", features = ["fs", "io-util", "process", "time"] }
+maybe-async = "0.2"
+async-trait = "0.1"
+futures = "0.3"
+
+# HTTP/Network
+reqwest = { version = "0.13", default-features = false, features = ["rustls", "rustls-native-certs"] }
+html-to-markdown-rs = "3.1"
+
+# Filesystem/Path
+shellexpand = "3.1.2"
+soft-canonicalize = "0.5.5"
+dirs = "6"
+tempfile = "3.27"
+ignore = "0.4.25"
+
+# Data structures
+hashbrown = "0.17"
+indexmap = { version = "2", features = ["serde"] }
+tinyvec = { version = "1.11", features = ["alloc"] }
+lite-strtab = "0.2"
+ahash = { version = "0.8", features = ["serde"] }
+parking_lot = "0.12"
+
+# Bit operations
+bitfields = "1.0.3"
+
+# Grep/Glob tools
+globset = "0.4.18"
+grep-regex = "0.1.14"
+grep-searcher = "0.1.16"
+memchr = "2.8.0"
+
+# Process management
+process-wrap = { version = "9.1", default-features = false }
+
+# String formatting
+const_format = "0.2.35"
+crlf-to-lf-inplace = "0.2"
+
+# Schema/Validation
+schemars = "1.2"
+
+# Compression/Encoding
+zstd = "0.13.3"
+endian-writer = "2.2.0"
+endian-writer-derive = "0.1.0"
+
+# serdes-ai ecosystem
+serdes-ai = { version = "0.2.6", default-features = false }
+serdes-ai-models = { version = "0.2.6", default-features = false }
+serdes-ai-streaming = "0.2"
+
+# Internal crates
+llm-coding-tools-core = { version = "0.2.0", path = "llm-coding-tools-core" }
+llm-coding-tools-bubblewrap = { version = "0.1.0", path = "llm-coding-tools-bubblewrap" }
+llm-coding-tools-agents = { version = "0.1.0", path = "llm-coding-tools-agents" }
+llm-coding-tools-models-dev = { version = "0.1.0", path = "llm-coding-tools-models-dev" }
+
+# Dev dependencies
+criterion = "0.8"
+rstest = "0.26"
+serial_test = "3"
+wiremock = "0.6"
+indoc = "2"
+temp-env = "0.3.6"
+
 # Profile Build
 [profile.profile]
 inherits = "release"
