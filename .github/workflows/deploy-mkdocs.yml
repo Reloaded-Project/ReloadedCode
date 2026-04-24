@@ -18,7 +18,7 @@ jobs:
       - name: Deploy MkDocs
         uses: Reloaded-Project/devops-mkdocs@v1
         with:
+          config-file: docs/mkdocs.yml
           requirements: ./docs/requirements.txt
           publish-to-pages: ${{ github.event_name == 'push' }}
           checkout-current-repo: true
-          docs-directory: docs
