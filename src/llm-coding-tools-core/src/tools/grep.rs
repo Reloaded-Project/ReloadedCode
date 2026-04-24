@@ -3,7 +3,7 @@
 use crate::error::{ToolError, ToolResult};
 use crate::path::PathResolver;
 use crate::tool_metadata::grep as grep_meta;
-use crate::util::{push_usize, truncate_line_with_ellipsis, TRUNCATION_ELLIPSIS};
+use crate::util::{push_padded_usize, truncate_line_with_ellipsis, TRUNCATION_ELLIPSIS};
 use globset::Glob;
 use grep_regex::RegexMatcher;
 use grep_searcher::sinks::UTF8;
@@ -209,11 +209,22 @@ impl GrepOutput {
     pub fn format(&self, formatting: GrepFormattingSettings) -> String {
         let line_numbers = formatting.line_numbers();
         let max_line_len = formatting.max_line_length();
+        let line_number_width = self
+            .files
+            .iter()
+            .flat_map(|f| f.matches.iter().map(|m| m.line_num as usize))
+            .max()
+            .map(|m| m.checked_ilog10().unwrap_or(0) as usize + 1)
+            .unwrap_or(1);
         let estimated_capacity = self.match_count * ESTIMATED_CHARS_PER_MATCH;
         let mut output = String::with_capacity(estimated_capacity);
 
         output.push_str("Found ");
-        push_usize(&mut output, self.match_count);
+        push_padded_usize(
+            &mut output,
+            self.match_count,
+            self.match_count.checked_ilog10().unwrap_or(0) as usize + 1,
+        );
         output.push_str(" matches\n");
 
         for file in &self.files {
@@ -226,8 +237,8 @@ impl GrepOutput {
                     truncate_line_with_ellipsis(&m.line_text, max_line_len);
 
                 if line_numbers {
-                    output.push_str("  L");
-                    push_usize(&mut output, m.line_num as usize);
+                    output.push_str("  ");
+                    push_padded_usize(&mut output, m.line_num as usize, line_number_width);
                     output.push_str(": ");
                     output.push_str(display_text);
                 } else {
@@ -245,13 +256,22 @@ impl GrepOutput {
 
         if self.truncated {
             output.push_str("\n(Results truncated at ");
-            push_usize(&mut output, self.effective_limit);
+            push_padded_usize(
+                &mut output,
+                self.effective_limit,
+                self.effective_limit.checked_ilog10().unwrap_or(0) as usize + 1,
+            );
             output.push_str(" matches)");
         }
 
         if self.partial {
             output.push_str("\n(Partial results: ");
-            push_usize(&mut output, self.errors.len());
+            let error_count = self.errors.len();
+            push_padded_usize(
+                &mut output,
+                error_count,
+                error_count.checked_ilog10().unwrap_or(0) as usize + 1,
+            );
             output.push_str(" file error(s) encountered)");
         }
 
@@ -630,8 +650,8 @@ mod tests {
     #[rstest]
     #[case::with_line_numbers_short(
         6,           // max_len: line "abcdefghij" (10 chars) truncated to 6
-        true,        // with_line_numbers: yes, shows "L1: " prefix
-        "L1: abc..." // expected: truncated with line number prefix
+        true,        // with_line_numbers: yes, shows "1: " prefix
+        "1: abc..." // expected: truncated with line number prefix
     )]
     #[case::without_line_numbers_short(
         4,        // max_len: line truncated to 4 chars
@@ -641,12 +661,12 @@ mod tests {
     #[case::no_truncation_when_fits(
         200,             // max_len: larger than line length (10 chars)
         true,            // with_line_numbers: yes
-        "L1: abcdefghij" // expected: full line preserved, no truncation
+        "1: abcdefghij" // expected: full line preserved, no truncation
     )]
     #[case::exact_boundary_no_truncation(
         10,              // max_len: exactly matches line length (10 chars)
         true,            // with_line_numbers: yes
-        "L1: abcdefghij" // expected: full line preserved, boundary not exceeded
+        "1: abcdefghij" // expected: full line preserved, boundary not exceeded
     )]
     fn grep_format_handles_line_truncation(
         #[case] max_len: usize,
@@ -681,6 +701,52 @@ mod tests {
             "Expected '{}' in:\n{}",
             expected,
             formatted
+        );
+    }
+
+    #[test]
+    fn grep_format_aligns_line_numbers_with_padding() {
+        let output = GrepOutput {
+            files: vec![GrepFileMatches {
+                path: "file.txt".to_string(),
+                matches: vec![
+                    GrepLineMatch {
+                        line_num: 3,
+                        line_text: "short".to_string(),
+                    },
+                    GrepLineMatch {
+                        line_num: 15,
+                        line_text: "longer content".to_string(),
+                    },
+                ],
+                mtime: SystemTime::UNIX_EPOCH,
+            }],
+            match_count: 2,
+            truncated: false,
+            partial: false,
+            errors: Vec::new(),
+            effective_limit: 10,
+        };
+
+        let formatted = output.format(
+            GrepFormattingSettings::new()
+                .with_max_line_length(200)
+                .unwrap()
+                .with_line_numbers(true),
+        );
+
+        // With max line_num=15, width=2: line 3 is " 3:" (1 space + digit), line 15 is "15:" (2 digits)
+        assert!(
+            formatted.contains("   3: short"),
+            "Expected padded '   3: short' in:\n{formatted}"
+        );
+        assert!(
+            formatted.contains("  15: longer content"),
+            "Expected aligned '  15: longer content' in:\n{formatted}"
+        );
+        assert!(
+            !formatted.contains("L"),
+            "No 'L' prefix should appear in output:\n{formatted}"
         );
     }
 

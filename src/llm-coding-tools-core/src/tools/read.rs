@@ -6,7 +6,7 @@ use crate::output::ToolOutput;
 use crate::path::PathResolver;
 use crate::tool_metadata::read as read_meta;
 use crate::util::{
-    push_usize, truncate_line_with_ellipsis, ESTIMATED_CHARS_PER_LINE, TRUNCATION_ELLIPSIS,
+    push_padded_usize, truncate_line_with_ellipsis, ESTIMATED_CHARS_PER_LINE, TRUNCATION_ELLIPSIS,
 };
 use memchr::{memchr, memchr_iter};
 use serde::Deserialize;
@@ -192,7 +192,7 @@ type BufFile = tokio::io::BufReader<tokio::fs::File>;
 ///
 /// The function opens the file at the resolved path, skips to the requested
 /// 1-indexed `offset`, then streams lines into an output string. Each line
-/// can optionally carry a `L{number}: ` prefix and is truncated to
+/// can optionally carry a `{number}: ` prefix and is truncated to
 /// `max_line_length` when necessary.
 ///
 /// # Arguments
@@ -251,14 +251,16 @@ pub async fn read_file<R: PathResolver>(
         .min(1_048_576);
     let mut reader = fs::open_buffered(&path, buf_capacity).await?;
 
-    // Compute the width of the "L{number}: " prefix so the output buffer can
-    // be pre-sized accurately. Derives digit count from the last line number.
-    let line_prefix_len = if line_numbers {
+    // Compute the width of the line number and "{number}: " prefix so the
+    // output buffer can be pre-sized accurately. Derives digit count from
+    // the last line number.
+    let line_number_width = if line_numbers {
         let last_line = offset.saturating_add(limit).saturating_sub(1);
-        last_line.checked_ilog10().unwrap_or(0) as usize + 3
+        last_line.checked_ilog10().unwrap_or(0) as usize + 1
     } else {
         0
     };
+    let line_prefix_len = line_number_width + 2; // ": "
     let estimated_capacity = limit.saturating_mul(ESTIMATED_CHARS_PER_LINE + line_prefix_len);
     let mut output = String::with_capacity(estimated_capacity);
     // Holds a partial line that spans multiple buffered chunks.
@@ -282,6 +284,7 @@ pub async fn read_file<R: PathResolver>(
                     emit_line(
                         &overflow,
                         line_number,
+                        line_number_width,
                         &mut output,
                         &mut lines_output,
                         max_line_length,
@@ -306,6 +309,7 @@ pub async fn read_file<R: PathResolver>(
                         emit_line(
                             &buf[pos..newline_pos],
                             line_number,
+                            line_number_width,
                             &mut output,
                             &mut lines_output,
                             max_line_length,
@@ -318,6 +322,7 @@ pub async fn read_file<R: PathResolver>(
                         emit_line(
                             &overflow,
                             line_number,
+                            line_number_width,
                             &mut output,
                             &mut lines_output,
                             max_line_length,
@@ -438,6 +443,7 @@ pub(crate) async fn skip_to_line(reader: &mut BufFile, skip_target: usize) -> To
 fn emit_line(
     line_bytes: &[u8],
     line_number: usize,
+    line_number_width: usize,
     output: &mut String,
     lines_output: &mut usize,
     max_line_length: usize,
@@ -447,6 +453,7 @@ fn emit_line(
         process_line::<true>(
             line_bytes,
             line_number,
+            line_number_width,
             output,
             lines_output,
             max_line_length,
@@ -455,6 +462,7 @@ fn emit_line(
         process_line::<false>(
             line_bytes,
             line_number,
+            line_number_width,
             output,
             lines_output,
             max_line_length,
@@ -470,6 +478,7 @@ fn emit_line(
 fn process_line<const LINE_NUMBERS: bool>(
     line_bytes: &[u8],
     line_number: usize,
+    line_number_width: usize,
     output: &mut String,
     lines_output: &mut usize,
     max_line_length: usize,
@@ -481,8 +490,7 @@ fn process_line<const LINE_NUMBERS: bool>(
     }
 
     if LINE_NUMBERS {
-        output.push('L');
-        push_usize(output, line_number);
+        push_padded_usize(output, line_number, line_number_width);
         output.push_str(": ");
     }
 
@@ -640,7 +648,8 @@ mod tests {
         let result = read_temp_file(b"hello\nworld\n", 1, 2000, true)
             .await
             .unwrap();
-        assert_eq!(result.content, "L1: hello\nL2: world");
+        // With limit=2000, last_line=2000, width=4: "   1: hello\n   2: world"
+        assert_eq!(result.content, "   1: hello\n   2: world");
     }
 
     #[maybe_async::test(feature = "blocking", async(feature = "tokio", tokio::test))]
@@ -649,6 +658,24 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(result.content, "hello\nworld");
+    }
+
+    #[maybe_async::test(feature = "blocking", async(feature = "tokio", tokio::test))]
+    async fn reads_file_with_multi_digit_line_numbers() {
+        // 12-line file with limit=12: last_line=12, width=2, so line 1 is " 1:" (space-padded)
+        let content = (1..=12).map(|i| format!("line{i}\n")).collect::<String>();
+        let result = read_temp_file(content.as_bytes(), 1, 12, true)
+            .await
+            .unwrap();
+        assert!(
+            result.content.contains(" 1: line1"),
+            "Expected padded ' 1: line1'"
+        );
+        assert!(
+            result.content.contains("12: line12"),
+            "Expected unpadded '12: line12'"
+        );
+        assert!(!result.content.contains("L"), "No 'L' prefix should appear");
     }
 
     #[maybe_async::test(feature = "blocking", async(feature = "tokio", tokio::test))]
@@ -727,7 +754,7 @@ mod tests {
         .await
         .unwrap();
 
-        assert_eq!(result.content, "L1: line1");
+        assert_eq!(result.content, "1: line1");
     }
 
     #[maybe_async::test(feature = "blocking", async(feature = "tokio", tokio::test))]

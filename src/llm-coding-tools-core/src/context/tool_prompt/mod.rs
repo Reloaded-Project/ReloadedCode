@@ -18,7 +18,7 @@ mod tool_sections;
 pub(crate) const COMMON_RULES_HEADER: &str = "## Common Rules\n";
 
 /// Largest common-rules section length, including [`COMMON_RULES_HEADER`].
-pub(crate) const COMMON_RULES_SECTION_MAX_SIZE: usize = 494;
+pub(crate) const COMMON_RULES_SECTION_MAX_SIZE: usize = 493;
 
 /// Describes how a tool accepts paths.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

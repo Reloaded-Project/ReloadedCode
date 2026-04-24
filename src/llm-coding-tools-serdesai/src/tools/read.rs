@@ -198,10 +198,10 @@ mod tests {
             .unwrap();
 
         let text = result.as_text().unwrap();
-        assert!(text.contains("L2: line2"));
-        assert!(text.contains("L3: line3"));
-        assert!(!text.contains("L1:"));
-        assert!(!text.contains("L4:"));
+        assert!(text.contains("2: line2"));
+        assert!(text.contains("3: line3"));
+        assert!(!text.contains("1:"));
+        assert!(!text.contains("4:"));
     }
 
     #[tokio::test]
@@ -224,8 +224,8 @@ mod tests {
             .unwrap();
 
         let text = result.as_text().unwrap();
-        assert!(text.contains("L1: hello"));
-        assert!(text.contains("L2: world"));
+        assert!(text.contains("1: hello"));
+        assert!(text.contains("2: world"));
     }
 
     #[tokio::test]
@@ -269,7 +269,7 @@ mod tests {
 
         let text = result.as_text().unwrap();
         assert!(text.contains("line1"));
-        assert!(!text.contains("L1:")); // line numbers disabled
+        assert!(!text.contains("1:")); // line numbers disabled
     }
 
     #[tokio::test]
@@ -294,9 +294,9 @@ mod tests {
             .unwrap();
 
         let text = result.as_text().unwrap();
-        assert!(text.contains("L1: line1"));
-        assert!(!text.contains("L2: line2"));
-        assert!(!text.contains("L3: line3"));
+        assert!(text.contains("1: line1"));
+        assert!(!text.contains("2: line2"));
+        assert!(!text.contains("3: line3"));
     }
 
     #[test]

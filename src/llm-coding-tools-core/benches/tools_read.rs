@@ -5,7 +5,7 @@
 //!
 //! # Benchmark Groups
 //!
-//! - `read_file/with_line_numbers`: Read with `L{n}: ` prefix on each line
+//! - `read_file/with_line_numbers`: Read with `{n}: ` prefix on each line
 //! - `read_file/without_line_numbers`: Read raw content without prefixes
 //!
 //! # Test Cases (per mode)

@@ -1161,7 +1161,7 @@ mod tests {
         assert!(preamble.contains(
             "Prefer `edit` for targeted changes and `write` for new files or full rewrites."
         ));
-        assert!(preamble.contains("copy exact text from `read` and omit any `L{n}: ` prefixes"));
+        assert!(preamble.contains("copy exact text from `read` and omit any `{n}: ` prefixes"));
     }
 
     #[test]

@@ -14,11 +14,8 @@ pub const DEFAULT_LIMIT: usize = 2000;
 /// Maximum characters per output line before truncation.
 pub const MAX_LINE_LENGTH: usize = 2000;
 
-/// Format prefix for line-numbered output (e.g. `L42: ...`).
-pub const LINE_PREFIX_FORMAT: &str = "L{}: ";
-
 /// Display hint for the line-number prefix in prompts.
-pub const LINE_PREFIX_DISPLAY: &str = "L{n}: ";
+pub const LINE_PREFIX_DISPLAY: &str = "{n}: ";
 
 /// Serde-friendly default offset helper.
 #[must_use]

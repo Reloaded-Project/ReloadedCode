@@ -69,25 +69,39 @@ pub(crate) fn truncate_line_with_ellipsis(line: &str, max_chars: usize) -> (&str
     }
 }
 
-/// Fast integer-to-string conversion for positive integers.
+/// Appends `n` right-aligned with leading spaces to fill `width` characters.
+/// E.g. `push_padded_usize(buf, 5, 4)` appends `"   5"`.
 ///
-/// Uses a stack buffer to avoid allocations and converts digit-by-digit
-/// for maximum performance.
+/// When `width` equals the digit count of `n`, this appends just the digits
+/// (no padding), equivalent to a plain integer-to-string conversion.
+///
+/// # Safety (caller contract)
+///
+/// `width` must be >= the number of digits in `n`. This is guaranteed by
+/// construction: callers compute `width` from the maximum line number or
+/// from the number's own digit count.
 #[inline]
-pub(crate) fn push_usize(output: &mut String, mut n: usize) {
-    if n == 0 {
-        output.push('0');
-        return;
-    }
-    let mut buf = [0u8; 20];
+pub(crate) fn push_padded_usize(output: &mut String, n: usize, width: usize) {
+    debug_assert!(width <= 20, "width exceeds stack buffer");
+    let mut buf = [b' '; 20];
     let mut pos = 20usize;
-    while n > 0 {
+    let mut m = n;
+    if m == 0 {
         pos -= 1;
-        buf[pos] = b'0' + (n % 10) as u8;
-        n /= 10;
+        buf[pos] = b'0';
+    } else {
+        while m > 0 {
+            pos -= 1;
+            buf[pos] = b'0' + (m % 10) as u8;
+            m /= 10;
+        }
     }
+    // `width >= digit_count(n)` by contract, so `20 - width <= pos`.
+    // buf[20-width..pos] is already spaces; buf[pos..20] has digits.
+    let start = 20 - width;
+    debug_assert!(start <= pos, "width ({width}) < digit count of {n}");
     unsafe {
-        output.push_str(core::str::from_utf8_unchecked(&buf[pos..]));
+        output.push_str(core::str::from_utf8_unchecked(&buf[start..]));
     }
 }
 
@@ -112,5 +126,23 @@ mod tests {
         let (line, truncated) = truncate_line_with_ellipsis(input, max);
         assert_eq!(line, expected);
         assert_eq!(truncated, was_truncated);
+    }
+
+    #[rstest]
+    #[case::single_digit_no_padding(5, 1, "5")]
+    #[case::width_greater_than_digits(5, 4, "   5")]
+    #[case::width_equals_digits(42, 2, "42")]
+    #[case::zero(0, 1, "0")]
+    #[case::zero_with_padding(0, 3, "  0")]
+    #[case::large_number(999, 3, "999")]
+    #[case::large_number_with_padding(123, 5, "  123")]
+    fn push_padded_usize_should_right_align_with_spaces(
+        #[case] n: usize,
+        #[case] width: usize,
+        #[case] expected: &str,
+    ) {
+        let mut output = String::new();
+        push_padded_usize(&mut output, n, width);
+        assert_eq!(output, expected);
     }
 }

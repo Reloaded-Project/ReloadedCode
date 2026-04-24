@@ -203,7 +203,7 @@ mod tests {
 
         let text = result.as_text().unwrap();
         assert!(text.contains("Found 1 matches"));
-        assert!(text.contains("L1: hello world"));
+        assert!(text.contains("1: hello world"));
     }
 
     #[tokio::test]
@@ -226,7 +226,7 @@ mod tests {
 
         let text = result.as_text().unwrap();
         assert!(text.contains("Found 1 matches"));
-        assert!(text.contains("L1: hello world"));
+        assert!(text.contains("1: hello world"));
     }
 
     #[tokio::test]
@@ -347,7 +347,7 @@ mod tests {
         // Verify the match line doesn't exceed DEFAULT_MAX_LINE_LENGTH
         for line in text.lines() {
             if line.contains("prefix_") {
-                // Line format is "  L1: content", so actual content is line.len() - prefix
+                // Line format is "  1: content", so actual content is line.len() - prefix
                 let content_start = line.find("prefix_").unwrap();
                 let content = &line[content_start..];
                 assert!(content.len() <= llm_coding_tools_core::tools::DEFAULT_MAX_LINE_LENGTH);
@@ -430,10 +430,10 @@ mod tests {
             .unwrap();
 
         let text = result.as_text().unwrap();
-        // Should only see L1: alpha, not the other lines
-        assert!(text.contains("L1: alpha"));
-        assert!(!text.contains("L2: beta"));
-        assert!(!text.contains("L3: gamma"));
+        // Should only see 1: alpha, not the other lines
+        assert!(text.contains("1: alpha"));
+        assert!(!text.contains("2: beta"));
+        assert!(!text.contains("3: gamma"));
     }
 
     #[test]
