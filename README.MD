@@ -1,12 +1,12 @@
 <div align="center">
 
-# llm-coding-tools
+# ReloadedCode
 
 **Production-grade coding agent tools in Rust. <abbr title="~10 MiB PSS on release build, all providers enabled.&#10;  • Code &amp; read-only data: ~6.5 MiB&#10;  • Heap (runtime state): ~2.5 MiB&#10;  • Shared libraries (glibc, libm): ~2.3 MiB&#10;  • Thread stacks: ~0.1 MiB (34 threads)&#10;  Private ~2.5 MiB · RSS ~13 MiB.">~10 MiB</abbr>. No TUI. Embed it anywhere.**
 
-[![CI](https://github.com/Sewer56/llm-coding-tools/actions/workflows/rust.yml/badge.svg)](https://github.com/Sewer56/llm-coding-tools/actions) [![crates.io](https://img.shields.io/crates/v/llm-coding-tools-core.svg)](https://crates.io/crates/llm-coding-tools-core) [![docs.rs](https://img.shields.io/docsrs/llm-coding-tools-core)](https://docs.rs/llm-coding-tools-core) [![License](https://img.shields.io/crates/l/llm-coding-tools-core)](./LICENSE)
+[![CI](https://github.com/Reloaded-Project/ReloadedCode/actions/workflows/rust.yml/badge.svg)](https://github.com/Reloaded-Project/ReloadedCode/actions) [![crates.io](https://img.shields.io/crates/v/reloaded-code-core.svg)](https://crates.io/crates/reloaded-code-core) [![docs.rs](https://img.shields.io/docsrs/reloaded-code-core)](https://docs.rs/reloaded-code-core) [![License](https://img.shields.io/crates/l/reloaded-code-core)](./LICENSE)
 
-[Get Started](#quick-start) · [Documentation](https://sewer56.github.io/llm-coding-tools/) · [API Reference](https://docs.rs/llm-coding-tools-core) · [Examples](#examples)
+[Get Started](#quick-start) · [Documentation](https://reloaded-project.github.io/ReloadedCode/) · [API Reference](https://docs.rs/reloaded-code-core) · [Examples](#examples)
 
 </div>
 
@@ -14,7 +14,7 @@
 
 ## Why this project?
 
-llm-coding-tools started as "an OpenCode for servers." Headless,
+ReloadedCode started as "an OpenCode for servers." Headless,
 sandboxed, and cheap to host for non-commercial use.
 
 [OpenCode](https://opencode.ai) is a great interactive coding agent, but it's a
@@ -22,10 +22,10 @@ sandboxed, and cheap to host for non-commercial use.
 What if you need those same tools for a **server**? A **Discord bot**?
 A **CI pipeline**? A **custom product**?
 
-**llm-coding-tools** ships the same agent tools as a Rust library.
+**ReloadedCode** ships the same agent tools as a Rust library.
 Shell sandboxing. Default-deny permissions. ~10 MiB footprint.
 
-|              | OpenCode                                                                                          | llm-coding-tools                                                                                                                                                                                                                                                                                         |
+|              | OpenCode                                                                                          | ReloadedCode                                                                                                                                                                                                                                                                                         |
 | ------------ | ------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Language     | TypeScript                                                                                        | Rust                                                                                                                                                                                                                                                                                                     |
 | Memory       | <abbr title="opencode v1.14.21&#10;serve: 305 MiB RSS&#10;TUI: 525 MiB RSS&#10;&#10;v1.4.2&#10;serve: 392 MiB RSS&#10;TUI: 679 MiB RSS">~305 MiB</abbr> | <abbr title="~13 MiB RSS on release build, all providers enabled.&#10;  • Code &amp; read-only data: ~6.5 MiB&#10;  • Heap (runtime state): ~2.5 MiB&#10;  • Shared libraries (glibc, libm): ~2.3 MiB&#10;  • Thread stacks: ~0.1 MiB (34 threads)&#10;  Private ~2.5 MiB · PSS ~10 MiB.">~13 MiB</abbr> |
@@ -52,7 +52,7 @@ Shell sandboxing. Default-deny permissions. ~10 MiB footprint.
 
 ```toml
 [dependencies]
-llm-coding-tools-serdesai = "0.2"
+reloaded-code-serdesai = "0.2"
 ```
 
 **1.** Create an agent file (markdown + YAML frontmatter similar to [OpenCode](https://opencode.ai)):
@@ -79,10 +79,10 @@ You are a coding assistant. Use the available tools to complete the user's task.
 **2.** Load the catalog, build the agent, and run:
 
 ```rust
-use llm_coding_tools_agents::{AgentCatalog, AgentLoader, AgentRuntimeBuilder};
-use llm_coding_tools_core::CredentialResolver;
-use llm_coding_tools_models_dev::ModelsDevCatalog;
-use llm_coding_tools_serdesai::{AgentBuildContext, AgentDefaults};
+use reloaded_code_agents::{AgentCatalog, AgentLoader, AgentRuntimeBuilder};
+use reloaded_code_core::CredentialResolver;
+use reloaded_code_models_dev::ModelsDevCatalog;
+use reloaded_code_serdesai::{AgentBuildContext, AgentDefaults};
 use std::{path::PathBuf, sync::Arc};
 
 #[tokio::main]
@@ -116,41 +116,41 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
 | Crate                                                                 | Version | Description                                                                                      |
 | --------------------------------------------------------------------- | ------- | ------------------------------------------------------------------------------------------------ |
-| [**llm-coding-tools-core**](./src/llm-coding-tools-core/)             | 0.2     | Framework-agnostic tool implementations, path resolvers, permissions, system prompt builder      |
-| [**llm-coding-tools-agents**](./src/llm-coding-tools-agents/)         | 0.1     | agent markdown loader similar to [OpenCode](https://opencode.ai), typed catalog, runtime builder |
-| [**llm-coding-tools-serdesai**](./src/llm-coding-tools-serdesai/)     | 0.2     | SerdesAI framework integration, tool adapters, 15 provider bridges, task delegation              |
-| [**llm-coding-tools-bubblewrap**](./src/llm-coding-tools-bubblewrap/) | 0.1     | Linux bubblewrap sandbox profiles (Public Bot + Trusted Maintenance)                             |
-| [**llm-coding-tools-models-dev**](./src/llm-coding-tools-models-dev/) | 0.1     | models.dev catalog sync with ETag caching and offline fallback                                   |
+| [**reloaded-code-core**](./src/reloaded-code-core/)             | 0.2     | Framework-agnostic tool implementations, path resolvers, permissions, system prompt builder      |
+| [**reloaded-code-agents**](./src/reloaded-code-agents/)         | 0.1     | agent markdown loader similar to [OpenCode](https://opencode.ai), typed catalog, runtime builder |
+| [**reloaded-code-serdesai**](./src/reloaded-code-serdesai/)     | 0.2     | SerdesAI framework integration, tool adapters, 15 provider bridges, task delegation              |
+| [**reloaded-code-bubblewrap**](./src/reloaded-code-bubblewrap/) | 0.1     | Linux bubblewrap sandbox profiles (Public Bot + Trusted Maintenance)                             |
+| [**reloaded-code-models-dev**](./src/reloaded-code-models-dev/) | 0.1     | models.dev catalog sync with ETag caching and offline fallback                                   |
 
 ## Examples
 
 ```bash
 # Basic agent setup with all tools
-cargo run --example serdesai-basic -p llm-coding-tools-serdesai
+cargo run --example serdesai-basic -p reloaded-code-serdesai
 
 # Sandboxed file access (restricted to allowed directories)
-cargo run --example serdesai-sandboxed -p llm-coding-tools-serdesai
+cargo run --example serdesai-sandboxed -p reloaded-code-serdesai
 
 # Sandboxed bash execution (Linux, requires bubblewrap)
-cargo run --example serdesai-sandboxed-bash --features linux-bubblewrap -p llm-coding-tools-serdesai
+cargo run --example serdesai-sandboxed-bash --features linux-bubblewrap -p reloaded-code-serdesai
 
 # Agent catalog loading from markdown files
-cargo run --example serdesai-agents -p llm-coding-tools-serdesai
+cargo run --example serdesai-agents -p reloaded-code-serdesai
 
 # Multi-agent task delegation (orchestrator + reader sub-agent)
-cargo run --example serdesai-task -p llm-coding-tools-serdesai
+cargo run --example serdesai-task -p reloaded-code-serdesai
 ```
 
 ## Documentation
 
-- **[Documentation Site](https://sewer56.github.io/llm-coding-tools/)** - guides, architecture, examples
-- [llm-coding-tools-core README](./src/llm-coding-tools-core/README.md)
-- [llm-coding-tools-agents README](./src/llm-coding-tools-agents/README.md)
-- [llm-coding-tools-serdesai README](./src/llm-coding-tools-serdesai/README.md)
-- [llm-coding-tools-bubblewrap README](./src/llm-coding-tools-bubblewrap/README.md)
-- [llm-coding-tools-models-dev README](./src/llm-coding-tools-models-dev/README.md)
+- **[Documentation Site](https://reloaded-project.github.io/ReloadedCode/)** - guides, architecture, examples
+- [reloaded-code-core README](./src/reloaded-code-core/README.md)
+- [reloaded-code-agents README](./src/reloaded-code-agents/README.md)
+- [reloaded-code-serdesai README](./src/reloaded-code-serdesai/README.md)
+- [reloaded-code-bubblewrap README](./src/reloaded-code-bubblewrap/README.md)
+- [reloaded-code-models-dev README](./src/reloaded-code-models-dev/README.md)
 - [Sandbox profiles and operator checklist](./SANDBOX-PROFILES.md)
-- [API Reference (docs.rs)](https://docs.rs/llm-coding-tools-core)
+- [API Reference (docs.rs)](https://docs.rs/reloaded-code-core)
 
 ## Contributing
 

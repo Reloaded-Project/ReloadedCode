@@ -2,11 +2,11 @@
 [workspace]
 resolver = "2"
 members = [
-    "llm-coding-tools-core",
-    "llm-coding-tools-serdesai",
-    "llm-coding-tools-agents",
-    "llm-coding-tools-models-dev",
-    "llm-coding-tools-bubblewrap",
+    "reloaded-code-core",
+    "reloaded-code-serdesai",
+    "reloaded-code-agents",
+    "reloaded-code-models-dev",
+    "reloaded-code-bubblewrap",
 ]
 
 [workspace.dependencies]
@@ -75,10 +75,10 @@ serdes-ai-models = { version = "0.2.6", default-features = false }
 serdes-ai-streaming = "0.2"
 
 # Internal crates
-llm-coding-tools-core = { version = "0.2.0", path = "llm-coding-tools-core", default-features = false }
-llm-coding-tools-bubblewrap = { version = "0.1.0", path = "llm-coding-tools-bubblewrap" }
-llm-coding-tools-agents = { version = "0.1.0", path = "llm-coding-tools-agents" }
-llm-coding-tools-models-dev = { version = "0.1.0", path = "llm-coding-tools-models-dev" }
+reloaded-code-core = { version = "0.2.0", path = "reloaded-code-core", default-features = false }
+reloaded-code-bubblewrap = { version = "0.1.0", path = "reloaded-code-bubblewrap" }
+reloaded-code-agents = { version = "0.1.0", path = "reloaded-code-agents" }
+reloaded-code-models-dev = { version = "0.1.0", path = "reloaded-code-models-dev" }
 
 # Dev dependencies
 criterion = "0.8"

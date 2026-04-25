@@ -1,8 +1,8 @@
 # Comparison with OpenCode
 
-This page breaks down where llm-coding-tools overlaps with [OpenCode], where it
+This page breaks down where reloaded-code overlaps with [OpenCode], where it
 diverges, and which to pick. [OpenCode] excels at interactive development;
-llm-coding-tools is for embedding agent tools into your own applications.
+reloaded-code is for embedding agent tools into your own applications.
 
 ## At a glance
 
@@ -12,7 +12,7 @@ llm-coding-tools is for embedding agent tools into your own applications.
     <tr>
       <th>Aspect</th>
       <th>OpenCode</th>
-      <th>llm-coding-tools</th>
+      <th>reloaded-code</th>
     </tr>
   </thead>
   <tbody>
@@ -61,7 +61,7 @@ llm-coding-tools is for embedding agent tools into your own applications.
 deny them. It also offers an interactive `ask` mode that prompts the user for
 approval in the TUI before a tool runs.
 
-llm-coding-tools uses **default-deny**: every tool is blocked unless you
+reloaded-code uses **default-deny**: every tool is blocked unless you
 explicitly allow it in the agent frontmatter. There is no interactive approval
 flow because there is no user to prompt - the agent runs unattended.
 
@@ -72,12 +72,12 @@ and a migration checklist.
 ### Interface
 
 [OpenCode] is a full application with a TUI (Terminal User Interface), desktop
-app, VS Code extension, and HTTP API server. llm-coding-tools is a library
+app, VS Code extension, and HTTP API server. reloaded-code is a library
 with no UI. You build the interface or API layer yourself.
 
 ### Framework
 
-[OpenCode] is built on the [Vercel AI SDK](https://sdk.vercel.ai) (TypeScript). llm-coding-tools uses
+[OpenCode] is built on the [Vercel AI SDK](https://sdk.vercel.ai) (TypeScript). reloaded-code uses
 [SerdesAI] for the ready-to-use integration, but the core is
 framework-agnostic so you can bring your own LLM framework. See
 [Custom Framework Integration](guides/custom-framework.md) for details.
@@ -85,7 +85,7 @@ framework-agnostic so you can bring your own LLM framework. See
 ### Sandboxing
 
 [OpenCode] doesn't provide built-in sandboxing. To isolate it, you sandbox the
-entire process externally (containers, VMs, etc.). llm-coding-tools provides
+entire process externally (containers, VMs, etc.). reloaded-code provides
 **in-process** sandboxing: each tool is sandboxed individually within your
 application.
 
@@ -113,7 +113,7 @@ configuration. See [Sandboxing](sandboxing.md) for the full guide.
 - LSP (Language Server Protocol) integration
 - Session sharing (share live agent sessions with other users)
 
-### Features unique to llm-coding-tools
+### Features unique to reloaded-code
 
 - In-process sandboxing: path resolvers + shell sandboxing ([bubblewrap])
 - Framework-agnostic core (bring your own LLM framework)

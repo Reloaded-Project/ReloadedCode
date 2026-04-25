@@ -1,10 +1,10 @@
 # Feature Flags
 
-llm-coding-tools uses Cargo feature flags to control runtime mode, platform
+reloaded-code uses Cargo feature flags to control runtime mode, platform
 support, and provider availability. This page documents every feature flag
 across all crates.
 
-## llm-coding-tools-core
+## reloaded-code-core
 
 | Flag               | Default    | Description                                                     |
 | ------------------ | ---------- | --------------------------------------------------------------- |
@@ -15,7 +15,7 @@ across all crates.
 
 `tokio` and `blocking` are mutually exclusive.
 
-## llm-coding-tools-serdesai
+## reloaded-code-serdesai
 
 | Flag                | Default | Description                             |
 | ------------------- | ------- | --------------------------------------- |
@@ -42,14 +42,14 @@ and enable only the providers you need to reduce compile time and binary size:
 
 ```toml
 [dependencies]
-llm-coding-tools-serdesai = { version = "0.2", default-features = false, features = ["openai", "anthropic"] }
+reloaded-code-serdesai = { version = "0.2", default-features = false, features = ["openai", "anthropic"] }
 ```
 
-## llm-coding-tools-agents
+## reloaded-code-agents
 
 No feature flags. The crate is feature-free.
 
-## llm-coding-tools-bubblewrap
+## reloaded-code-bubblewrap
 
 | Flag       | Default | Description                           |
 | ---------- | ------- | ------------------------------------- |
@@ -58,7 +58,7 @@ No feature flags. The crate is feature-free.
 
 Compile-time guard: produces a `compile_error!` on non-Linux targets.
 
-## llm-coding-tools-models-dev
+## reloaded-code-models-dev
 
 | Flag       | Default | Description                        |
 | ---------- | ------- | ---------------------------------- |
@@ -73,28 +73,28 @@ Exactly one must be enabled.
 
 ```toml
 [dependencies]
-llm-coding-tools-serdesai = { version = "0.2", default-features = false, features = ["openai"] }
+reloaded-code-serdesai = { version = "0.2", default-features = false, features = ["openai"] }
 ```
 
 ### Full async agent with Linux sandboxing
 
 ```toml
 [dependencies]
-llm-coding-tools-serdesai = { version = "0.2", features = ["linux-bubblewrap"] }
+reloaded-code-serdesai = { version = "0.2", features = ["linux-bubblewrap"] }
 ```
 
 ### Framework-agnostic, blocking mode
 
 ```toml
 [dependencies]
-llm-coding-tools-core = { version = "0.2", default-features = false, features = ["blocking"] }
+reloaded-code-core = { version = "0.2", default-features = false, features = ["blocking"] }
 ```
 
 ### All providers, no sandboxing
 
 ```toml
 [dependencies]
-llm-coding-tools-serdesai = "0.2"  # 'full' is default
+reloaded-code-serdesai = "0.2"  # 'full' is default
 ```
 
 [SerdesAI]: https://crates.io/crates/serdes-ai

@@ -1,0 +1,95 @@
+[package]
+name = "reloaded-code-serdesai"
+version = "0.2.0"
+edition = "2024"
+description = "Lightweight, high-performance serdesAI framework Tool implementations for coding tools"
+repository = "https://github.com/Reloaded-Project/ReloadedCode"
+license = "Apache-2.0"
+readme = "README.md"
+include = ["src/**/*", "examples/**/*", "README.md"]
+
+[features]
+default = ["full"]
+full = [
+    "openai",
+    "anthropic",
+    "azure",
+    "bedrock",
+    "chatgpt-oauth",
+    "claude-code-oauth",
+    "cohere",
+    "gemini",
+    "google",
+    "groq",
+    "huggingface",
+    "mistral",
+    "ollama",
+    "openrouter",
+    "antigravity",
+]
+# Provider features - pass through to serdes-ai-models
+openai = ["serdes-ai-models/openai"]
+anthropic = ["serdes-ai-models/anthropic"]
+azure = ["serdes-ai-models/azure"]
+bedrock = ["serdes-ai-models/bedrock"]
+antigravity = ["serdes-ai-models/antigravity"]
+chatgpt-oauth = ["serdes-ai-models/chatgpt-oauth"]
+claude-code-oauth = ["serdes-ai-models/claude-code-oauth"]
+cohere = ["serdes-ai-models/cohere"]
+gemini = ["serdes-ai-models/gemini"]
+google = ["serdes-ai-models/google"]
+groq = ["serdes-ai-models/groq"]
+huggingface = ["serdes-ai-models/huggingface"]
+mistral = ["serdes-ai-models/mistral"]
+ollama = ["serdes-ai-models/ollama"]
+openrouter = ["serdes-ai-models/openrouter"]
+# Sandbox feature - enables bubblewrap sandboxing
+linux-bubblewrap = [
+    "dep:reloaded-code-bubblewrap",
+    "reloaded-code-core/linux-bubblewrap",
+]
+
+[dependencies]
+# Core tool operations (file read/write/edit, glob, grep, bash, etc.)
+reloaded-code-core = { workspace = true, features = ["tokio"] }
+
+# Linux sandboxing via bubblewrap.
+# Provides sandbox profiles, presets, and sandbox availability detection.
+reloaded-code-bubblewrap = { workspace = true, optional = true }
+
+# Generic agent runtime dependencies
+reloaded-code-agents = { workspace = true }
+
+# serdes-ai provides Tool trait, ToolDefinition, RunContext
+serdes-ai = { workspace = true }
+serdes-ai-models = { workspace = true }
+serdes-ai-streaming = { workspace = true }
+futures = { workspace = true }
+
+# Tool trait is async - async-trait is NOT re-exported from serdes-ai
+async-trait = { workspace = true }
+
+# Error derives
+thiserror = { workspace = true }
+
+# Tool parameters use serde for deserialization, serde_json for schema
+serde = { workspace = true }
+serde_json = { workspace = true }
+
+# HTTP client for webfetch tool
+reqwest = { workspace = true }
+
+# Used for IndexMap in build.rs (permission config)
+indexmap = { workspace = true }
+
+[dev-dependencies]
+serial_test = { workspace = true }
+tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }
+tempfile = { workspace = true }
+wiremock = { workspace = true }
+ahash = { workspace = true }
+indexmap = { workspace = true }
+temp-env = { workspace = true }
+rstest = { workspace = true }
+# models.dev catalog loader for examples
+reloaded-code-models-dev = { workspace = true }

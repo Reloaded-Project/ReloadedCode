@@ -1,0 +1,64 @@
+[package]
+name = "reloaded-code-models-dev"
+version = "0.1.0"
+edition = "2021"
+description = "models.dev catalog ingestion with online-first sync pipeline"
+repository = "https://github.com/Reloaded-Project/ReloadedCode"
+license = "Apache-2.0"
+include = ["src/**/*", "README.md"]
+readme = "README.md"
+
+[features]
+default = ["tokio"]
+# Base async signatures (enabled by runtime features)
+async = []
+# Async with tokio runtime
+tokio = ["async", "dep:tokio", "dep:reqwest", "reloaded-code-core/tokio"]
+# Blocking/sync mode - mutually exclusive with tokio/async
+blocking = [
+    "dep:reqwest",
+    "reqwest/blocking",
+    "reloaded-code-core/blocking",
+    "maybe-async/is_sync",
+]
+
+[dependencies]
+# Core library for ModelCatalog and related types
+reloaded-code-core = { workspace = true, default-features = false }
+
+# Cross-platform cache directory detection
+dirs = { workspace = true }
+
+# HTTP client for conditional GET requests
+reqwest = { workspace = true, optional = true }
+
+# Fast binary serialization
+bitcode = { workspace = true }
+
+# Compression for cache payload
+zstd = { workspace = true }
+
+# Shared async/sync implementation for load/cache APIs
+maybe-async = { workspace = true }
+
+# Endian-aware fixed-header serialization helpers
+endian-writer = { workspace = true }
+endian-writer-derive = { workspace = true }
+
+# JSON parsing for models.dev API responses
+serde = { workspace = true }
+serde_json = { workspace = true }
+
+# Ergonomic error definitions
+thiserror = { workspace = true }
+
+# Temp file with atomic rename support
+tempfile = { workspace = true }
+
+# Async runtime (when tokio feature enabled)
+tokio = { workspace = true, optional = true }
+
+[dev-dependencies]
+tokio = { workspace = true, features = ["rt", "macros"] }
+serial_test = { workspace = true }
+rstest = { workspace = true }

@@ -1,6 +1,6 @@
 # Models Catalog
 
-The `llm-coding-tools-models-dev` crate syncs the online
+The `reloaded-code-models-dev` crate syncs the online
 [models.dev](https://models.dev) catalog into a compact `ModelCatalog` that
 can be used for provider/model lookups, validation, and display.
 
@@ -36,7 +36,7 @@ graph TD
 ### Async ([tokio], default)
 
 ```rust
-use llm_coding_tools_models_dev::{CatalogLoadSource, ModelsDevCatalog};
+use reloaded_code_models_dev::{CatalogLoadSource, ModelsDevCatalog};
 
 async fn load() -> Result<(), Box<dyn std::error::Error>> {
     let result = ModelsDevCatalog::load().await?;
@@ -59,7 +59,7 @@ async fn load() -> Result<(), Box<dyn std::error::Error>> {
 ### Blocking
 
 ```rust
-use llm_coding_tools_models_dev::{CatalogLoadSource, ModelsDevCatalog};
+use reloaded_code_models_dev::{CatalogLoadSource, ModelsDevCatalog};
 
 fn load() -> Result<(), Box<dyn std::error::Error>> {
     let result = ModelsDevCatalog::load()?;
@@ -71,7 +71,7 @@ fn load() -> Result<(), Box<dyn std::error::Error>> {
 ### Custom cache path
 
 ```rust
-use llm_coding_tools_models_dev::ModelsDevCatalog;
+use reloaded_code_models_dev::ModelsDevCatalog;
 use std::path::PathBuf;
 
 let cache_path = PathBuf::from("/tmp/my-cache");
@@ -84,11 +84,11 @@ let result = ModelsDevCatalog::load_at(&cache_path).await?;
 
 | Platform | Path                                                            |
 | -------- | --------------------------------------------------------------- |
-| Linux    | `~/.cache/llm-coding-tools/models.dev.catalog.v1.cache`         |
-| macOS    | `~/Library/Caches/llm-coding-tools/models.dev.catalog.v1.cache` |
-| Windows  | `%LOCALAPPDATA%\llm-coding-tools\models.dev.catalog.v1.cache`   |
+| Linux    | `~/.cache/reloaded-code/models.dev.catalog.v1.cache`         |
+| macOS    | `~/Library/Caches/reloaded-code/models.dev.catalog.v1.cache` |
+| Windows  | `%LOCALAPPDATA%\reloaded-code\models.dev.catalog.v1.cache`   |
 
-Override with the `LLM_CODING_TOOLS_MODELS_DEV_CACHE_PATH` environment variable.
+Override with the `RELOADED_CODE_MODELS_DEV_CACHE_PATH` environment variable.
 
 **Performance** (rough guidance, Ryzen 9950X3D):
 

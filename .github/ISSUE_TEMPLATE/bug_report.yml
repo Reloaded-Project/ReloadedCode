@@ -77,8 +77,8 @@ body:
   - type: input
     id: version
     attributes:
-      label: "llm-coding-tools version"
-      description: The version of llm-coding-tools you're using
+      label: "reloaded-code version"
+      description: The version of reloaded-code you're using
       placeholder: e.g. 0.1.0
     validations:
       required: true

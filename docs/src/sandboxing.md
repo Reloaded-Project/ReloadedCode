@@ -16,7 +16,7 @@ profile and verify your setup before deploying.
     File tools (`read`, `write`, `edit`, `glob`, `grep`) are sandboxed to the
     workspace root by default. See [Enabling sandboxing](#enabling-sandboxing).
 
-For server-side deployments, `llm-coding-tools` provides two layers of
+For server-side deployments, `reloaded-code` provides two layers of
 protection:
 
 1. **Path resolvers** - restrict which files the file tools (`read`,
@@ -44,7 +44,7 @@ apply a profile to each tool.
 
 ```toml
 [dependencies]
-llm-coding-tools-serdesai = { version = "0.2", features = ["linux-bubblewrap"] }
+reloaded-code-serdesai = { version = "0.2", features = ["linux-bubblewrap"] }
 ```
 
 *(Also shown in [Getting Started](getting-started.md) and
@@ -93,10 +93,10 @@ When you enable sandboxing, start with the **Public Bot** profile.
 
     ```toml
     [dependencies]
-    llm-coding-tools-serdesai = { version = "0.2", features = ["linux-bubblewrap"] }
-    llm-coding-tools-agents = "0.1"
-    llm-coding-tools-core = "0.2"
-    llm-coding-tools-models-dev = "0.1"
+    reloaded-code-serdesai = { version = "0.2", features = ["linux-bubblewrap"] }
+    reloaded-code-agents = "0.1"
+    reloaded-code-core = "0.2"
+    reloaded-code-models-dev = "0.1"
     tokio = { version = "1", features = ["full"] }
     ```
 
@@ -106,10 +106,10 @@ When you enable sandboxing, start with the **Public Bot** profile.
     rest is agent loading and model setup.
 
     ```rust
-    use llm_coding_tools_agents::{AgentCatalog, AgentLoader, AgentRuntimeBuilder};
-    use llm_coding_tools_core::CredentialResolver;
-    use llm_coding_tools_models_dev::ModelsDevCatalog;
-    use llm_coding_tools_serdesai::{AgentBuildContext, AgentDefaults, profile::Preset};
+    use reloaded_code_agents::{AgentCatalog, AgentLoader, AgentRuntimeBuilder};
+    use reloaded_code_core::CredentialResolver;
+    use reloaded_code_models_dev::ModelsDevCatalog;
+    use reloaded_code_serdesai::{AgentBuildContext, AgentDefaults, profile::Preset};
     use std::{path::PathBuf, sync::Arc};
 
     #[tokio::main]
@@ -159,8 +159,8 @@ When you enable sandboxing, start with the **Public Bot** profile.
     The key line is `.with_linux_bwrap(profile)` - the rest is profile setup.
 
     ```rust
-    use llm_coding_tools_serdesai::{BashTool};
-    use llm_coding_tools_serdesai::profile::{Builder, TmpBacking};
+    use reloaded_code_serdesai::{BashTool};
+    use reloaded_code_serdesai::profile::{Builder, TmpBacking};
     use std::fs;
 
     fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -205,7 +205,7 @@ When you enable sandboxing, start with the **Public Bot** profile.
 
 ### The two profiles
 
-!!! info "llm-coding-tools ships two profiles for common use cases: **Public Bot** and **Trusted Maintenance**."
+!!! info "reloaded-code ships two profiles for common use cases: **Public Bot** and **Trusted Maintenance**."
 
 #### Public Bot
 
@@ -337,6 +337,6 @@ tells the LLM that network is unavailable, so it adjusts its behaviour.
 - [ ] Cache and build output directories work correctly
 - [ ] No unintended host paths are writable from inside the sandbox
 
-[with_linux_bwrap]: https://docs.rs/llm-coding-tools-serdesai/latest/llm_coding_tools_serdesai/struct.BashTool.html#method.with_linux_bwrap
-[new_with_temp_sandbox]: https://docs.rs/llm-coding-tools-serdesai/latest/llm_coding_tools_serdesai/struct.AgentBuildContext.html#method.new_with_temp_sandbox
-[Preset]: https://docs.rs/llm-coding-tools-bubblewrap/latest/llm_coding_tools_bubblewrap/profile/enum.Preset.html
+[with_linux_bwrap]: https://docs.rs/reloaded-code-serdesai/latest/reloaded_code_serdesai/struct.BashTool.html#method.with_linux_bwrap
+[new_with_temp_sandbox]: https://docs.rs/reloaded-code-serdesai/latest/reloaded_code_serdesai/struct.AgentBuildContext.html#method.new_with_temp_sandbox
+[Preset]: https://docs.rs/reloaded-code-bubblewrap/latest/reloaded_code_bubblewrap/profile/enum.Preset.html

@@ -39,10 +39,10 @@ jobs:
           codecov-name: ${{ matrix.label }}
           target: ${{ matrix.target }}
           packages: |
-            llm-coding-tools-core
-            llm-coding-tools-agents
-            llm-coding-tools-serdesai
-            llm-coding-tools-models-dev
+            reloaded-code-core
+            reloaded-code-agents
+            reloaded-code-serdesai
+            reloaded-code-models-dev
 
       - name: Run tests (Blocking) and upload coverage
         if: matrix.mode == 'blocking'
@@ -55,8 +55,8 @@ jobs:
           codecov-name: ${{ matrix.label }}
           target: ${{ matrix.target }}
           packages: |
-            llm-coding-tools-core
-            llm-coding-tools-models-dev
+            reloaded-code-core
+            reloaded-code-models-dev
           no-default-features: true
           features: "blocking"
 
@@ -65,17 +65,17 @@ jobs:
         working-directory: src
         shell: bash
         run: |
-          cargo test -p llm-coding-tools-bubblewrap
-          cargo test -p llm-coding-tools-core --features linux-bubblewrap
-          cargo test -p llm-coding-tools-serdesai --features linux-bubblewrap
+          cargo test -p reloaded-code-bubblewrap
+          cargo test -p reloaded-code-core --features linux-bubblewrap
+          cargo test -p reloaded-code-serdesai --features linux-bubblewrap
 
       - name: Run Linux-only blocking feature coverage
         if: matrix.mode == 'blocking' && matrix.linux_bwrap
         working-directory: src
         shell: bash
         run: |
-          cargo test -p llm-coding-tools-bubblewrap --no-default-features --features blocking
-          cargo test -p llm-coding-tools-core --no-default-features --features blocking,linux-bubblewrap
+          cargo test -p reloaded-code-bubblewrap --no-default-features --features blocking
+          cargo test -p reloaded-code-core --no-default-features --features blocking,linux-bubblewrap
 
       - name: Check documentation is valid
         working-directory: src
@@ -85,26 +85,26 @@ jobs:
         run: |
           case "${{ matrix.mode }}:${{ matrix.linux_bwrap }}" in
             async:true)
-              cargo doc -p llm-coding-tools-bubblewrap --document-private-items --no-deps --target ${{ matrix.target }}
-              cargo doc -p llm-coding-tools-core --features linux-bubblewrap --document-private-items --no-deps --target ${{ matrix.target }}
-              cargo doc -p llm-coding-tools-agents --document-private-items --no-deps --target ${{ matrix.target }}
-              cargo doc -p llm-coding-tools-serdesai --features linux-bubblewrap --document-private-items --no-deps --target ${{ matrix.target }}
-              cargo doc -p llm-coding-tools-models-dev --document-private-items --no-deps --target ${{ matrix.target }}
+              cargo doc -p reloaded-code-bubblewrap --document-private-items --no-deps --target ${{ matrix.target }}
+              cargo doc -p reloaded-code-core --features linux-bubblewrap --document-private-items --no-deps --target ${{ matrix.target }}
+              cargo doc -p reloaded-code-agents --document-private-items --no-deps --target ${{ matrix.target }}
+              cargo doc -p reloaded-code-serdesai --features linux-bubblewrap --document-private-items --no-deps --target ${{ matrix.target }}
+              cargo doc -p reloaded-code-models-dev --document-private-items --no-deps --target ${{ matrix.target }}
               ;;
             async:false)
-              cargo doc -p llm-coding-tools-core --document-private-items --no-deps --target ${{ matrix.target }}
-              cargo doc -p llm-coding-tools-agents --document-private-items --no-deps --target ${{ matrix.target }}
-              cargo doc -p llm-coding-tools-serdesai --document-private-items --no-deps --target ${{ matrix.target }}
-              cargo doc -p llm-coding-tools-models-dev --document-private-items --no-deps --target ${{ matrix.target }}
+              cargo doc -p reloaded-code-core --document-private-items --no-deps --target ${{ matrix.target }}
+              cargo doc -p reloaded-code-agents --document-private-items --no-deps --target ${{ matrix.target }}
+              cargo doc -p reloaded-code-serdesai --document-private-items --no-deps --target ${{ matrix.target }}
+              cargo doc -p reloaded-code-models-dev --document-private-items --no-deps --target ${{ matrix.target }}
               ;;
             blocking:true)
-              cargo doc -p llm-coding-tools-bubblewrap --no-default-features --features blocking --document-private-items --no-deps --target ${{ matrix.target }}
-              cargo doc -p llm-coding-tools-core --no-default-features --features blocking,linux-bubblewrap --document-private-items --no-deps --target ${{ matrix.target }}
-              cargo doc -p llm-coding-tools-models-dev --no-default-features --features blocking --document-private-items --no-deps --target ${{ matrix.target }}
+              cargo doc -p reloaded-code-bubblewrap --no-default-features --features blocking --document-private-items --no-deps --target ${{ matrix.target }}
+              cargo doc -p reloaded-code-core --no-default-features --features blocking,linux-bubblewrap --document-private-items --no-deps --target ${{ matrix.target }}
+              cargo doc -p reloaded-code-models-dev --no-default-features --features blocking --document-private-items --no-deps --target ${{ matrix.target }}
               ;;
             blocking:false)
-              cargo doc -p llm-coding-tools-core --no-default-features --features blocking --document-private-items --no-deps --target ${{ matrix.target }}
-              cargo doc -p llm-coding-tools-models-dev --no-default-features --features blocking --document-private-items --no-deps --target ${{ matrix.target }}
+              cargo doc -p reloaded-code-core --no-default-features --features blocking --document-private-items --no-deps --target ${{ matrix.target }}
+              cargo doc -p reloaded-code-models-dev --no-default-features --features blocking --document-private-items --no-deps --target ${{ matrix.target }}
               ;;
           esac
 
@@ -114,26 +114,26 @@ jobs:
         run: |
           case "${{ matrix.mode }}:${{ matrix.linux_bwrap }}" in
             async:true)
-              cargo clippy -p llm-coding-tools-bubblewrap --target ${{ matrix.target }} -- -D warnings
-              cargo clippy -p llm-coding-tools-core --features linux-bubblewrap --target ${{ matrix.target }} -- -D warnings
-              cargo clippy -p llm-coding-tools-agents --target ${{ matrix.target }} -- -D warnings
-              cargo clippy -p llm-coding-tools-serdesai --features linux-bubblewrap --target ${{ matrix.target }} -- -D warnings
-              cargo clippy -p llm-coding-tools-models-dev --target ${{ matrix.target }} -- -D warnings
+              cargo clippy -p reloaded-code-bubblewrap --target ${{ matrix.target }} -- -D warnings
+              cargo clippy -p reloaded-code-core --features linux-bubblewrap --target ${{ matrix.target }} -- -D warnings
+              cargo clippy -p reloaded-code-agents --target ${{ matrix.target }} -- -D warnings
+              cargo clippy -p reloaded-code-serdesai --features linux-bubblewrap --target ${{ matrix.target }} -- -D warnings
+              cargo clippy -p reloaded-code-models-dev --target ${{ matrix.target }} -- -D warnings
               ;;
             async:false)
-              cargo clippy -p llm-coding-tools-core --target ${{ matrix.target }} -- -D warnings
-              cargo clippy -p llm-coding-tools-agents --target ${{ matrix.target }} -- -D warnings
-              cargo clippy -p llm-coding-tools-serdesai --target ${{ matrix.target }} -- -D warnings
-              cargo clippy -p llm-coding-tools-models-dev --target ${{ matrix.target }} -- -D warnings
+              cargo clippy -p reloaded-code-core --target ${{ matrix.target }} -- -D warnings
+              cargo clippy -p reloaded-code-agents --target ${{ matrix.target }} -- -D warnings
+              cargo clippy -p reloaded-code-serdesai --target ${{ matrix.target }} -- -D warnings
+              cargo clippy -p reloaded-code-models-dev --target ${{ matrix.target }} -- -D warnings
               ;;
             blocking:true)
-              cargo clippy -p llm-coding-tools-bubblewrap --no-default-features --features blocking --target ${{ matrix.target }} -- -D warnings
-              cargo clippy -p llm-coding-tools-core --no-default-features --features blocking,linux-bubblewrap --target ${{ matrix.target }} -- -D warnings
-              cargo clippy -p llm-coding-tools-models-dev --no-default-features --features blocking --target ${{ matrix.target }} -- -D warnings
+              cargo clippy -p reloaded-code-bubblewrap --no-default-features --features blocking --target ${{ matrix.target }} -- -D warnings
+              cargo clippy -p reloaded-code-core --no-default-features --features blocking,linux-bubblewrap --target ${{ matrix.target }} -- -D warnings
+              cargo clippy -p reloaded-code-models-dev --no-default-features --features blocking --target ${{ matrix.target }} -- -D warnings
               ;;
             blocking:false)
-              cargo clippy -p llm-coding-tools-core --no-default-features --features blocking --target ${{ matrix.target }} -- -D warnings
-              cargo clippy -p llm-coding-tools-models-dev --no-default-features --features blocking --target ${{ matrix.target }} -- -D warnings
+              cargo clippy -p reloaded-code-core --no-default-features --features blocking --target ${{ matrix.target }} -- -D warnings
+              cargo clippy -p reloaded-code-models-dev --no-default-features --features blocking --target ${{ matrix.target }} -- -D warnings
               ;;
           esac
 
@@ -171,17 +171,17 @@ jobs:
 
       matrix:
         include:
-          - { label: "Core Async", package: llm-coding-tools-core, feature_group: only-explicit-features, features: tokio, prefix_key: core-async-tokio }
-          - { label: "Core Async+Linux", package: llm-coding-tools-core, feature_group: only-explicit-features, features: "tokio,linux-bubblewrap", prefix_key: core-async-tokio-linux-bwrap }
-          - { label: "Serdesai Full", package: llm-coding-tools-serdesai, feature_group: only-explicit-features, features: full, prefix_key: serdesai-async-full }
-          - { label: "Serdesai Full+Linux", package: llm-coding-tools-serdesai, feature_group: only-explicit-features, features: "full,linux-bubblewrap", prefix_key: serdesai-async-full-linux-bwrap }
-          - { label: "Agents+Models", package: "llm-coding-tools-agents,llm-coding-tools-models-dev", feature_group: default-features, features: "", prefix_key: agents-models-dev-default }
-          - { label: "Bubblewrap Base", package: llm-coding-tools-bubblewrap, feature_group: only-explicit-features, features: "", prefix_key: bubblewrap-base }
-          - { label: "Bubblewrap Async", package: llm-coding-tools-bubblewrap, feature_group: only-explicit-features, features: tokio, prefix_key: bubblewrap-tokio }
-          - { label: "Bubblewrap Blocking", package: llm-coding-tools-bubblewrap, feature_group: only-explicit-features, features: blocking, prefix_key: bubblewrap-blocking }
-          - { label: "Core Blocking", package: llm-coding-tools-core, feature_group: only-explicit-features, features: blocking, prefix_key: core-blocking }
-          - { label: "Core Blocking+Linux", package: llm-coding-tools-core, feature_group: only-explicit-features, features: "blocking,linux-bubblewrap", prefix_key: core-blocking-linux-bwrap }
-          - { label: "Models Blocking", package: llm-coding-tools-models-dev, feature_group: only-explicit-features, features: blocking, prefix_key: models-dev-blocking }
+          - { label: "Core Async", package: reloaded-code-core, feature_group: only-explicit-features, features: tokio, prefix_key: core-async-tokio }
+          - { label: "Core Async+Linux", package: reloaded-code-core, feature_group: only-explicit-features, features: "tokio,linux-bubblewrap", prefix_key: core-async-tokio-linux-bwrap }
+          - { label: "Serdesai Full", package: reloaded-code-serdesai, feature_group: only-explicit-features, features: full, prefix_key: serdesai-async-full }
+          - { label: "Serdesai Full+Linux", package: reloaded-code-serdesai, feature_group: only-explicit-features, features: "full,linux-bubblewrap", prefix_key: serdesai-async-full-linux-bwrap }
+          - { label: "Agents+Models", package: "reloaded-code-agents,reloaded-code-models-dev", feature_group: default-features, features: "", prefix_key: agents-models-dev-default }
+          - { label: "Bubblewrap Base", package: reloaded-code-bubblewrap, feature_group: only-explicit-features, features: "", prefix_key: bubblewrap-base }
+          - { label: "Bubblewrap Async", package: reloaded-code-bubblewrap, feature_group: only-explicit-features, features: tokio, prefix_key: bubblewrap-tokio }
+          - { label: "Bubblewrap Blocking", package: reloaded-code-bubblewrap, feature_group: only-explicit-features, features: blocking, prefix_key: bubblewrap-blocking }
+          - { label: "Core Blocking", package: reloaded-code-core, feature_group: only-explicit-features, features: blocking, prefix_key: core-blocking }
+          - { label: "Core Blocking+Linux", package: reloaded-code-core, feature_group: only-explicit-features, features: "blocking,linux-bubblewrap", prefix_key: core-blocking-linux-bwrap }
+          - { label: "Models Blocking", package: reloaded-code-models-dev, feature_group: only-explicit-features, features: blocking, prefix_key: models-dev-blocking }
 
     steps:
       - name: Run semver check surface
@@ -209,11 +209,11 @@ jobs:
         with:
           rust-crates-io-token: ${{ secrets.CRATES_IO_TOKEN }}
           rust-cargo-project-paths: |
-            src/llm-coding-tools-bubblewrap
-            src/llm-coding-tools-core
-            src/llm-coding-tools-agents
-            src/llm-coding-tools-serdesai
-            src/llm-coding-tools-models-dev
+            src/reloaded-code-bubblewrap
+            src/reloaded-code-core
+            src/reloaded-code-agents
+            src/reloaded-code-serdesai
+            src/reloaded-code-models-dev
           compression-tool: 7z
           artifact-groups-file: .github/artifact-groups.yml
           changelog-enabled: "true"

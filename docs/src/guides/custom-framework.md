@@ -1,6 +1,6 @@
 # Custom Framework Integration
 
-Integrate llm-coding-tools into any Rust LLM framework. Wrap tool
+Integrate reloaded-code into any Rust LLM framework. Wrap tool
 functions, generate system prompts, and configure path security in three
 steps. You only need this if you're using a framework other than
 [SerdesAI] (an LLM agent framework).
@@ -21,7 +21,7 @@ Every framework adapter does three things:
 Here's how you'd wrap the `read_file` function for a hypothetical framework:
 
 ```rust
-use llm_coding_tools_core::{
+use reloaded_code_core::{
     read_file, PathResolver, ToolResult,
     tools::read::{ReadInput, ReadOutput},
 };
@@ -65,7 +65,7 @@ Use `SystemPromptBuilder` to create a system prompt that includes guidance for
 every tracked tool:
 
 ```rust
-use llm_coding_tools_core::{
+use reloaded_code_core::{
     SystemPromptBuilder, ToolContext,
     context::{PathMode, ToolPrompt},
     tool_metadata,
@@ -111,7 +111,7 @@ are present.
 | `AllowedGlobResolver`  | You want fine-grained glob-based allow/deny rules                                           |
 
 ```rust
-use llm_coding_tools_core::{
+use reloaded_code_core::{
     AbsolutePathResolver, AllowedPathResolver,
     path::{AllowedGlobResolver, GlobPolicy, RuleAction},
 };
@@ -135,7 +135,7 @@ let glob = AllowedGlobResolver::new(["/workspace/project"])?
 !!! tip "Runnable example"
 
     See
-    [system_prompt_preview](https://github.com/Sewer56/llm-coding-tools/blob/main/src/llm-coding-tools-core/examples/system_prompt_preview.rs)
+    [system_prompt_preview](https://github.com/Reloaded-Project/ReloadedCode/blob/main/src/reloaded-code-core/examples/system_prompt_preview.rs)
     for a working example of prompt building with the core library.
     See [Examples](../examples.md) for the full list.
 
@@ -158,6 +158,6 @@ let glob = AllowedGlobResolver::new(["/workspace/project"])?
 | `ModelCatalog`                                 | Compact provider/model hash table           |
 | `ToolError`                                    | Unified error type for all tools            |
 
-For the full API reference, see [docs.rs/llm-coding-tools-core](https://docs.rs/llm-coding-tools-core).
+For the full API reference, see [docs.rs/reloaded-code-core](https://docs.rs/reloaded-code-core).
 
 [SerdesAI]: https://crates.io/crates/serdes-ai

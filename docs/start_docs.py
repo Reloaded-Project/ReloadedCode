@@ -37,7 +37,7 @@ def main():
     parser.add_argument(
         "--project-name",
         type=str,
-        default="llm-coding-tools",
+        default="reloaded-code",
         help="Project name for messages",
     )
     args = parser.parse_args()

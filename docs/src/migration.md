@@ -1,13 +1,13 @@
 # Migrating from OpenCode
 
-llm-coding-tools uses an agent file format that mirrors [OpenCode]'s schema.
+reloaded-code uses an agent file format that mirrors [OpenCode]'s schema.
 Many agent files are drop-in compatible, but not identical. This page covers
 the differences and how to adapt your existing agent files.
 
 ## Default-deny permissions
 
 The most visible difference: in [OpenCode], unlisted tools are allowed by
-default. In llm-coding-tools, unlisted tools are **denied**.
+default. In reloaded-code, unlisted tools are **denied**.
 
 === "OpenCode (default-allow)"
 
@@ -19,7 +19,7 @@ default. In llm-coding-tools, unlisted tools are **denied**.
       webfetch: deny   # everything else is allowed by default
     ```
 
-=== "llm-coding-tools (default-deny)"
+=== "reloaded-code (default-deny)"
 
     All tools are denied; list only the ones you want to allow:
 
@@ -44,7 +44,7 @@ overall.
 
     A `"*": deny` catch-all overrides OpenCode's default-allow, so the
     same agent file behaves as default-deny on both systems. In
-    llm-coding-tools it is redundant (the default is already deny), but
+    reloaded-code it is redundant (the default is already deny), but
     harmless.
 
 ```yaml
@@ -67,7 +67,7 @@ For path-level and command-level patterns (`**`, `*` within a tool), see
 !!! tip "Why portability matters"
 
     The author uses [OpenCode] on the desktop for interactive development
-    and llm-coding-tools for server-side deployments. llm-coding-tools
+    and reloaded-code for server-side deployments. reloaded-code
     preserves portability with [OpenCode]'s agent format where possible,
     so you can share agent files across both workflows.
 
@@ -75,7 +75,7 @@ For path-level and command-level patterns (`**`, `*` within a tool), see
 
 !!! info "[OpenCode] has an `external_directory` permission for granting access to paths outside the workspace."
 
-llm-coding-tools does not have this field: external directories are
+reloaded-code does not have this field: external directories are
 specified directly in per-tool filters, which also gives finer-grained
 control (each tool can have its own set of paths).
 
@@ -105,7 +105,7 @@ permission:
 ## No interactive `ask` mode
 
 [OpenCode] supports `permission.task: ask` which prompts the user for approval
-in the TUI. llm-coding-tools is headless, so there is no interactive approval
+in the TUI. reloaded-code is headless, so there is no interactive approval
 flow.
 
 Using `ask` will produce a schema validation error. Use `allow` or `deny`

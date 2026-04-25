@@ -1,10 +1,10 @@
 # Tools
 
-!!! tip "llm-coding-tools provides 10 standard tools that cover the core needs of a coding agent."
+!!! tip "reloaded-code provides 10 standard tools that cover the core needs of a coding agent."
 
-Every tool has a plain function implementation in [llm-coding-tools-core]. Adapter
+Every tool has a plain function implementation in [reloaded-code-core]. Adapter
 implementations that integrate those functions with LLM frameworks live in crates
-like [llm-coding-tools-serdesai].
+like [reloaded-code-serdesai].
 
 Jump to [Tool overview](#tool-overview) for the tool list, or read on for how
 configuration and permissions work.
@@ -362,13 +362,13 @@ tool_settings:
 
 There are two levels of API depending on how you use the library.
 
-**Agent-level settings** (llm-coding-tools-agents):
+**Agent-level settings** (reloaded-code-agents):
 
-Use [`AgentToolSettings`](https://docs.rs/llm-coding-tools-agents/latest/llm_coding_tools_agents/struct.AgentToolSettings.html)
-when building an agent from an [`AgentConfig`](https://docs.rs/llm-coding-tools-agents/latest/llm_coding_tools_agents/struct.AgentConfig.html):
+Use [`AgentToolSettings`](https://docs.rs/reloaded-code-agents/latest/reloaded_code_agents/struct.AgentToolSettings.html)
+when building an agent from an [`AgentConfig`](https://docs.rs/reloaded-code-agents/latest/reloaded_code_agents/struct.AgentConfig.html):
 
 ```rust
-use llm_coding_tools_agents::{AgentToolSettings, ReadToolSettings};
+use reloaded_code_agents::{AgentToolSettings, ReadToolSettings};
 
 let settings = AgentToolSettings {
     read: ReadToolSettings {
@@ -380,13 +380,13 @@ let settings = AgentToolSettings {
 };
 ```
 
-**Tool-level settings** (llm-coding-tools-core / llm-coding-tools-serdesai):
+**Tool-level settings** (reloaded-code-core / reloaded-code-serdesai):
 
 Use the builder pattern on each tool when constructing them individually:
 
 ```rust
-use llm_coding_tools_core::tools::ReadSettings;
-use llm_coding_tools_serdesai::{ReadTool, AbsolutePathResolver, BashTool};
+use reloaded_code_core::tools::ReadSettings;
+use reloaded_code_serdesai::{ReadTool, AbsolutePathResolver, BashTool};
 
 // Read
 let settings = ReadSettings::new()
@@ -400,7 +400,7 @@ let tool = BashTool::new()
     .with_timeouts(Some(30_000), Some(120_000));
 ```
 
-See the [API reference](https://docs.rs/llm-coding-tools-core) for the full
+See the [API reference](https://docs.rs/reloaded-code-core) for the full
 builder API on each settings type.
 
 ## Path resolvers
@@ -420,8 +420,8 @@ Agents use `AllowedGlobResolver` by default. If you don't need glob-based rules,
 For a deeper dive into path security, see [Sandboxing](sandboxing.md).
 
 [bubblewrap]: https://github.com/containers/bubblewrap
-[create_todo_tools]: https://docs.rs/llm-coding-tools-serdesai/latest/llm_coding_tools_serdesai/tools/todo/fn.create_todo_tools.html
-[llm-coding-tools-core]: https://docs.rs/llm-coding-tools-core
-[llm-coding-tools-serdesai]: https://docs.rs/llm-coding-tools-serdesai
+[create_todo_tools]: https://docs.rs/reloaded-code-serdesai/latest/reloaded_code_serdesai/tools/todo/fn.create_todo_tools.html
+[reloaded-code-core]: https://docs.rs/reloaded-code-core
+[reloaded-code-serdesai]: https://docs.rs/reloaded-code-serdesai
 [Agents]: agents.md
 [agent files]: agents.md

@@ -1,6 +1,6 @@
 # Agents
 
-!!! info "llm-coding-tools supports loading agent definitions from markdown files with YAML frontmatter."
+!!! info "reloaded-code supports loading agent definitions from markdown files with YAML frontmatter."
 
 The agent file format mirrors [OpenCode]'s schema, similar enough that many
 files are drop-in compatible, but [not identical](migration.md). See
@@ -111,7 +111,7 @@ unrecognized name will produce a load error.
 
 Load the catalog before resolving agents. See
 [Models Catalog](models-catalog.md) for setup instructions and the
-`llm-coding-tools-models-dev` crate API.
+`reloaded-code-models-dev` crate API.
 
 ### Tool settings
 

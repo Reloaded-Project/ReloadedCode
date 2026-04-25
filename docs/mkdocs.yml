@@ -1,14 +1,14 @@
-site_name: llm-coding-tools
-site_url: https://sewer56.github.io/llm-coding-tools
+site_name: ReloadedCode
+site_url: https://reloaded-project.github.io/ReloadedCode
 docs_dir: src
 
-repo_name: Sewer56/llm-coding-tools
-repo_url: https://github.com/Sewer56/llm-coding-tools
+repo_name: Reloaded-Project/ReloadedCode
+repo_url: https://github.com/Reloaded-Project/ReloadedCode
 
 extra:
   social:
     - icon: fontawesome/brands/github
-      link: https://github.com/Sewer56/llm-coding-tools
+      link: https://github.com/Reloaded-Project/ReloadedCode
     - icon: fontawesome/brands/discord
       link: https://discord.gg/67rU5jhgDt
 

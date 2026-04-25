@@ -1,17 +1,17 @@
 # Architecture
 
-llm-coding-tools is a Rust workspace with 5 crates that layer on top of each
+reloaded-code is a Rust workspace with 5 crates that layer on top of each
 other. This page explains how they connect and where your code plugs in.
 
 ## Crate dependency graph
 
 ```mermaid
 graph TD
-    core["llm-coding-tools-core<br/><i>Framework-agnostic tool primitives</i>"]
-    agents["llm-coding-tools-agents<br/><i>Agent markdown loader + runtime</i>"]
-    serdesai["llm-coding-tools-serdesai<br/><i>SerdesAI framework integration</i>"]
-    bubblewrap["llm-coding-tools-bubblewrap<br/><i>Linux sandbox profiles</i>"]
-    modelsdev["llm-coding-tools-models-dev<br/><i>models.dev catalog sync</i>"]
+    core["reloaded-code-core<br/><i>Framework-agnostic tool primitives</i>"]
+    agents["reloaded-code-agents<br/><i>Agent markdown loader + runtime</i>"]
+    serdesai["reloaded-code-serdesai<br/><i>SerdesAI framework integration</i>"]
+    bubblewrap["reloaded-code-bubblewrap<br/><i>Linux sandbox profiles</i>"]
+    modelsdev["reloaded-code-models-dev<br/><i>models.dev catalog sync</i>"]
 
     agents --> core
     serdesai --> core
@@ -24,7 +24,7 @@ graph TD
 
 ## Layer overview
 
-### llm-coding-tools-core
+### reloaded-code-core
 
 The foundation. Contains every tool implementation as a plain function
 (`read_file`, `write_file`, `edit_file`, etc.), plus supporting types:
@@ -39,7 +39,7 @@ Core is **framework-agnostic**: it has no dependencies on any specific LLM
 framework. Your integration layer wraps these functions into framework-specific
 tool types.
 
-### llm-coding-tools-agents
+### reloaded-code-agents
 
 Loads agent definitions from markdown files with YAML frontmatter. Provides:
 
@@ -52,7 +52,7 @@ files are drop-in compatible, but [not identical](migration.md). The most
 notable difference is **default-deny** permissions: tools must be explicitly
 allowed.
 
-### llm-coding-tools-serdesai
+### reloaded-code-serdesai
 
 The ready-to-use integration layer for the [SerdesAI] framework. It:
 
@@ -64,7 +64,7 @@ The ready-to-use integration layer for the [SerdesAI] framework. It:
 If you use [SerdesAI], this is the only crate you need. If you use a different
 framework, build your own adapters using core.
 
-### llm-coding-tools-bubblewrap
+### reloaded-code-bubblewrap
 
 Linux-only. Builds and manages [bubblewrap] sandbox profiles for shell command
 isolation. Two presets:
@@ -72,7 +72,7 @@ isolation. Two presets:
 - **Public Bot** - for untrusted input (no network, minimal filesystem)
 - **Trusted Maintenance** - for trusted automation (read-only host `/`, network on)
 
-### llm-coding-tools-models-dev
+### reloaded-code-models-dev
 
 Syncs the online [models.dev](https://models.dev) catalog into a compact
 `ModelCatalog`. Features:
@@ -86,10 +86,10 @@ Syncs the online [models.dev](https://models.dev) catalog into a compact
 
 There are two integration paths:
 
-**Path A: Use [SerdesAI]** - Add `llm-coding-tools-serdesai`, attach tools to an
+**Path A: Use [SerdesAI]** - Add `reloaded-code-serdesai`, attach tools to an
 `AgentBuilder`, and run. This is the fastest path to a working agent.
 
-**Path B: Bring your own framework** - Depend on `llm-coding-tools-core`,
+**Path B: Bring your own framework** - Depend on `reloaded-code-core`,
 implement your framework's tool trait by calling the core functions, and use
 `SystemPromptBuilder` to generate the system prompt. See
 [Custom Framework](guides/custom-framework.md) for a walkthrough.

@@ -1,7 +1,7 @@
 # Linux Sandbox Profiles
 
 This guide covers the Bubblewrap-based Linux sandboxing provided by
-`llm-coding-tools-bubblewrap` when the `linux-bubblewrap` feature is enabled.
+`reloaded-code-bubblewrap` when the `linux-bubblewrap` feature is enabled.
 
 ## Why Sandboxing Matters
 
@@ -296,6 +296,6 @@ depends on your environment.
 - [ ] No unintended host paths are writable from inside the sandbox
 
 [bwrap]: https://github.com/containers/bubblewrap
-[apr]: https://docs.rs/llm-coding-tools-core/latest/llm_coding_tools_core/struct.AllowedPathResolver.html
+[apr]: https://docs.rs/reloaded-code-core/latest/reloaded_code_core/struct.AllowedPathResolver.html
 [NixOS]: https://nixos.org
 [Nix]: https://nixos.org

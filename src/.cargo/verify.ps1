@@ -2,9 +2,9 @@
 # All steps must pass without warnings
 # Keep in sync with verify.sh
 #
-# Note: llm-coding-tools-serdesai is async-only.
+# Note: reloaded-code-serdesai is async-only.
 # Blocking mode is validated for core and models-dev.
-# llm-coding-tools-bubblewrap is Linux-only; all bubblewrap steps
+# reloaded-code-bubblewrap is Linux-only; all bubblewrap steps
 # are skipped on non-Linux platforms.
 
 $ErrorActionPreference = "Stop"
@@ -36,37 +36,37 @@ $onLinux = $IsLinux -eq $true
 
 try {
     Write-Host "Building (async features)..."
-    Invoke-LoggedCommand "cargo" @("build", "-p", "llm-coding-tools-core", "--quiet")
-    Invoke-LoggedCommand "cargo" @("build", "-p", "llm-coding-tools-agents", "--quiet")
-    Invoke-LoggedCommand "cargo" @("build", "-p", "llm-coding-tools-serdesai", "--quiet")
-    Invoke-LoggedCommand "cargo" @("build", "-p", "llm-coding-tools-models-dev", "--quiet")
+    Invoke-LoggedCommand "cargo" @("build", "-p", "reloaded-code-core", "--quiet")
+    Invoke-LoggedCommand "cargo" @("build", "-p", "reloaded-code-agents", "--quiet")
+    Invoke-LoggedCommand "cargo" @("build", "-p", "reloaded-code-serdesai", "--quiet")
+    Invoke-LoggedCommand "cargo" @("build", "-p", "reloaded-code-models-dev", "--quiet")
 
     Write-Host "Testing (async features)..."
-    Invoke-LoggedCommand "cargo" @("test", "-p", "llm-coding-tools-core", "--quiet")
-    Invoke-LoggedCommand "cargo" @("test", "-p", "llm-coding-tools-agents", "--quiet")
-    Invoke-LoggedCommand "cargo" @("test", "-p", "llm-coding-tools-serdesai", "--quiet")
-    Invoke-LoggedCommand "cargo" @("test", "-p", "llm-coding-tools-models-dev", "--quiet")
+    Invoke-LoggedCommand "cargo" @("test", "-p", "reloaded-code-core", "--quiet")
+    Invoke-LoggedCommand "cargo" @("test", "-p", "reloaded-code-agents", "--quiet")
+    Invoke-LoggedCommand "cargo" @("test", "-p", "reloaded-code-serdesai", "--quiet")
+    Invoke-LoggedCommand "cargo" @("test", "-p", "reloaded-code-models-dev", "--quiet")
 
     Write-Host "Clippy (async features)..."
-    Invoke-LoggedCommand "cargo" @("clippy", "-p", "llm-coding-tools-core", "--quiet", "--", "-D", "warnings")
-    Invoke-LoggedCommand "cargo" @("clippy", "-p", "llm-coding-tools-agents", "--quiet", "--", "-D", "warnings")
-    Invoke-LoggedCommand "cargo" @("clippy", "-p", "llm-coding-tools-serdesai", "--quiet", "--", "-D", "warnings")
-    Invoke-LoggedCommand "cargo" @("clippy", "-p", "llm-coding-tools-models-dev", "--quiet", "--", "-D", "warnings")
+    Invoke-LoggedCommand "cargo" @("clippy", "-p", "reloaded-code-core", "--quiet", "--", "-D", "warnings")
+    Invoke-LoggedCommand "cargo" @("clippy", "-p", "reloaded-code-agents", "--quiet", "--", "-D", "warnings")
+    Invoke-LoggedCommand "cargo" @("clippy", "-p", "reloaded-code-serdesai", "--quiet", "--", "-D", "warnings")
+    Invoke-LoggedCommand "cargo" @("clippy", "-p", "reloaded-code-models-dev", "--quiet", "--", "-D", "warnings")
 
     Write-Host "Building (blocking feature)..."
-    Invoke-LoggedCommand "cargo" @("build", "-p", "llm-coding-tools-core", "--no-default-features", "--features", "blocking", "--quiet")
-    Invoke-LoggedCommand "cargo" @("build", "-p", "llm-coding-tools-models-dev", "--no-default-features", "--features", "blocking", "--quiet")
+    Invoke-LoggedCommand "cargo" @("build", "-p", "reloaded-code-core", "--no-default-features", "--features", "blocking", "--quiet")
+    Invoke-LoggedCommand "cargo" @("build", "-p", "reloaded-code-models-dev", "--no-default-features", "--features", "blocking", "--quiet")
 
     Write-Host "Testing (blocking feature)..."
-    Invoke-LoggedCommand "cargo" @("test", "-p", "llm-coding-tools-core", "--no-default-features", "--features", "blocking", "--quiet")
-    Invoke-LoggedCommand "cargo" @("test", "-p", "llm-coding-tools-models-dev", "--no-default-features", "--features", "blocking", "--quiet")
+    Invoke-LoggedCommand "cargo" @("test", "-p", "reloaded-code-core", "--no-default-features", "--features", "blocking", "--quiet")
+    Invoke-LoggedCommand "cargo" @("test", "-p", "reloaded-code-models-dev", "--no-default-features", "--features", "blocking", "--quiet")
 
     Write-Host "Clippy (blocking feature)..."
-    Invoke-LoggedCommand "cargo" @("clippy", "-p", "llm-coding-tools-core", "--no-default-features", "--features", "blocking", "--quiet", "--", "-D", "warnings")
-    Invoke-LoggedCommand "cargo" @("clippy", "-p", "llm-coding-tools-models-dev", "--no-default-features", "--features", "blocking", "--quiet", "--", "-D", "warnings")
+    Invoke-LoggedCommand "cargo" @("clippy", "-p", "reloaded-code-core", "--no-default-features", "--features", "blocking", "--quiet", "--", "-D", "warnings")
+    Invoke-LoggedCommand "cargo" @("clippy", "-p", "reloaded-code-models-dev", "--no-default-features", "--features", "blocking", "--quiet", "--", "-D", "warnings")
 
     Write-Host "Docs..."
-    $docArgs = @("--workspace", "--document-private-items", "--no-deps", "--quiet", "--exclude", "llm-coding-tools-bubblewrap")
+    $docArgs = @("--workspace", "--document-private-items", "--no-deps", "--quiet", "--exclude", "reloaded-code-bubblewrap")
     $originalRustdocFlags = $env:RUSTDOCFLAGS
     $env:RUSTDOCFLAGS = "-D warnings"
     try {
@@ -81,37 +81,37 @@ try {
     Write-Host "Linux-only feature coverage..."
     if ($onLinux) {
         Write-Host "Building (linux async features)..."
-        Invoke-LoggedCommand "cargo" @("build", "-p", "llm-coding-tools-bubblewrap", "--quiet")
-        Invoke-LoggedCommand "cargo" @("build", "-p", "llm-coding-tools-core", "--features", "linux-bubblewrap", "--quiet")
-        Invoke-LoggedCommand "cargo" @("build", "-p", "llm-coding-tools-serdesai", "--features", "linux-bubblewrap", "--quiet")
+        Invoke-LoggedCommand "cargo" @("build", "-p", "reloaded-code-bubblewrap", "--quiet")
+        Invoke-LoggedCommand "cargo" @("build", "-p", "reloaded-code-core", "--features", "linux-bubblewrap", "--quiet")
+        Invoke-LoggedCommand "cargo" @("build", "-p", "reloaded-code-serdesai", "--features", "linux-bubblewrap", "--quiet")
 
         Write-Host "Testing (linux async features)..."
-        Invoke-LoggedCommand "cargo" @("test", "-p", "llm-coding-tools-bubblewrap", "--quiet")
-        Invoke-LoggedCommand "cargo" @("test", "-p", "llm-coding-tools-core", "--features", "linux-bubblewrap", "--quiet")
-        Invoke-LoggedCommand "cargo" @("test", "-p", "llm-coding-tools-serdesai", "--features", "linux-bubblewrap", "--quiet")
+        Invoke-LoggedCommand "cargo" @("test", "-p", "reloaded-code-bubblewrap", "--quiet")
+        Invoke-LoggedCommand "cargo" @("test", "-p", "reloaded-code-core", "--features", "linux-bubblewrap", "--quiet")
+        Invoke-LoggedCommand "cargo" @("test", "-p", "reloaded-code-serdesai", "--features", "linux-bubblewrap", "--quiet")
 
         Write-Host "Clippy (linux async features)..."
-        Invoke-LoggedCommand "cargo" @("clippy", "-p", "llm-coding-tools-bubblewrap", "--quiet", "--", "-D", "warnings")
-        Invoke-LoggedCommand "cargo" @("clippy", "-p", "llm-coding-tools-core", "--features", "linux-bubblewrap", "--quiet", "--", "-D", "warnings")
-        Invoke-LoggedCommand "cargo" @("clippy", "-p", "llm-coding-tools-serdesai", "--features", "linux-bubblewrap", "--quiet", "--", "-D", "warnings")
+        Invoke-LoggedCommand "cargo" @("clippy", "-p", "reloaded-code-bubblewrap", "--quiet", "--", "-D", "warnings")
+        Invoke-LoggedCommand "cargo" @("clippy", "-p", "reloaded-code-core", "--features", "linux-bubblewrap", "--quiet", "--", "-D", "warnings")
+        Invoke-LoggedCommand "cargo" @("clippy", "-p", "reloaded-code-serdesai", "--features", "linux-bubblewrap", "--quiet", "--", "-D", "warnings")
 
         Write-Host "Building (linux blocking features)..."
-        Invoke-LoggedCommand "cargo" @("build", "-p", "llm-coding-tools-bubblewrap", "--no-default-features", "--features", "blocking", "--quiet")
-        Invoke-LoggedCommand "cargo" @("build", "-p", "llm-coding-tools-core", "--no-default-features", "--features", "blocking,linux-bubblewrap", "--quiet")
+        Invoke-LoggedCommand "cargo" @("build", "-p", "reloaded-code-bubblewrap", "--no-default-features", "--features", "blocking", "--quiet")
+        Invoke-LoggedCommand "cargo" @("build", "-p", "reloaded-code-core", "--no-default-features", "--features", "blocking,linux-bubblewrap", "--quiet")
 
         Write-Host "Testing (linux blocking features)..."
-        Invoke-LoggedCommand "cargo" @("test", "-p", "llm-coding-tools-bubblewrap", "--no-default-features", "--features", "blocking", "--quiet")
-        Invoke-LoggedCommand "cargo" @("test", "-p", "llm-coding-tools-core", "--no-default-features", "--features", "blocking,linux-bubblewrap", "--quiet")
+        Invoke-LoggedCommand "cargo" @("test", "-p", "reloaded-code-bubblewrap", "--no-default-features", "--features", "blocking", "--quiet")
+        Invoke-LoggedCommand "cargo" @("test", "-p", "reloaded-code-core", "--no-default-features", "--features", "blocking,linux-bubblewrap", "--quiet")
 
         Write-Host "Clippy (linux blocking features)..."
-        Invoke-LoggedCommand "cargo" @("clippy", "-p", "llm-coding-tools-bubblewrap", "--no-default-features", "--features", "blocking", "--quiet", "--", "-D", "warnings")
-        Invoke-LoggedCommand "cargo" @("clippy", "-p", "llm-coding-tools-core", "--no-default-features", "--features", "blocking,linux-bubblewrap", "--quiet", "--", "-D", "warnings")
+        Invoke-LoggedCommand "cargo" @("clippy", "-p", "reloaded-code-bubblewrap", "--no-default-features", "--features", "blocking", "--quiet", "--", "-D", "warnings")
+        Invoke-LoggedCommand "cargo" @("clippy", "-p", "reloaded-code-core", "--no-default-features", "--features", "blocking,linux-bubblewrap", "--quiet", "--", "-D", "warnings")
 
         Write-Host "Docs (linux-only package)..."
         $linuxRustdocFlags = $env:RUSTDOCFLAGS
         $env:RUSTDOCFLAGS = "-D warnings"
         try {
-            Invoke-LoggedCommand "cargo" @("doc", "-p", "llm-coding-tools-bubblewrap", "--document-private-items", "--no-deps", "--quiet")
+            Invoke-LoggedCommand "cargo" @("doc", "-p", "reloaded-code-bubblewrap", "--document-private-items", "--no-deps", "--quiet")
         } finally {
             $env:RUSTDOCFLAGS = $linuxRustdocFlags
         }

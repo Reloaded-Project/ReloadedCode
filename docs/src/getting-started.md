@@ -37,20 +37,20 @@ a Rust project and an LLM API key (e.g. `OPENAI_API_KEY`).
     **2.** Add the dependencies:
     ```toml
     [dependencies]
-    llm-coding-tools-serdesai = "0.2"
-    llm-coding-tools-agents = "0.1"
-    llm-coding-tools-core = "0.2"
-    llm-coding-tools-models-dev = "0.1"
+    reloaded-code-serdesai = "0.2"
+    reloaded-code-agents = "0.1"
+    reloaded-code-core = "0.2"
+    reloaded-code-models-dev = "0.1"
     tokio = { version = "1", features = ["full"] }
     ```
 
     **3.** Run the agent:
 
     ```rust
-    use llm_coding_tools_agents::{AgentCatalog, AgentLoader, AgentRuntimeBuilder};
-    use llm_coding_tools_core::CredentialResolver;
-    use llm_coding_tools_models_dev::ModelsDevCatalog;
-    use llm_coding_tools_serdesai::{AgentBuildContext, AgentDefaults};
+    use reloaded_code_agents::{AgentCatalog, AgentLoader, AgentRuntimeBuilder};
+    use reloaded_code_core::CredentialResolver;
+    use reloaded_code_models_dev::ModelsDevCatalog;
+    use reloaded_code_serdesai::{AgentBuildContext, AgentDefaults};
     use std::{path::PathBuf, sync::Arc};
 
     #[tokio::main]
@@ -92,14 +92,14 @@ a Rust project and an LLM API key (e.g. `OPENAI_API_KEY`).
 
     ```toml
     [dependencies]
-    llm-coding-tools-serdesai = "0.2"
-    llm-coding-tools-core = "0.2"
+    reloaded-code-serdesai = "0.2"
+    reloaded-code-core = "0.2"
     tokio = { version = "1", features = ["full"] }
     ```
 
     ```rust
-    use llm_coding_tools_core::CredentialResolver;
-    use llm_coding_tools_serdesai::{
+    use reloaded_code_core::CredentialResolver;
+    use reloaded_code_serdesai::{
         ReadTool, GlobTool, GrepTool, EditTool, AbsolutePathResolver,
         BashTool, SystemPromptBuilder, WebFetchTool, create_todo_tools,
         agent_ext::AgentBuilderExt,
@@ -150,9 +150,9 @@ a Rust project and an LLM API key (e.g. `OPENAI_API_KEY`).
 
 !!! tip "Runnable examples"
     The repository includes complete examples for both paths:
-    [serdesai-basic](https://github.com/Sewer56/llm-coding-tools/blob/main/src/llm-coding-tools-serdesai/examples/serdesai-basic.rs)
+    [serdesai-basic](https://github.com/Reloaded-Project/ReloadedCode/blob/main/src/reloaded-code-serdesai/examples/serdesai-basic.rs)
     (without agent files) and
-    [serdesai-agents](https://github.com/Sewer56/llm-coding-tools/blob/main/src/llm-coding-tools-serdesai/examples/serdesai-agents.rs)
+    [serdesai-agents](https://github.com/Reloaded-Project/ReloadedCode/blob/main/src/reloaded-code-serdesai/examples/serdesai-agents.rs)
     (with agent files). See [Examples](examples.md) for the full list.
 
 ## Credential management
@@ -162,7 +162,7 @@ overrides first, then environment variables. The resolver skips empty values,
 so an empty override falls through to the environment variable.
 
 ```rust
-use llm_coding_tools_core::CredentialResolver;
+use reloaded_code_core::CredentialResolver;
 
 let mut resolver = CredentialResolver::new();
 resolver.set_override("OPENAI_API_KEY", "sk-...");
@@ -177,19 +177,19 @@ The repository ships with complete, runnable examples:
 
 ```bash
 # Basic agent setup
-cargo run --example serdesai-basic -p llm-coding-tools-serdesai
+cargo run --example serdesai-basic -p reloaded-code-serdesai
 
 # Sandboxed file access (restricted to allowed directories)
-cargo run --example serdesai-sandboxed -p llm-coding-tools-serdesai
+cargo run --example serdesai-sandboxed -p reloaded-code-serdesai
 
 # Sandboxed bash execution (Linux, requires bubblewrap)
-cargo run --example serdesai-sandboxed-bash --features linux-bubblewrap -p llm-coding-tools-serdesai
+cargo run --example serdesai-sandboxed-bash --features linux-bubblewrap -p reloaded-code-serdesai
 
 # Agent catalog loading from markdown files
-cargo run --example serdesai-agents -p llm-coding-tools-serdesai
+cargo run --example serdesai-agents -p reloaded-code-serdesai
 
 # Multi-agent task delegation (orchestrator delegates to sub-agents)
-cargo run --example serdesai-task -p llm-coding-tools-serdesai
+cargo run --example serdesai-task -p reloaded-code-serdesai
 ```
 
 See [Examples](examples.md) for the full list with descriptions and
@@ -201,7 +201,7 @@ For production deployments handling untrusted input, enable sandboxing:
 
 ```toml
 [dependencies]
-llm-coding-tools-serdesai = { version = "0.2", features = ["linux-bubblewrap"] }
+reloaded-code-serdesai = { version = "0.2", features = ["linux-bubblewrap"] }
 ```
 
 Use `AllowedPathResolver` to restrict file access and the [bubblewrap] sandbox
@@ -227,7 +227,7 @@ To use blocking mode, disable default features and enable `blocking`:
 
 ```toml
 [dependencies]
-llm-coding-tools-core = { version = "0.2", default-features = false, features = ["blocking"] }
+reloaded-code-core = { version = "0.2", default-features = false, features = ["blocking"] }
 ```
 
 ## Next steps
