@@ -153,11 +153,23 @@ impl ProviderConfigLoader {
 
         // Validate all merged entries.
         for (key, config) in &merged {
+            // Validate api_type first so UnrecognizedApiType surfaces before
+            // MissingField(api_url); otherwise an invalid api_type resolves to
+            // Unknown (≠ Ollama) and the api_url check fires incorrectly.
+            let provider_type =
+                api_type_from_str(config.api_type.as_deref().unwrap_or(DEFAULT_API_TYPE));
+            if provider_type == ProviderType::Unknown {
+                return Err(ProviderConfigError::UnrecognizedApiType {
+                    provider_key: key.clone(),
+                    value: config
+                        .api_type
+                        .as_deref()
+                        .unwrap_or(DEFAULT_API_TYPE)
+                        .to_string(),
+                });
+            }
             // api_url is required for non-Ollama providers.
-            if config.api_url.is_none()
-                && api_type_from_str(config.api_type.as_deref().unwrap_or(DEFAULT_API_TYPE))
-                    != ProviderType::Ollama
-            {
+            if config.api_url.is_none() && provider_type != ProviderType::Ollama {
                 return Err(ProviderConfigError::MissingField {
                     provider_key: key.clone(),
                     field: "api_url",
@@ -188,16 +200,6 @@ impl ProviderConfigLoader {
                             value: mod_str.clone(),
                         });
                     }
-                }
-            }
-            // Validate api_type.
-            if let Some(ref api_type_str) = config.api_type {
-                let pt = api_type_from_str(api_type_str);
-                if pt == ProviderType::Unknown {
-                    return Err(ProviderConfigError::UnrecognizedApiType {
-                        provider_key: key.clone(),
-                        value: api_type_str.clone(),
-                    });
                 }
             }
         }
@@ -605,6 +607,23 @@ mod tests {
         let result = loader.load();
         let err = result.expect_err("should reject empty models map");
         assert!(err.to_string().contains("models"), "error was: {err}");
+    }
+
+    #[test]
+    fn load_rejects_invalid_api_type_even_when_api_url_missing() {
+        let f = write_yaml(indoc::indoc! {"
+            bad:
+              api_type: totally-fake
+              models:
+                m1: { max_input: 4096, max_output: 2048 }
+        "});
+        let mut loader = ProviderConfigLoader::new();
+        loader.add_path(f.path()).expect("add_path");
+        let err = loader.load().expect_err("should reject unknown api_type");
+        assert!(
+            err.to_string().contains("unrecognized api_type"),
+            "error was: {err}"
+        );
     }
 
     #[test]
