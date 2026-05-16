@@ -52,9 +52,13 @@ impl ProviderConfigLoader {
     /// Equivalent to:
     ///
     /// ```rust,no_run
+    /// use reloaded_code_provider_config::{ProviderConfigLoader, default_config_paths};
+    /// fn example() -> Result<(), Box<dyn std::error::Error>> {
     /// let mut loader = ProviderConfigLoader::new();
     /// for path in default_config_paths() {
     ///     loader.add_path(&path)?;
+    /// }
+    /// Ok(())
     /// }
     /// ```
     pub fn with_default_paths() -> Result<Self, ProviderConfigError> {
@@ -243,7 +247,7 @@ pub fn default_config_paths() -> Vec<PathBuf> {
 
 /// Merged, validated provider configuration ready for catalog conversion.
 ///
-/// Call [`Self::to_catalog_sources()`] to obtain `(Vec<ProviderSource>, Vec<ProviderModelSource>)`
+/// Call [`Self::to_catalog_sources()`] to obtain `Result<(Vec<ProviderSource>, Vec<ProviderModelSource>), ProviderConfigError>`
 /// that can be passed directly to [`ModelCatalog::build()`].
 ///
 /// The map keys are user-chosen provider identifiers (e.g., `"my-llm"`,
@@ -264,12 +268,28 @@ impl LoadedProviderConfig {
     ///
     /// # Returns
     ///
-    /// - `(Vec<ProviderSource>, Vec<ProviderModelSource<'_>>)`: A pair where
+    /// - `Ok((Vec<ProviderSource>, Vec<ProviderModelSource<'_>))`: A pair where
     ///   each model's [`ProviderModelSource::provider_idx`] (a [`ProviderIdx`] numeric
     ///   index) corresponds to its provider's position in the first vector. The
     ///   returned [`ProviderModelSource`] borrows `model_key` strings from `self`, so
     ///   `self` must outlive the sources.
-    pub fn to_catalog_sources(&self) -> (Vec<ProviderSource>, Vec<ProviderModelSource<'_>>) {
+    ///
+    /// # Errors
+    ///
+    /// Returns [`ProviderConfigError::TooManyProviders`] when the number of
+    /// providers exceeds `u16::MAX + 1` (65,536), which is the maximum
+    /// addressable by [`ProviderIdx`].
+    pub fn to_catalog_sources(
+        &self,
+    ) -> Result<(Vec<ProviderSource>, Vec<ProviderModelSource<'_>>), ProviderConfigError> {
+        let provider_count = self.providers.len();
+        let max = (u16::MAX as usize) + 1;
+        if provider_count > max {
+            return Err(ProviderConfigError::TooManyProviders {
+                count: provider_count,
+                max,
+            });
+        }
         let mut provider_sources = Vec::with_capacity(self.providers.len());
         let mut model_sources = Vec::new();
 
@@ -317,7 +337,7 @@ impl LoadedProviderConfig {
             provider_sources.push(provider_source);
         }
 
-        (provider_sources, model_sources)
+        Ok((provider_sources, model_sources))
     }
 }
 
@@ -364,7 +384,7 @@ mod tests {
     fn load_empty_produces_no_providers() {
         let loaded = ProviderConfigLoader::new().load().expect("load");
         assert!(loaded.providers.is_empty());
-        let (ps, ms) = loaded.to_catalog_sources();
+        let (ps, ms) = loaded.to_catalog_sources().expect("catalog sources");
         assert!(ps.is_empty());
         assert!(ms.is_empty());
     }
@@ -481,7 +501,7 @@ mod tests {
         let mut loader = ProviderConfigLoader::new();
         loader.add_path(f.path()).expect("add_path");
         let loaded = loader.load().expect("load");
-        let (providers, models) = loaded.to_catalog_sources();
+        let (providers, models) = loaded.to_catalog_sources().expect("catalog sources");
         assert_eq!(providers.len(), 1);
         assert_eq!(providers[0].provider_key, "my-llm");
         assert_eq!(providers[0].provider.api_type, ProviderType::Anthropic);
@@ -512,7 +532,7 @@ mod tests {
         let mut loader = ProviderConfigLoader::new();
         loader.add_path(f.path()).expect("add_path");
         let loaded = loader.load().expect("load");
-        let (providers, models) = loaded.to_catalog_sources();
+        let (providers, models) = loaded.to_catalog_sources().expect("catalog sources");
         assert_eq!(providers.len(), 2);
         assert_eq!(models.len(), 3);
         // All models under "alpha" should have provider_idx 0.
@@ -533,7 +553,7 @@ mod tests {
         let mut loader = ProviderConfigLoader::new();
         loader.add_path(f.path()).expect("add_path");
         let loaded = loader.load().expect("load");
-        let (providers, _) = loaded.to_catalog_sources();
+        let (providers, _) = loaded.to_catalog_sources().expect("catalog sources");
         assert_eq!(
             providers[0].provider.api_type,
             ProviderType::OpenAiCompletions

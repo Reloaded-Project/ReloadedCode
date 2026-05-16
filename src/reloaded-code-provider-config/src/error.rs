@@ -58,4 +58,12 @@ pub enum ProviderConfigError {
         /// The unrecognized api_type string.
         value: String,
     },
+    /// Provider count exceeds the `u16` provider-index address space.
+    #[error("provider count {count} exceeds supported maximum {max}")]
+    TooManyProviders {
+        /// Number of providers supplied.
+        count: usize,
+        /// Maximum supported provider count.
+        max: usize,
+    },
 }

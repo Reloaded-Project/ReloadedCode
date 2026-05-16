@@ -36,7 +36,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     );
 
     let loaded = loader.load()?;
-    let (providers, models) = loaded.to_catalog_sources();
+    let (providers, models) = loaded.to_catalog_sources()?;
 
     println!(
         "Loaded {} providers and {} models",
