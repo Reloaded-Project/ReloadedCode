@@ -29,7 +29,7 @@ futures = "0.3"
 
 # HTTP/Network
 reqwest = { version = "0.13", default-features = false, features = ["rustls", "rustls-native-certs"] }
-html-to-markdown-rs = "3.4"
+html-to-markdown-rs = "3.5"
 
 # Filesystem/Path
 shellexpand = "3.1.2"
