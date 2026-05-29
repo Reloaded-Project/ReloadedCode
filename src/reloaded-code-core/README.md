@@ -162,7 +162,9 @@ impl ReadTool {
 }
 
 impl ToolContext for ReadTool {
-    const NAME: &'static str = tool_metadata::read::NAME;
+    fn name(&self) -> &'static str {
+        tool_metadata::read::NAME
+    }
 
     fn context(&self) -> ToolPrompt {
         ToolPrompt::Read {
@@ -196,7 +198,9 @@ impl ReadTool {
 }
 
 impl ToolContext for ReadTool {
-    const NAME: &'static str = tool_metadata::read::NAME;
+    fn name(&self) -> &'static str {
+        tool_metadata::read::NAME
+    }
 
     fn context(&self) -> ToolPrompt {
         ToolPrompt::Read {

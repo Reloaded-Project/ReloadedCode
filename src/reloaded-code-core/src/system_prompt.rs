@@ -27,7 +27,9 @@ struct ContextEntry {
 /// struct ReadTool;
 ///
 /// impl ToolContext for ReadTool {
-///     const NAME: &'static str = "read";
+///     fn name(&self) -> &'static str {
+///         "read"
+///     }
 ///
 ///     fn context(&self) -> ToolPrompt {
 ///         ToolPrompt::Read {
@@ -87,7 +89,9 @@ impl SystemPromptBuilder {
     /// struct MyTool;
     ///
     /// impl ToolContext for MyTool {
-    ///     const NAME: &'static str = "read";
+    ///     fn name(&self) -> &'static str {
+    ///         "read"
+    ///     }
     ///
     ///     fn context(&self) -> ToolPrompt {
     ///         ToolPrompt::Read {
@@ -113,7 +117,7 @@ impl SystemPromptBuilder {
     /// ```
     pub fn track<T: ToolContext>(&mut self, tool: T) -> T {
         self.entries.push(ContextEntry {
-            name: T::NAME,
+            name: tool.name(),
             prompt: tool.context(),
         });
         tool
@@ -388,7 +392,9 @@ mod tests {
     }
 
     impl ToolContext for MockTool {
-        const NAME: &'static str = "mock";
+        fn name(&self) -> &'static str {
+            "mock"
+        }
         fn context(&self) -> ToolPrompt {
             ToolPrompt::Static("Mock tool context.")
         }
@@ -397,7 +403,9 @@ mod tests {
     struct OtherTool;
 
     impl ToolContext for OtherTool {
-        const NAME: &'static str = "other";
+        fn name(&self) -> &'static str {
+            "other"
+        }
         fn context(&self) -> ToolPrompt {
             ToolPrompt::Static("Other context.")
         }
@@ -418,7 +426,9 @@ mod tests {
             impl<const ALLOWED: bool, const LINE_NUMBERS: bool> ToolContext
                 for $tool<ALLOWED, LINE_NUMBERS>
             {
-                const NAME: &'static str = $name;
+                fn name(&self) -> &'static str {
+                    $name
+                }
 
                 fn context(&self) -> ToolPrompt {
                     ToolPrompt::$variant {
@@ -435,7 +445,9 @@ mod tests {
             struct $tool<const ALLOWED: bool>;
 
             impl<const ALLOWED: bool> ToolContext for $tool<ALLOWED> {
-                const NAME: &'static str = $name;
+                fn name(&self) -> &'static str {
+                    $name
+                }
 
                 fn context(&self) -> ToolPrompt {
                     ToolPrompt::$variant {
@@ -451,7 +463,9 @@ mod tests {
             struct $tool;
 
             impl ToolContext for $tool {
-                const NAME: &'static str = $name;
+                fn name(&self) -> &'static str {
+                    $name
+                }
 
                 fn context(&self) -> ToolPrompt {
                     $prompt
@@ -1200,7 +1214,9 @@ mod tests {
         struct SandboxedBashTool;
 
         impl ToolContext for SandboxedBashTool {
-            const NAME: &'static str = bash::NAME;
+            fn name(&self) -> &'static str {
+                bash::NAME
+            }
             fn context(&self) -> ToolPrompt {
                 ToolPrompt::Bash {
                     network_disabled: true,
@@ -1212,7 +1228,9 @@ mod tests {
         struct HostBashTool;
 
         impl ToolContext for HostBashTool {
-            const NAME: &'static str = bash::NAME;
+            fn name(&self) -> &'static str {
+                bash::NAME
+            }
             fn context(&self) -> ToolPrompt {
                 ToolPrompt::Bash {
                     network_disabled: false,

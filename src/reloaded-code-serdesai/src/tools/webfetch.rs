@@ -80,7 +80,9 @@ impl<Deps: Send + Sync> Tool<Deps> for WebFetchTool {
 }
 
 impl ToolContext for WebFetchTool {
-    const NAME: &'static str = webfetch_meta::NAME;
+    fn name(&self) -> &'static str {
+        webfetch_meta::NAME
+    }
 
     fn context(&self) -> ToolPrompt {
         ToolPrompt::WebFetch

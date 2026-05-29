@@ -83,7 +83,9 @@ impl<C> ToolContext for TaskTool<C>
 where
     C: CredentialLookup + Send + Sync + 'static,
 {
-    const NAME: &'static str = task_meta::NAME;
+    fn name(&self) -> &'static str {
+        task_meta::NAME
+    }
 
     fn context(&self) -> ToolPrompt {
         ToolPrompt::Task
@@ -117,6 +119,11 @@ mod tests {
 
     #[test]
     fn task_tool_name_matches_metadata() {
-        assert_eq!(TaskTool::<CredentialResolver>::NAME, task_meta::NAME);
+        let targets = vec![
+            summary("alpha", "Alpha agent"),
+            summary("beta", "Beta agent"),
+        ];
+        let definition = task_tool_definition(&targets);
+        assert_eq!(definition.name(), task_meta::NAME);
     }
 }

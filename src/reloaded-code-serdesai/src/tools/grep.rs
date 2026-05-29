@@ -118,7 +118,9 @@ fn grep_output_to_return(output: GrepOutput, formatting: GrepFormattingSettings)
 }
 
 impl<R: PathResolver + Clone> ToolContext for GrepTool<R> {
-    const NAME: &'static str = grep_meta::NAME;
+    fn name(&self) -> &'static str {
+        grep_meta::NAME
+    }
 
     fn context(&self) -> ToolPrompt {
         ToolPrompt::Grep {

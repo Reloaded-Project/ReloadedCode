@@ -79,7 +79,9 @@ impl<R: PathResolver + Clone + Send + Sync, Deps: Send + Sync> Tool<Deps> for Wr
 }
 
 impl<R: PathResolver + Clone> ToolContext for WriteTool<R> {
-    const NAME: &'static str = write_meta::NAME;
+    fn name(&self) -> &'static str {
+        write_meta::NAME
+    }
 
     fn context(&self) -> ToolPrompt {
         ToolPrompt::Write {

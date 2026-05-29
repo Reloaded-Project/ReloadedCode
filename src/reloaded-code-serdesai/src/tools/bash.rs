@@ -259,7 +259,9 @@ fn bash_prompt_sandboxed(mode: &BashExecutionMode) -> bool {
 }
 
 impl ToolContext for BashTool {
-    const NAME: &'static str = bash_meta::NAME;
+    fn name(&self) -> &'static str {
+        bash_meta::NAME
+    }
 
     fn context(&self) -> ToolPrompt {
         ToolPrompt::Bash {

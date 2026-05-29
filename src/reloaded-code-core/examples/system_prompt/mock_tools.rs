@@ -121,7 +121,9 @@ macro_rules! path_tool_with_line_numbers {
         impl<const ALLOWED: bool, const LINE_NUMBERS: bool> ToolContext
             for $tool<ALLOWED, LINE_NUMBERS>
         {
-            const NAME: &'static str = $name;
+            fn name(&self) -> &'static str {
+                $name
+            }
 
             fn context(&self) -> ToolPrompt {
                 ToolPrompt::$variant {
@@ -138,7 +140,9 @@ macro_rules! path_tool {
         struct $tool<const ALLOWED: bool>;
 
         impl<const ALLOWED: bool> ToolContext for $tool<ALLOWED> {
-            const NAME: &'static str = $name;
+            fn name(&self) -> &'static str {
+                $name
+            }
 
             fn context(&self) -> ToolPrompt {
                 ToolPrompt::$variant {
@@ -158,7 +162,9 @@ path_tool_with_line_numbers!(MockGrepTool, tool_metadata::grep::NAME, Grep);
 struct MockBashTool;
 
 impl ToolContext for MockBashTool {
-    const NAME: &'static str = tool_metadata::bash::NAME;
+    fn name(&self) -> &'static str {
+        tool_metadata::bash::NAME
+    }
 
     fn context(&self) -> ToolPrompt {
         ToolPrompt::Bash {
@@ -171,7 +177,9 @@ impl ToolContext for MockBashTool {
 struct MockWebFetchTool;
 
 impl ToolContext for MockWebFetchTool {
-    const NAME: &'static str = tool_metadata::webfetch::NAME;
+    fn name(&self) -> &'static str {
+        tool_metadata::webfetch::NAME
+    }
 
     fn context(&self) -> ToolPrompt {
         ToolPrompt::WebFetch
@@ -181,7 +189,9 @@ impl ToolContext for MockWebFetchTool {
 struct MockTodoWriteTool;
 
 impl ToolContext for MockTodoWriteTool {
-    const NAME: &'static str = tool_metadata::todo_write::NAME;
+    fn name(&self) -> &'static str {
+        tool_metadata::todo_write::NAME
+    }
 
     fn context(&self) -> ToolPrompt {
         ToolPrompt::TodoWrite
@@ -191,7 +201,9 @@ impl ToolContext for MockTodoWriteTool {
 struct MockTodoReadTool;
 
 impl ToolContext for MockTodoReadTool {
-    const NAME: &'static str = tool_metadata::todo_read::NAME;
+    fn name(&self) -> &'static str {
+        tool_metadata::todo_read::NAME
+    }
 
     fn context(&self) -> ToolPrompt {
         ToolPrompt::TodoRead
@@ -201,7 +213,9 @@ impl ToolContext for MockTodoReadTool {
 struct MockTaskTool;
 
 impl ToolContext for MockTaskTool {
-    const NAME: &'static str = tool_metadata::task::NAME;
+    fn name(&self) -> &'static str {
+        tool_metadata::task::NAME
+    }
 
     fn context(&self) -> ToolPrompt {
         ToolPrompt::Task

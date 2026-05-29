@@ -99,7 +99,9 @@ impl<R: PathResolver + Clone + Send + Sync, Deps: Send + Sync> Tool<Deps> for Re
 }
 
 impl<R: PathResolver + Clone> ToolContext for ReadTool<R> {
-    const NAME: &'static str = read_meta::NAME;
+    fn name(&self) -> &'static str {
+        read_meta::NAME
+    }
 
     fn context(&self) -> ToolPrompt {
         ToolPrompt::Read {

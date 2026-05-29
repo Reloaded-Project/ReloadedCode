@@ -39,6 +39,7 @@ pub struct ProviderConfig {
     pub api_url: Option<String>,
     /// API type string, mapped via [`crate::api_type::api_type_from_str`].
     /// Defaults to `"openai-compatible"` when omitted.
+    #[allow(rustdoc::private_intra_doc_links)]
     pub api_type: Option<String>,
     /// Environment variable names checked by `CredentialResolver`, in order.
     pub env: Option<Vec<String>>,

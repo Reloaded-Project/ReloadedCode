@@ -55,7 +55,9 @@ impl<Deps: Send + Sync> Tool<Deps> for TodoWriteTool {
 }
 
 impl ToolContext for TodoWriteTool {
-    const NAME: &'static str = todo_write_meta::NAME;
+    fn name(&self) -> &'static str {
+        todo_write_meta::NAME
+    }
 
     fn context(&self) -> ToolPrompt {
         ToolPrompt::TodoWrite
@@ -94,7 +96,9 @@ impl<Deps: Send + Sync> Tool<Deps> for TodoReadTool {
 }
 
 impl ToolContext for TodoReadTool {
-    const NAME: &'static str = todo_read_meta::NAME;
+    fn name(&self) -> &'static str {
+        todo_read_meta::NAME
+    }
 
     fn context(&self) -> ToolPrompt {
         ToolPrompt::TodoRead

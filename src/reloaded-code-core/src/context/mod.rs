@@ -18,7 +18,9 @@
 //! struct NotesTool;
 //!
 //! impl ToolContext for ReadTool {
-//!     const NAME: &'static str = "read";
+//!     fn name(&self) -> &'static str {
+//!         "read"
+//!     }
 //!
 //!     fn context(&self) -> ToolPrompt {
 //!         ToolPrompt::Read {
@@ -29,7 +31,9 @@
 //! }
 //!
 //! impl ToolContext for NotesTool {
-//!     const NAME: &'static str = "notes";
+//!     fn name(&self) -> &'static str {
+//!         "notes"
+//!     }
 //!
 //!     fn context(&self) -> ToolPrompt {
 //!         ToolPrompt::Static("Use this tool for short project notes.")
@@ -68,7 +72,9 @@ pub const GITHUB_CLI: &str = include_str!("github_cli.txt");
 /// struct MyTool;
 ///
 /// impl ToolContext for MyTool {
-///     const NAME: &'static str = "mytool";
+///     fn name(&self) -> &'static str {
+///         "mytool"
+///     }
 ///
 ///     fn context(&self) -> ToolPrompt {
 ///         ToolPrompt::Static("Instructions for using MyTool...")
@@ -76,11 +82,12 @@ pub const GITHUB_CLI: &str = include_str!("github_cli.txt");
 /// }
 /// ```
 pub trait ToolContext {
-    /// Tool name used for section headers in generated system prompt.
+    /// Returns the tool name for section headers in generated system prompt.
     ///
     /// Should be lowercase (e.g., "read", "bash", "glob").
     /// SystemPromptBuilder capitalizes this for display.
-    const NAME: &'static str;
+    #[must_use]
+    fn name(&self) -> &'static str;
 
     /// Returns the guidance for this tool.
     #[must_use]
@@ -90,6 +97,24 @@ pub trait ToolContext {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn trait_is_object_safe() {
+        // Verify that Box<dyn ToolContext> can be constructed.
+        // This proves the trait is object-safe (no associated constants,
+        // no methods requiring Self: Sized).
+        struct DummyTool;
+        impl ToolContext for DummyTool {
+            fn name(&self) -> &'static str {
+                "dummy"
+            }
+            fn context(&self) -> ToolPrompt {
+                ToolPrompt::Static("Dummy context")
+            }
+        }
+
+        let _: Box<dyn ToolContext> = Box::new(DummyTool);
+    }
 
     #[test]
     fn context_strings_are_not_empty() {

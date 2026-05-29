@@ -116,7 +116,9 @@ fn glob_output_to_return(output: GlobOutput) -> ToolReturn {
 }
 
 impl<R: PathResolver + Clone> ToolContext for GlobTool<R> {
-    const NAME: &'static str = glob_meta::NAME;
+    fn name(&self) -> &'static str {
+        glob_meta::NAME
+    }
 
     fn context(&self) -> ToolPrompt {
         ToolPrompt::Glob {

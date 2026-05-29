@@ -73,7 +73,9 @@ use reloaded_code_core::{
 
 // Implement ToolContext for your tool
 impl<R: PathResolver> ToolContext for MyReadTool<R> {
-    const NAME: &'static str = tool_metadata::read::NAME;
+    fn name(&self) -> &'static str {
+        tool_metadata::read::NAME
+    }
 
     fn context(&self) -> ToolPrompt {
         ToolPrompt::Read {

@@ -81,7 +81,9 @@ impl<R: PathResolver + Clone + Send + Sync, Deps: Send + Sync> Tool<Deps> for Ed
 }
 
 impl<R: PathResolver + Clone> ToolContext for EditTool<R> {
-    const NAME: &'static str = edit_meta::NAME;
+    fn name(&self) -> &'static str {
+        edit_meta::NAME
+    }
 
     fn context(&self) -> ToolPrompt {
         ToolPrompt::Edit {
