@@ -18,6 +18,7 @@ use reloaded_code_agents::{
     ToolCatalogEntry, ToolCatalogKind, build_resolver_for_tool,
 };
 use reloaded_code_core::permissions::Ruleset;
+use reloaded_code_core::tool_context::ToolBuildContext;
 use reloaded_code_core::tool_metadata::{
     edit as edit_meta, glob as glob_meta, grep as grep_meta, read as read_meta,
     webfetch as webfetch_meta, write as write_meta,
@@ -25,7 +26,7 @@ use reloaded_code_core::tool_metadata::{
 use reloaded_code_core::tools::{
     GlobSettings, GrepFormattingSettings, GrepSettings, ReadSettings, WebFetchSettings,
 };
-use reloaded_code_core::{CredentialLookup, models::ModelCatalog};
+use reloaded_code_core::{CredentialLookup, ToolError, models::ModelCatalog};
 use serdes_ai::AgentBuilder;
 use serdes_ai_models::BoxedModel;
 use std::path::Path;
@@ -153,6 +154,17 @@ where
 }
 
 /// Attaches the standard runtime tools and prompt contexts without finalizing the builder.
+///
+/// # Errors
+///
+/// Returns [`AgentBuildError::UnsupportedToolKind`] when the runtime catalog contains an
+/// unrecognized [`ToolCatalogKind`] variant (this function only handles standard tools).
+///
+/// Returns [`AgentBuildError::ToolSettingsValidation`] when resolver creation or settings
+/// building fails for any tool, including:
+/// - [`ToolError::InvalidPath`] if the workspace root cannot be canonicalized
+/// - [`ToolError::PermissionDenied`] if a tool is explicitly disabled in the permission config
+/// - [`ToolError::InvalidPattern`] if a glob permission pattern is syntactically malformed
 pub(super) fn attach_standard_tools<'a, C>(
     mut builder: AgentBuilder<(), String>,
     prepared: &PreparedBuild<'a>,
@@ -177,6 +189,13 @@ where
         builder = builder.top_p(top_p);
     }
 
+    // Create build context once before the tool construction loop.
+    let build_context = ToolBuildContext::new(workspace_root, prepared.permission.as_deref())
+        .map_err(|e| AgentBuildError::ToolSettingsValidation {
+            tool: "workspace_root",
+            source: ToolError::InvalidPath(e.to_string()),
+        })?;
+
     // Use pre-built permission ruleset from PreparedBuild for non-file tools.
     let permission = prepared.permission.clone();
     let permission_config = &prepared.permission_config;
@@ -185,7 +204,7 @@ where
         match entry.kind {
             ToolCatalogKind::Read => {
                 let resolver =
-                    build_resolver_for_tool(permission_config, read_meta::NAME, workspace_root)
+                    build_resolver_for_tool(&build_context, permission_config, read_meta::NAME)
                         .with_tool(read_meta::NAME)?;
                 let settings = build_read_settings(&prepared.tool_settings.read)?;
                 builder =
@@ -193,19 +212,19 @@ where
             }
             ToolCatalogKind::Write => {
                 let resolver =
-                    build_resolver_for_tool(permission_config, write_meta::NAME, workspace_root)
+                    build_resolver_for_tool(&build_context, permission_config, write_meta::NAME)
                         .with_tool(write_meta::NAME)?;
                 builder = builder.tool(prompt_builder.track(WriteTool::new(resolver)));
             }
             ToolCatalogKind::Edit => {
                 let resolver =
-                    build_resolver_for_tool(permission_config, edit_meta::NAME, workspace_root)
+                    build_resolver_for_tool(&build_context, permission_config, edit_meta::NAME)
                         .with_tool(edit_meta::NAME)?;
                 builder = builder.tool(prompt_builder.track(EditTool::new(resolver)));
             }
             ToolCatalogKind::Glob => {
                 let resolver =
-                    build_resolver_for_tool(permission_config, glob_meta::NAME, workspace_root)
+                    build_resolver_for_tool(&build_context, permission_config, glob_meta::NAME)
                         .with_tool(glob_meta::NAME)?;
                 let settings = build_glob_settings(&prepared.tool_settings.glob)?;
                 builder =
@@ -213,7 +232,7 @@ where
             }
             ToolCatalogKind::Grep => {
                 let resolver =
-                    build_resolver_for_tool(permission_config, grep_meta::NAME, workspace_root)
+                    build_resolver_for_tool(&build_context, permission_config, grep_meta::NAME)
                         .with_tool(grep_meta::NAME)?;
                 let (search_settings, formatting_settings) =
                     build_grep_settings(&prepared.tool_settings.grep)?;

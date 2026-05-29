@@ -23,7 +23,7 @@ use reloaded_code_core::path::{
     PathResolver, RuleAction,
 };
 use reloaded_code_core::permissions::PermissionAction;
-use soft_canonicalize::soft_canonicalize;
+use reloaded_code_core::tool_context::ToolBuildContext;
 use std::path::{Path, PathBuf};
 
 /// Closed enum of resolver types used for file tools.
@@ -77,31 +77,25 @@ impl PathResolver for FileToolResolver {
 ///
 /// # Arguments
 ///
-/// - `config` - Permission config mapping tool names to [`PermissionRule`].
-/// - `tool_name` - Name of the tool to look up in `config`.
-/// - `workspace_root` - Workspace root used for relative-pattern resolution.
+/// - `build_context` - [`ToolBuildContext`] containing the canonicalized workspace root
+///   and optional permission ruleset.
+/// - `config` - Permission config map used to look up tool-specific rules.
+/// - `tool_name` - Name of the tool to look up in the context's permission config.
 ///
 /// # Returns
 ///
 /// The cheapest [`FileToolResolver`] variant satisfying the tool's permission config.
 ///
 /// # Errors
-/// - Returns [`ToolError::InvalidPath`] when the workspace root does not exist or cannot be canonicalized.
 /// - Returns [`ToolError::PermissionDenied`] when the tool is disabled by configuration (`deny`).
 /// - Returns [`ToolError::InvalidPath`] when shell expansion fails (e.g., unresolvable environment variable).
 /// - Returns [`ToolError::InvalidPattern`] when a glob pattern is syntactically invalid.
 pub fn build_resolver_for_tool(
+    build_context: &ToolBuildContext,
     config: &IndexMap<String, PermissionRule>,
     tool_name: &str,
-    workspace_root: &Path,
 ) -> Result<FileToolResolver, ToolError> {
-    let workspace_root = soft_canonicalize(workspace_root).map_err(|e| {
-        ToolError::InvalidPath(format!(
-            "failed to resolve workspace root '{}': {}",
-            workspace_root.display(),
-            e
-        ))
-    })?;
+    let workspace_root = build_context.workspace_root().to_path_buf();
 
     let Some(rule) = config.get(tool_name) else {
         // Nothing specified: default to workspace only.
@@ -188,6 +182,7 @@ fn build_glob_policy(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use reloaded_code_core::ToolBuildContext;
     use soft_canonicalize::soft_canonicalize;
 
     type TestResult = Result<(), ToolError>;
@@ -202,7 +197,8 @@ mod tests {
         let temp = tempfile::TempDir::new().unwrap();
 
         let config = IndexMap::new();
-        let resolver = build_resolver_for_tool(&config, "read", temp.path())?;
+        let ctx = ToolBuildContext::new(temp.path(), None).unwrap();
+        let resolver = build_resolver_for_tool(&ctx, &config, "read")?;
 
         let FileToolResolver::Allowed(inner) = &resolver else {
             panic!("expected Allowed, got {resolver:?}");
@@ -230,7 +226,8 @@ mod tests {
             PermissionRule::Action(PermissionAction::Allow),
         );
 
-        let resolver = build_resolver_for_tool(&config, "read", temp.path())?;
+        let ctx = ToolBuildContext::new(temp.path(), None).unwrap();
+        let resolver = build_resolver_for_tool(&ctx, &config, "read")?;
 
         let FileToolResolver::Allowed(inner) = &resolver else {
             panic!("expected Allowed, got {resolver:?}");
@@ -257,7 +254,8 @@ mod tests {
         let mut config = IndexMap::new();
         config.insert("read".to_string(), PermissionRule::Pattern(patterns));
 
-        let resolver = build_resolver_for_tool(&config, "read", temp.path())?;
+        let ctx = ToolBuildContext::new(temp.path(), None).unwrap();
+        let resolver = build_resolver_for_tool(&ctx, &config, "read")?;
 
         // Any absolute path is allowed, even outside the workspace.
         assert!(resolver.is_path_allowed(Path::new("/etc/passwd")));
@@ -279,7 +277,8 @@ mod tests {
         let mut config = IndexMap::new();
         config.insert("read".to_string(), PermissionRule::Pattern(patterns));
 
-        let resolver = build_resolver_for_tool(&config, "read", temp.path())?;
+        let ctx = ToolBuildContext::new(temp.path(), None).unwrap();
+        let resolver = build_resolver_for_tool(&ctx, &config, "read")?;
 
         let FileToolResolver::Allowed(inner) = &resolver else {
             panic!("expected Allowed, got {resolver:?}");
@@ -318,7 +317,8 @@ mod tests {
         let mut config = IndexMap::new();
         config.insert("read".to_string(), PermissionRule::Pattern(patterns));
 
-        let resolver = build_resolver_for_tool(&config, "read", temp.path())?;
+        let ctx = ToolBuildContext::new(temp.path(), None).unwrap();
+        let resolver = build_resolver_for_tool(&ctx, &config, "read")?;
 
         assert!(
             matches!(resolver, FileToolResolver::Glob(_)),
@@ -358,7 +358,8 @@ mod tests {
         let mut config = IndexMap::new();
         config.insert("read".to_string(), PermissionRule::Pattern(patterns));
 
-        let resolver = build_resolver_for_tool(&config, "read", temp.path())?;
+        let ctx = ToolBuildContext::new(temp.path(), None).unwrap();
+        let resolver = build_resolver_for_tool(&ctx, &config, "read")?;
 
         assert!(matches!(resolver, FileToolResolver::Glob(_)));
 
@@ -395,7 +396,8 @@ mod tests {
         let mut config = IndexMap::new();
         config.insert("read".to_string(), PermissionRule::Pattern(patterns));
 
-        let resolver = build_resolver_for_tool(&config, "read", temp.path())?;
+        let ctx = ToolBuildContext::new(temp.path(), None).unwrap();
+        let resolver = build_resolver_for_tool(&ctx, &config, "read")?;
 
         assert!(matches!(resolver, FileToolResolver::Glob(_)));
 
@@ -419,7 +421,8 @@ mod tests {
         let mut config = IndexMap::new();
         config.insert("read".to_string(), PermissionRule::Pattern(patterns));
 
-        let resolver = build_resolver_for_tool(&config, "read", temp.path())?;
+        let ctx = ToolBuildContext::new(temp.path(), None).unwrap();
+        let resolver = build_resolver_for_tool(&ctx, &config, "read")?;
 
         assert!(
             matches!(resolver, FileToolResolver::Glob(_)),
@@ -462,7 +465,8 @@ mod tests {
         let mut config = IndexMap::new();
         config.insert("read".to_string(), PermissionRule::Pattern(patterns));
 
-        let resolver = build_resolver_for_tool(&config, "read", temp.path())?;
+        let ctx = ToolBuildContext::new(temp.path(), None).unwrap();
+        let resolver = build_resolver_for_tool(&ctx, &config, "read")?;
 
         assert!(matches!(resolver, FileToolResolver::Glob(_)));
 
@@ -486,7 +490,8 @@ mod tests {
         let mut config = IndexMap::new();
         config.insert("read".to_string(), PermissionRule::Pattern(patterns));
 
-        let result = build_resolver_for_tool(&config, "read", temp.path());
+        let ctx = ToolBuildContext::new(temp.path(), None).unwrap();
+        let result = build_resolver_for_tool(&ctx, &config, "read");
         assert!(
             result.is_err(),
             "unresolvable shell variable should produce an error"
@@ -514,7 +519,8 @@ mod tests {
         let mut config = IndexMap::new();
         config.insert("read".to_string(), PermissionRule::Pattern(patterns));
 
-        let resolver = build_resolver_for_tool(&config, "read", temp.path())?;
+        let ctx = ToolBuildContext::new(temp.path(), None).unwrap();
+        let resolver = build_resolver_for_tool(&ctx, &config, "read")?;
         let root = soft_canonicalize(temp.path())?;
 
         let resolved = resolver.resolve("src/lib.rs")?;
@@ -547,7 +553,8 @@ mod tests {
         let mut config = IndexMap::new();
         config.insert("read".to_string(), PermissionRule::Pattern(patterns));
 
-        let resolver = build_resolver_for_tool(&config, "read", temp.path())?;
+        let ctx = ToolBuildContext::new(temp.path(), None).unwrap();
+        let resolver = build_resolver_for_tool(&ctx, &config, "read")?;
         let workspace_root = soft_canonicalize(temp.path())?;
         let resolved = resolver.resolve(".")?;
 
