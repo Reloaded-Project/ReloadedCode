@@ -174,7 +174,13 @@ where
 /// # Errors
 ///
 /// Returns [`AgentBuildError::UnsupportedToolKind`] when the runtime catalog contains an
-/// unrecognized [`ToolCatalogKind`] variant (this function only handles standard tools).
+/// unrecognized [`ToolCatalogKind`] variant.
+///
+/// Returns [`AgentBuildError::UnknownCustomTool`] when a [`ToolCatalogKind::Custom`] entry
+/// names a tool absent from the custom-tool registry.
+///
+/// Returns [`AgentBuildError::CustomToolDowncastFailed`] when the type-erased object
+/// produced by a custom-tool factory cannot be downcast to `Box<dyn Tool<()>>`.
 ///
 /// Returns [`AgentBuildError::ToolSettingsValidation`] when resolver creation or settings
 /// building fails for any tool, including:
