@@ -6,11 +6,10 @@
 //! - [`AgentDefaults`] — Fallback settings when an agent doesn't specify them.
 
 use super::task::{build_runtime_task_caches, TaskTargetSummary};
-use super::tool_catalog::ToolCatalogEntry;
 use crate::{AgentCatalog, RulesetExt};
 use ahash::AHashMap;
 use reloaded_code_core::permissions::{ExpandError, Ruleset};
-use reloaded_code_core::TaskSettings;
+use reloaded_code_core::{SharedToolRegistry, TaskSettings, ToolCatalogEntry};
 use std::sync::Arc;
 
 /// Default settings used when an agent doesn't specify them.
@@ -43,6 +42,7 @@ pub struct AgentRuntime {
     defaults: AgentDefaults,
     task_settings: TaskSettings,
     tools: Vec<ToolCatalogEntry>,
+    custom_tool_registry: SharedToolRegistry,
     permission_rulesets: AHashMap<String, Arc<Ruleset>>,
     allowed_tools_by_caller: AHashMap<String, Vec<ToolCatalogEntry>>,
     callable_target_summaries_by_caller: AHashMap<String, Vec<TaskTargetSummary>>,
@@ -55,6 +55,7 @@ impl AgentRuntime {
         defaults: AgentDefaults,
         task_settings: TaskSettings,
         tools: Vec<ToolCatalogEntry>,
+        custom_tool_registry: SharedToolRegistry,
     ) -> Result<Self, ExpandError> {
         let permission_rulesets = catalog
             .iter()
@@ -73,6 +74,7 @@ impl AgentRuntime {
             defaults,
             task_settings,
             tools,
+            custom_tool_registry,
             permission_rulesets,
             allowed_tools_by_caller,
             callable_target_summaries_by_caller,
@@ -101,6 +103,12 @@ impl AgentRuntime {
     #[inline]
     pub fn tools(&self) -> &[ToolCatalogEntry] {
         &self.tools
+    }
+
+    /// Returns the custom tool registry.
+    #[inline]
+    pub fn custom_tool_registry(&self) -> &SharedToolRegistry {
+        &self.custom_tool_registry
     }
 
     /// Returns the cached permission ruleset for the named caller.

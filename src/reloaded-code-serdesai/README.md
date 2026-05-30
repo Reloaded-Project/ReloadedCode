@@ -162,6 +162,86 @@ If you already have your own `ModelCatalog`, you can use that instead of
 See [examples/serdesai-agents.rs](examples/serdesai-agents.rs) and
 [examples/serdesai-task.rs](examples/serdesai-task.rs).
 
+## Custom tools
+
+Register custom tools that integrate with the SerdesAI agent builder. Your
+tool must implement `serdes_ai::Tool<()>` and be wrapped by a core
+[`ToolFactory`]:
+
+```rust,no_run
+use reloaded_code_agents::AgentRuntimeBuilder;
+use reloaded_code_core::{ToolBuildContext, ToolCatalogEntry, ToolCatalogKind, ToolContext, ToolFactory};
+use reloaded_code_core::context::ToolPrompt;
+use serdes_ai::tools::{RunContext, SchemaBuilder, Tool, ToolDefinition, ToolResult, ToolReturn};
+use std::any::Any;
+use async_trait::async_trait;
+
+// 1. Define the tool - implement Tool<()> with a definition and call handler
+struct EchoTool;
+
+#[async_trait]
+impl Tool<()> for EchoTool {
+    fn definition(&self) -> ToolDefinition {
+        // For tools without parameters, just use ToolDefinition::new(name, description)
+        ToolDefinition::new("echo", "Echo a message back")
+            .with_parameters(
+                SchemaBuilder::new()
+                    .string("message", "Message to echo", true)
+                    .build()
+                    .unwrap(),
+            )
+    }
+
+    async fn call(&self, _ctx: &RunContext<()>, args: serde_json::Value) -> ToolResult {
+        let msg = args["message"].as_str().unwrap_or_default();
+        Ok(ToolReturn::text(msg))
+    }
+}
+
+// 2. Provide name and prompt guidance via ToolContext
+struct EchoFactory;
+impl ToolContext for EchoFactory {
+    fn name(&self) -> &'static str { "echo" }
+    fn context(&self) -> ToolPrompt {
+        ToolPrompt::Static("Use echo to repeat a message.")
+    }
+}
+
+// 3. Create the tool at build time via ToolFactory
+impl ToolFactory for EchoFactory {
+    fn create(&self, _ctx: &ToolBuildContext) -> Box<dyn Any + Send + Sync> {
+        Box::new(Box::new(EchoTool) as Box<dyn Tool<()>>)
+    }
+}
+
+// 4. Register and build
+fn main() -> Result<(), Box<dyn std::error::Error>> {
+    let tools = vec![
+        // ...existing tools...
+        ToolCatalogEntry::new("echo", ToolCatalogKind::Custom),
+    ];
+
+    let runtime = AgentRuntimeBuilder::new()
+        .custom_tool(EchoFactory)
+        .tools(tools)
+        .build()?;
+    Ok(())
+}
+```
+
+The SerdesAI build layer automatically:
+
+1. Looks up the factory by name in the custom tool registry
+2. Calls `create()` with a shared `ToolBuildContext` (workspace root + permissions)
+3. Downcasts the type-erased return to `Box<dyn Tool<()>>`
+4. Registers prompt guidance via `SystemPromptBuilder::track_entry()`
+5. Attaches the tool to the agent builder
+
+If a catalog entry references a custom tool with no registered factory, the
+build returns `AgentBuildError::UnknownCustomTool`. If `create()` returns a
+value that cannot be downcast, it returns
+`AgentBuildError::CustomToolDowncastFailed`.
+
 ## Linux Shell Sandboxing
 
 Sandboxing is **not enabled by default** for the `bash` tool - it runs
@@ -218,3 +298,4 @@ Apache 2.0
 [models.dev]: https://models.dev
 [Documentation]: https://reloaded-project.github.io/ReloadedCode/
 [API Reference]: https://docs.rs/reloaded-code-serdesai
+[`ToolFactory`]: https://docs.rs/reloaded-code-core/latest/reloaded_code_core/trait.ToolFactory.html

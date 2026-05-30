@@ -1,18 +1,21 @@
 //! Builds an [`AgentRuntime`] from your agents, defaults, and tools.
 
 use super::state::{AgentDefaults, AgentRuntime};
-use super::tool_catalog::{default_tools, ToolCatalogEntry};
 use crate::AgentCatalog;
 use reloaded_code_core::permissions::ExpandError;
-use reloaded_code_core::TaskSettings;
+use reloaded_code_core::{
+    default_tools, CustomToolRegistry, SharedToolRegistry, TaskSettings, ToolCatalogEntry,
+    ToolFactory,
+};
 
 /// Builds an [`AgentRuntime`] step by step.
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 pub struct AgentRuntimeBuilder {
     catalog: AgentCatalog,
     defaults: AgentDefaults,
     task_settings: TaskSettings,
     tools: Vec<ToolCatalogEntry>,
+    custom_tool_registry: CustomToolRegistry,
 }
 
 impl Default for AgentRuntimeBuilder {
@@ -31,6 +34,7 @@ impl AgentRuntimeBuilder {
             defaults: AgentDefaults::default(),
             task_settings: TaskSettings::default(),
             tools: default_tools(),
+            custom_tool_registry: CustomToolRegistry::new(),
         }
     }
 
@@ -69,26 +73,46 @@ impl AgentRuntimeBuilder {
         self
     }
 
+    /// Registers a custom tool factory.
+    ///
+    /// The factory's name (via [`ToolContext::name`](reloaded_code_core::ToolContext::name))
+    /// must match the `name` field of the corresponding [`ToolCatalogEntry`] with kind
+    /// [`ToolCatalogKind::Custom`](reloaded_code_core::ToolCatalogKind::Custom).
+    pub fn custom_tool(mut self, factory: impl ToolFactory + 'static) -> Self {
+        self.custom_tool_registry.insert(factory);
+        self
+    }
+
     /// Finishes building and returns the [`AgentRuntime`].
     ///
     /// # Errors
     /// - Returns [`ExpandError`] when any agent's permission configuration contains invalid patterns.
     #[inline]
     pub fn build(self) -> Result<AgentRuntime, ExpandError> {
-        AgentRuntime::from_parts(self.catalog, self.defaults, self.task_settings, self.tools)
+        AgentRuntime::from_parts(
+            self.catalog,
+            self.defaults,
+            self.task_settings,
+            self.tools,
+            SharedToolRegistry::from_registry(self.custom_tool_registry),
+        )
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::AgentRuntimeBuilder;
-    use crate::runtime::tool_catalog::{default_tools, ToolCatalogEntry, ToolCatalogKind};
     use crate::runtime::AgentDefaults;
     use crate::{AgentCatalog, AgentConfig, AgentMode, AgentToolSettings, PermissionRule};
     use indexmap::IndexMap;
+    use reloaded_code_core::context::{ToolContext, ToolPrompt};
     use reloaded_code_core::permissions::{ExpandError, PermissionAction};
     use reloaded_code_core::tool_metadata::{glob as glob_meta, read as read_meta};
-    use reloaded_code_core::TaskSettings;
+    use reloaded_code_core::{
+        default_tools, TaskSettings, ToolBuildContext, ToolCatalogEntry, ToolCatalogKind,
+        ToolFactory,
+    };
+    use std::any::Any;
     use std::sync::Arc;
 
     type TestResult = Result<(), ExpandError>;
@@ -190,6 +214,48 @@ mod tests {
 
         assert!(Arc::ptr_eq(&first, &second));
         assert!(first.is_allowed(read_meta::NAME, "*"));
+        Ok(())
+    }
+
+    #[test]
+    fn builder_registers_custom_tool() -> TestResult {
+        struct TestFactory {
+            name: &'static str,
+            prompt: &'static str,
+        }
+
+        impl TestFactory {
+            fn new(name: &'static str, prompt: &'static str) -> Self {
+                Self { name, prompt }
+            }
+        }
+
+        impl ToolContext for TestFactory {
+            fn name(&self) -> &'static str {
+                self.name
+            }
+
+            fn context(&self) -> ToolPrompt {
+                ToolPrompt::Static(self.prompt)
+            }
+        }
+
+        impl ToolFactory for TestFactory {
+            fn create(&self, _ctx: &ToolBuildContext) -> Box<dyn Any + Send + Sync> {
+                Box::new(())
+            }
+        }
+
+        let runtime = AgentRuntimeBuilder::new()
+            .custom_tool(TestFactory::new("stub", "Stub tool guidance."))
+            .build()?;
+
+        let factory = runtime.custom_tool_registry().get("stub");
+        assert!(
+            factory.is_some(),
+            "custom tool factory should be registered"
+        );
+        assert_eq!(factory.unwrap().name(), "stub");
         Ok(())
     }
 }

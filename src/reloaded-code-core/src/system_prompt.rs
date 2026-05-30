@@ -123,6 +123,19 @@ impl SystemPromptBuilder {
         tool
     }
 
+    /// Records a raw context entry without wrapping a tool.
+    ///
+    /// Use this when you have name and prompt but no tool instance to wrap
+    /// via [`Self::track`].
+    ///
+    /// # Arguments
+    ///
+    /// * `name` - Tool name for the section header (e.g., `"web_search"`).
+    /// * `prompt` - Guidance to render for this tool.
+    pub fn track_entry(&mut self, name: &'static str, prompt: ToolPrompt) {
+        self.entries.push(ContextEntry { name, prompt });
+    }
+
     /// Adds supplemental context to the system prompt.
     ///
     /// Supplemental context appears in a separate "Supplemental Context" section

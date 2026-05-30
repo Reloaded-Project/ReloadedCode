@@ -5,11 +5,11 @@
 //! - [`callable_targets`] - Returns the agents an active agent may delegate to via Task.
 //! - [`TaskTargetSummary`] - Stable Task UI metadata for a callable target.
 
-use super::tool_catalog::{ToolCatalogEntry, ToolCatalogKind};
 use crate::{AgentCatalog, AgentConfig, AgentMode, RulesetExt};
 use ahash::AHashMap;
 use reloaded_code_core::permissions::{ExpandError, Ruleset};
 use reloaded_code_core::tool_metadata::task as task_meta;
+use reloaded_code_core::{ToolCatalogEntry, ToolCatalogKind};
 use std::sync::Arc;
 
 /// Compact metadata used to describe one callable Task target.

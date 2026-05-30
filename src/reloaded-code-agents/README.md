@@ -272,6 +272,53 @@ let runtime = AgentRuntimeBuilder::new()
 # Ok::<(), reloaded_code_agents::AgentLoadError>(())
 ```
 
+## Custom tools
+
+Embedders can register custom tools that integrate with the agent runtime,
+permission system, and system prompt builder. Custom tool primitives live in
+`reloaded-code-core`; implement [`ToolContext`] and [`ToolFactory`], then register
+the factory on the builder:
+
+```rust,no_run
+use reloaded_code_agents::AgentRuntimeBuilder;
+use reloaded_code_core::{
+    ToolBuildContext, ToolCatalogEntry, ToolCatalogKind, ToolContext, ToolFactory,
+};
+use reloaded_code_core::context::ToolPrompt;
+use std::any::Any;
+
+struct WebSearchFactory;
+
+impl ToolContext for WebSearchFactory {
+    fn name(&self) -> &'static str { "web_search" }
+    fn context(&self) -> ToolPrompt {
+        ToolPrompt::Static("Use web_search to find information online.")
+    }
+}
+
+impl ToolFactory for WebSearchFactory {
+    fn create(&self, _ctx: &ToolBuildContext) -> Box<dyn Any + Send + Sync> {
+        todo!("return tool instance")
+    }
+}
+
+let tools = vec![
+    ToolCatalogEntry::new("web_search", ToolCatalogKind::Custom),
+];
+
+let runtime = AgentRuntimeBuilder::new()
+    .custom_tool(WebSearchFactory)
+    .tools(tools)
+    .build()?;
+
+# Ok::<(), reloaded_code_agents::AgentLoadError>(())
+```
+
+`create()` returns `Box<dyn Any + Send + Sync>`.
+
+If a `ToolCatalogKind::Custom` entry has no matching factory, build returns
+`AgentBuildError::UnknownCustomTool`.
+
 ## Differences from OpenCode
 
 The agent file format mirrors [OpenCode]'s. Many files are drop-in
@@ -316,3 +363,6 @@ For the internal architecture, see [ARCHITECTURE.md](https://github.com/Reloaded
 [OpenCode]: https://opencode.ai/
 [Documentation]: https://reloaded-project.github.io/ReloadedCode/agents
 [API Reference]: https://docs.rs/reloaded-code-agents
+[`ToolFactory`]: https://docs.rs/reloaded_code_core/latest/reloaded_code_core/trait.ToolFactory.html
+[`ToolContext`]: https://docs.rs/reloaded_code_core/latest/reloaded_code_core/trait.ToolContext.html
+

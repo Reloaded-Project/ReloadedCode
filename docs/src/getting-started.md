@@ -155,6 +155,38 @@ a Rust project and an LLM API key (e.g. `OPENAI_API_KEY`).
     [serdesai-agents](https://github.com/Reloaded-Project/ReloadedCode/blob/main/src/reloaded-code-serdesai/examples/serdesai-agents.rs)
     (with agent files). See [Examples](examples.md) for the full list.
 
+## Custom tools
+
+Implement [`ToolContext`] and [`ToolFactory`], then register with the builder:
+
+```rust
+struct MyFactory;
+impl ToolContext for MyFactory {
+    fn name(&self) -> &'static str { "my_tool" }
+    fn context(&self) -> ToolPrompt {
+        ToolPrompt::Static("Guidance for using my_tool.")
+    }
+}
+impl ToolFactory for MyFactory {
+    fn create(&self, _ctx: &ToolBuildContext) -> Box<dyn Any + Send + Sync> {
+        todo!("return your tool")
+    }
+}
+
+let runtime = AgentRuntimeBuilder::new()
+    .custom_tool(MyFactory)
+    .tools(vec![
+        ToolCatalogEntry::new("my_tool", ToolCatalogKind::Custom),
+    ])
+    .build()?;
+```
+
+See [Tools > Custom tools](tools.md#custom-tools) for annotated details
+and error handling.
+
+[`ToolContext`]: https://docs.rs/reloaded-code-core/latest/reloaded_code_core/trait.ToolContext.html
+[`ToolFactory`]: https://docs.rs/reloaded-code-core/latest/reloaded_code_core/trait.ToolFactory.html
+
 ## Credential management
 
 `CredentialResolver` resolves API keys by name (e.g. `"OPENAI_API_KEY"`) -

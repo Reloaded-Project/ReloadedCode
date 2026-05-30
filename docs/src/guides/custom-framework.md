@@ -97,6 +97,10 @@ pb.track(read_tool);
 // pb.track(other_tool);
 // pb.track(another_tool);
 
+// For custom tools (e.g. tool factories, framework adapters) where you
+// have name + prompt but no instance, use track_entry():
+pb.track_entry("my_custom_tool", ToolPrompt::Static("Use my_custom_tool to do X."));
+
 let system_prompt = pb.build();
 ```
 
@@ -143,22 +147,24 @@ let glob = AllowedGlobResolver::new(["/workspace/project"])?
 
 ## What you get from core
 
-| Component                                      | What it provides                            |
-| ---------------------------------------------- | ------------------------------------------- |
-| `read_file`, `write_file`, `edit_file`         | File operations                             |
-| `glob_files`, `grep_search`                    | Search operations                           |
-| `execute_command`, `execute_command_with_mode` | Shell execution                             |
-| `fetch_url`                                    | URL fetching                                |
-| `read_todos`, `write_todos`                    | Shared todo state                           |
-| `SystemPromptBuilder`                          | Context-aware system prompt generation      |
-| `ToolContext` trait                            | Tool metadata interface for prompt building |
-| `PathResolver` trait                           | Path security boundary                      |
-| `AllowedPathResolver`                          | Directory-based sandbox                     |
+| Component                                      | What it provides                                         |
+| ---------------------------------------------- | -------------------------------------------------------- |
+| `read_file`, `write_file`, `edit_file`         | File operations                                          |
+| `glob_files`, `grep_search`                    | Search operations                                        |
+| `execute_command`, `execute_command_with_mode` | Shell execution                                          |
+| `fetch_url`                                    | URL fetching                                             |
+| `read_todos`, `write_todos`                    | Shared todo state                                        |
+| `SystemPromptBuilder`                          | Context-aware system prompt generation                   |
+| `ToolContext` trait                            | Tool metadata interface for prompt building              |
+| `ToolFactory` / `CustomToolRegistry`           | Framework-agnostic custom tool creation and lookup       |
+| `ToolCatalogEntry` / `ToolCatalogKind`         | Standard/custom tool catalog for adapters                |
+| `PathResolver` trait                           | Path security boundary                                   |
+| `AllowedPathResolver`                          | Directory-based sandbox                                  |
 | `AllowedGlobResolver`                          | Glob-based sandbox (last matching rule takes precedence) |
-| `Ruleset` / `Rule`                             | Permission evaluation engine                |
-| `CredentialResolver`                           | API key lookup with overrides               |
-| `ModelCatalog`                                 | Compact provider/model hash table           |
-| `ToolError`                                    | Unified error type for all tools            |
+| `Ruleset` / `Rule`                             | Permission evaluation engine                             |
+| `CredentialResolver`                           | API key lookup with overrides                            |
+| `ModelCatalog`                                 | Compact provider/model hash table                        |
+| `ToolError`                                    | Unified error type for all tools                         |
 
 For the full API reference, see [docs.rs/reloaded-code-core](https://docs.rs/reloaded-code-core).
 

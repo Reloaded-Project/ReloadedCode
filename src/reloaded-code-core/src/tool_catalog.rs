@@ -1,23 +1,16 @@
-//! Lists which tools your agents can use.
+//! Tool catalog entries shared across runtimes and framework adapters.
 //!
-//! Each [`ToolCatalogEntry`] pairs a tool name with its type ([`ToolCatalogKind`]).
-//!
-//! # Public API
-//!
-//! - [`ToolCatalogEntry`] - One tool the runtime can provide to agents
-//! - [`ToolCatalogKind`] - The tools your agents can use
-//! - [`default_tools()`] - The standard tool set
-//!
-//! The default tools are: read, write, edit, glob, grep, bash, webfetch, todoread,
-//! todowrite, task.
+//! Each [`ToolCatalogEntry`] pairs a model-facing tool name with its
+//! [`ToolCatalogKind`]. The catalog describes what can be materialized; adapter
+//! crates decide how each kind is built for their framework.
 
-use reloaded_code_core::tool_metadata::{
+use crate::tool_metadata::{
     bash as bash_meta, edit as edit_meta, glob as glob_meta, grep as grep_meta, read as read_meta,
     task as task_meta, todo_read as todo_read_meta, todo_write as todo_write_meta,
     webfetch as webfetch_meta, write as write_meta,
 };
 
-/// One tool the runtime can provide to agents.
+/// One tool an integration can provide.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ToolCatalogEntry {
     /// Tool name exposed to models.
@@ -28,12 +21,13 @@ pub struct ToolCatalogEntry {
 
 impl ToolCatalogEntry {
     /// Creates a tool entry from its name and kind.
+    #[must_use]
     pub const fn new(name: &'static str, kind: ToolCatalogKind) -> Self {
         Self { name, kind }
     }
 }
 
-/// The tools your agents can use.
+/// Standard and custom tool kinds understood by reloaded-code adapters.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[non_exhaustive]
 pub enum ToolCatalogKind {
@@ -55,8 +49,10 @@ pub enum ToolCatalogKind {
     TodoRead,
     /// Create and update todo items.
     TodoWrite,
-    /// Delegate to subagent via Task tool.
+    /// Delegate to another runtime target via Task.
     Task,
+    /// User-defined custom tool.
+    Custom,
 }
 
 const DEFAULT_TOOLS: [ToolCatalogEntry; 10] = [
@@ -73,6 +69,7 @@ const DEFAULT_TOOLS: [ToolCatalogEntry; 10] = [
 ];
 
 /// Returns the standard tool set.
+#[must_use]
 pub fn default_tools() -> Vec<ToolCatalogEntry> {
     DEFAULT_TOOLS.to_vec()
 }
@@ -80,7 +77,7 @@ pub fn default_tools() -> Vec<ToolCatalogEntry> {
 #[cfg(test)]
 mod tests {
     use super::{default_tools, ToolCatalogEntry, ToolCatalogKind};
-    use reloaded_code_core::tool_metadata::{
+    use crate::tool_metadata::{
         bash as bash_meta, edit as edit_meta, glob as glob_meta, grep as grep_meta,
         read as read_meta, task as task_meta, todo_read as todo_read_meta,
         todo_write as todo_write_meta, webfetch as webfetch_meta, write as write_meta,
@@ -103,5 +100,12 @@ mod tests {
                 ToolCatalogEntry::new(task_meta::NAME, ToolCatalogKind::Task),
             ],
         );
+    }
+
+    #[test]
+    fn custom_variant_creates_catalog_entry() {
+        let entry = ToolCatalogEntry::new("web_search", ToolCatalogKind::Custom);
+        assert_eq!(entry.name, "web_search");
+        assert_eq!(entry.kind, ToolCatalogKind::Custom);
     }
 }

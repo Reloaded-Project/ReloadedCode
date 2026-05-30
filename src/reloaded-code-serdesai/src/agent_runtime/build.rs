@@ -15,8 +15,9 @@ use crate::{
 use indexmap::IndexMap;
 use reloaded_code_agents::{
     AgentRuntime, AgentToolSettings, ModelResolutionError, PermissionRule, TaskTargetSummary,
-    ToolCatalogEntry, ToolCatalogKind, build_resolver_for_tool,
+    build_resolver_for_tool,
 };
+use reloaded_code_core::context::ToolPrompt;
 use reloaded_code_core::permissions::Ruleset;
 use reloaded_code_core::tool_context::ToolBuildContext;
 use reloaded_code_core::tool_metadata::{
@@ -26,7 +27,10 @@ use reloaded_code_core::tool_metadata::{
 use reloaded_code_core::tools::{
     GlobSettings, GrepFormattingSettings, GrepSettings, ReadSettings, WebFetchSettings,
 };
-use reloaded_code_core::{CredentialLookup, ToolError, models::ModelCatalog};
+use reloaded_code_core::{
+    CredentialLookup, SharedToolRegistry, ToolCatalogEntry, ToolCatalogKind, ToolError,
+    models::ModelCatalog,
+};
 use serdes_ai::AgentBuilder;
 use serdes_ai_models::BoxedModel;
 use std::path::Path;
@@ -46,6 +50,18 @@ pub enum AgentBuildError {
     #[error("unknown agent `{name}`")]
     UnknownAgent {
         /// The missing agent name.
+        name: Box<str>,
+    },
+    /// A custom tool catalog entry has no matching registered factory.
+    #[error("no factory registered for custom tool `{name}`")]
+    UnknownCustomTool {
+        /// The tool name with no registered factory.
+        name: Box<str>,
+    },
+    /// A custom tool factory returned a value that cannot be downcast to the expected type.
+    #[error("custom tool `{name}` factory returned incompatible type")]
+    CustomToolDowncastFailed {
+        /// The tool name whose factory returned the wrong type.
         name: Box<str>,
     },
     /// The runtime contains a tool kind this adapter cannot materialise.
@@ -158,7 +174,13 @@ where
 /// # Errors
 ///
 /// Returns [`AgentBuildError::UnsupportedToolKind`] when the runtime catalog contains an
-/// unrecognized [`ToolCatalogKind`] variant (this function only handles standard tools).
+/// unrecognized [`ToolCatalogKind`] variant.
+///
+/// Returns [`AgentBuildError::UnknownCustomTool`] when a [`ToolCatalogKind::Custom`] entry
+/// names a tool absent from the custom-tool registry.
+///
+/// Returns [`AgentBuildError::CustomToolDowncastFailed`] when the type-erased object
+/// produced by a custom-tool factory cannot be downcast to `Box<dyn Tool<()>>`.
 ///
 /// Returns [`AgentBuildError::ToolSettingsValidation`] when resolver creation or settings
 /// building fails for any tool, including:
@@ -171,6 +193,7 @@ pub(super) fn attach_standard_tools<'a, C>(
     task_handle: Option<&TaskHandle<C>>,
     workspace_root: &Path,
     bash_sandbox: Option<&Arc<Profile>>,
+    custom_tool_registry: &SharedToolRegistry,
 ) -> Result<(AgentBuilder<(), String>, SystemPromptBuilder), AgentBuildError>
 where
     C: CredentialLookup + Send + Sync + 'static,
@@ -196,9 +219,7 @@ where
             source: ToolError::InvalidPath(e.to_string()),
         })?;
 
-    // Use pre-built permission ruleset from PreparedBuild for non-file tools.
-    let permission = prepared.permission.clone();
-    let permission_config = &prepared.permission_config;
+    let permission_config = prepared.permission_config;
 
     for entry in prepared.tools.iter() {
         match entry.kind {
@@ -247,7 +268,7 @@ where
                 #[allow(unused_mut)]
                 let mut tool = BashTool::new()
                     .with_timeouts(Some(settings.timeout_ms), Some(settings.max_timeout_ms))
-                    .with_permission(permission.clone());
+                    .with_permission(prepared.permission.clone());
                 #[cfg(all(feature = "linux-bubblewrap", target_os = "linux"))]
                 if let Some(profile) = bash_sandbox {
                     tool = tool.with_linux_bwrap(profile.clone());
@@ -274,6 +295,39 @@ where
                         (*task_handle).clone(),
                     )));
                 }
+            }
+            ToolCatalogKind::Custom => {
+                let factory = custom_tool_registry.get(entry.name).ok_or_else(|| {
+                    AgentBuildError::UnknownCustomTool {
+                        name: entry.name.into(),
+                    }
+                })?;
+
+                // create() returns type-erased Box<dyn Any> for the
+                // cross-crate boundary; downcast to the concrete Tool<()>
+                // that the serdesai builder expects.
+                let boxed = factory.create(&build_context);
+
+                // Downcast yields Box<Box<dyn Tool<()>>> because create()
+                // wrapped Box<dyn Tool<()>> as Box<dyn Any>.
+                let double_boxed: Box<Box<dyn serdes_ai::Tool<()>>> =
+                    boxed
+                        .downcast()
+                        .map_err(|_| AgentBuildError::CustomToolDowncastFailed {
+                            name: entry.name.into(),
+                        })?;
+
+                // Use ToolContext (which ToolFactory extends) to get
+                // name and prompt guidance consistently with built-in tools.
+                let tool_prompt = factory.context();
+                // ToolPrompt::Static("") means no guidance (equivalent to
+                // the old prompt() returning None).
+                if !matches!(tool_prompt, ToolPrompt::Static("")) {
+                    prompt_builder.track_entry(factory.name(), tool_prompt);
+                }
+                // Unwrap the double box to get Box<dyn Tool<()>>.
+                let tool = *double_boxed;
+                builder = builder.tool_dyn(tool.definition(), tool);
             }
             _ => {
                 return Err(AgentBuildError::UnsupportedToolKind {
@@ -334,10 +388,10 @@ mod tests {
     use ahash::AHashMap;
     use indexmap::IndexMap;
     use reloaded_code_agents::{
-        AgentCatalog, AgentConfig, AgentDefaults, AgentMode, AgentRuntimeBuilder,
+        AgentCatalog, AgentConfig, AgentDefaults, AgentMode, AgentRuntime, AgentRuntimeBuilder,
         AgentToolSettings, PermissionRule,
     };
-    use reloaded_code_core::CredentialResolver;
+    use reloaded_code_core::context::{ToolContext, ToolPrompt};
     use reloaded_code_core::models::{
         Modality, ModelCatalog, ModelInfo, ProviderIdx, ProviderInfo, ProviderModelSource,
         ProviderSource, ProviderType,
@@ -345,6 +399,10 @@ mod tests {
     use reloaded_code_core::permissions::{ExpandError, PermissionAction};
     use reloaded_code_core::tool_metadata::{
         bash as bash_meta, glob as glob_meta, grep as grep_meta, read as read_meta,
+    };
+    use reloaded_code_core::{
+        CredentialResolver, SharedToolRegistry, ToolBuildContext, ToolCatalogEntry,
+        ToolCatalogKind, ToolFactory,
     };
     use serdes_ai::AgentBuilder;
     use serdes_ai_models::MockModel;
@@ -357,6 +415,17 @@ mod tests {
         prepared: &super::PreparedBuild<'_>,
         name: &str,
     ) -> serdes_ai::Agent<(), String> {
+        build_mock_agent(prepared, &SharedToolRegistry::new(), name)
+            .expect("build should succeed")
+            .0
+    }
+
+    /// Builds a mock agent from prepared state and returns the agent plus prompt.
+    fn build_mock_agent(
+        prepared: &super::PreparedBuild<'_>,
+        registry: &SharedToolRegistry,
+        name: &str,
+    ) -> Result<(serdes_ai::Agent<(), String>, String), AgentBuildError> {
         let workspace_root = reloaded_code_core::resolve_workspace_root().expect("workspace root");
         let (builder, prompt_builder) = attach_standard_tools::<CredentialResolver>(
             AgentBuilder::<(), String>::new(MockModel::new(name)),
@@ -364,9 +433,11 @@ mod tests {
             None,
             &workspace_root,
             None,
-        )
-        .expect("build should succeed");
-        builder.system_prompt(prompt_builder.build()).build()
+            registry,
+        )?;
+        let prompt = prompt_builder.build();
+        let agent = builder.system_prompt(prompt.clone()).build();
+        Ok((agent, prompt))
     }
 
     /// Creates a minimal agent config with no model or sampling overrides.
@@ -451,6 +522,45 @@ mod tests {
         let mut credentials = CredentialResolver::without_env();
         credentials.set_override("OPENROUTER_API_KEY", "openrouter-key");
         credentials
+    }
+
+    /// Builds a test runtime with one custom tool and read permission.
+    fn custom_tool_runtime(
+        agent_name: &str,
+        custom_name: &'static str,
+        factory: impl ToolFactory + 'static,
+    ) -> Result<AgentRuntime, ExpandError> {
+        AgentRuntimeBuilder::new()
+            .catalog(AgentCatalog::from_entries([agent(
+                agent_name,
+                allow_tools(&[read_meta::NAME, custom_name]),
+                "prompt",
+            )]))
+            .tools(vec![
+                ToolCatalogEntry::new(read_meta::NAME, ToolCatalogKind::Read),
+                ToolCatalogEntry::new(custom_name, ToolCatalogKind::Custom),
+            ])
+            .custom_tool(factory)
+            .defaults(AgentDefaults::with_model("openrouter/openai/gpt-4.1-mini"))
+            .build()
+    }
+
+    /// Prepares a built agent and final system prompt for assertion.
+    fn attach_test_agent(
+        runtime: &AgentRuntime,
+        agent_name: &str,
+    ) -> Result<(serdes_ai::Agent<(), String>, String), AgentBuildError> {
+        let catalog = catalog();
+        let credentials = credentials();
+        let prepared = prepare_build(runtime, agent_name, &catalog, &credentials, true)?;
+        build_mock_agent(&prepared, runtime.custom_tool_registry(), agent_name)
+    }
+
+    /// Asserts a tool name is present on the built agent.
+    fn assert_tool_attached(agent: &serdes_ai::Agent<(), String>, name: &str) {
+        let names: std::collections::HashSet<&str> =
+            agent.tools().iter().map(|t| t.name()).collect();
+        assert!(names.contains(name), "{name} tool should be attached");
     }
 
     #[test]
@@ -638,6 +748,83 @@ mod tests {
         assert!(
             !tools[grep_meta::NAME].contains("line numbers"),
             "grep with line_numbers=false should not mention line numbers"
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn build_returns_unknown_custom_tool_error() -> TestResult {
+        let tools = vec![
+            ToolCatalogEntry::new(read_meta::NAME, ToolCatalogKind::Read),
+            ToolCatalogEntry::new("custom_missing", ToolCatalogKind::Custom),
+        ];
+
+        let runtime = AgentRuntimeBuilder::new()
+            .catalog(AgentCatalog::from_entries([agent(
+                "tester",
+                allow_tools(&[read_meta::NAME, "custom_missing"]),
+                "prompt",
+            )]))
+            .tools(tools)
+            .defaults(AgentDefaults::with_model("openrouter/openai/gpt-4.1-mini"))
+            .build()?;
+
+        let result = attach_test_agent(&runtime, "tester");
+        assert!(
+            matches!(&result, Err(AgentBuildError::UnknownCustomTool { name } ) if &**name == "custom_missing"),
+            "expected UnknownCustomTool error for custom_missing, got a different result"
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn build_returns_error_on_custom_tool_downcast_failure() -> TestResult {
+        use std::any::Any;
+
+        struct BadFactory;
+        impl ToolContext for BadFactory {
+            fn name(&self) -> &'static str {
+                "bad_tool"
+            }
+            fn context(&self) -> ToolPrompt {
+                ToolPrompt::Static("Bad tool guidance.")
+            }
+        }
+        impl ToolFactory for BadFactory {
+            fn create(&self, _ctx: &ToolBuildContext) -> Box<dyn Any + Send + Sync> {
+                // Returns wrong type - not Box<dyn Tool<()>>
+                Box::new(42_usize)
+            }
+        }
+
+        let runtime = custom_tool_runtime("bad_agent", "bad_tool", BadFactory)?;
+        let result = attach_test_agent(&runtime, "bad_agent");
+        assert!(
+            matches!(&result, Err(AgentBuildError::CustomToolDowncastFailed { name } ) if &**name == "bad_tool"),
+            "expected CustomToolDowncastFailed for bad_tool, got a different result"
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn build_attaches_custom_tool_with_prompt() -> TestResult {
+        use crate::agent_runtime::test_stubs::SerdesTestFactory;
+
+        let runtime = custom_tool_runtime(
+            "pinger",
+            "ping",
+            SerdesTestFactory::new("ping", "Use ping to check connectivity.", "pong"),
+        )?;
+        let attached = attach_test_agent(&runtime, "pinger");
+        let (agent, prompt) =
+            attached.expect("custom tool build should succeed with valid factory");
+
+        assert_tool_attached(&agent, "ping");
+        assert_tool_attached(&agent, read_meta::NAME);
+
+        assert!(
+            prompt.contains("Use ping to check connectivity"),
+            "custom tool prompt guidance should appear in system prompt"
         );
         Ok(())
     }

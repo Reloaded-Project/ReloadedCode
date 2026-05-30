@@ -182,7 +182,7 @@ fn build_glob_policy(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use reloaded_code_core::ToolBuildContext;
+    use reloaded_code_core::tool_context::ToolBuildContext;
     use soft_canonicalize::soft_canonicalize;
 
     type TestResult = Result<(), ToolError>;

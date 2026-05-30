@@ -172,6 +172,10 @@ where
     ///   validation fails during the build.
     /// - Returns [`AgentBuildError::UnsupportedToolKind`] when the runtime
     ///   contains a tool kind this adapter cannot materialise.
+    /// - Returns [`AgentBuildError::UnknownCustomTool`] when a custom tool
+    ///   entry names a tool absent from the custom-tool registry.
+    /// - Returns [`AgentBuildError::CustomToolDowncastFailed`] when a
+    ///   custom-tool factory produces an object that cannot be downcast.
     #[inline]
     pub fn build(&self, name: &str) -> Result<Agent<(), String>, AgentBuildError> {
         build_agent(Arc::clone(&self.context), name, 0)
@@ -300,6 +304,10 @@ where
 ///   validation fails during the build.
 /// - Returns [`AgentBuildError::UnsupportedToolKind`] when the runtime
 ///   contains a tool kind this adapter cannot materialise.
+/// - Returns [`AgentBuildError::UnknownCustomTool`] when a custom tool entry
+///   names a tool absent from the custom-tool registry.
+/// - Returns [`AgentBuildError::CustomToolDowncastFailed`] when a custom-tool
+///   factory produces an object that cannot be downcast.
 pub(crate) fn build_agent<C>(
     context: Arc<TaskBuildContext<C>>,
     name: &str,
@@ -337,6 +345,7 @@ where
         Some(&task_handle),
         &context.workspace_root,
         sandbox_ref,
+        context.runtime.custom_tool_registry(),
     )?;
     Ok(builder.system_prompt(prompt_builder.build()).build())
 }

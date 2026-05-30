@@ -18,9 +18,7 @@
 //! struct NotesTool;
 //!
 //! impl ToolContext for ReadTool {
-//!     fn name(&self) -> &'static str {
-//!         "read"
-//!     }
+//!     fn name(&self) -> &'static str { "read" }
 //!
 //!     fn context(&self) -> ToolPrompt {
 //!         ToolPrompt::Read {
@@ -31,9 +29,7 @@
 //! }
 //!
 //! impl ToolContext for NotesTool {
-//!     fn name(&self) -> &'static str {
-//!         "notes"
-//!     }
+//!     fn name(&self) -> &'static str { "notes" }
 //!
 //!     fn context(&self) -> ToolPrompt {
 //!         ToolPrompt::Static("Use this tool for short project notes.")
@@ -72,9 +68,7 @@ pub const GITHUB_CLI: &str = include_str!("github_cli.txt");
 /// struct MyTool;
 ///
 /// impl ToolContext for MyTool {
-///     fn name(&self) -> &'static str {
-///         "mytool"
-///     }
+///     fn name(&self) -> &'static str { "mytool" }
 ///
 ///     fn context(&self) -> ToolPrompt {
 ///         ToolPrompt::Static("Instructions for using MyTool...")

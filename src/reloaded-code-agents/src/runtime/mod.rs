@@ -11,11 +11,6 @@
 //! - [`AgentDefaults`] - Default model, temperature, and top-p when agents don't specify them
 //! - [`TaskSettings`] - Shared Task delegation limits for all integrations using the runtime
 //!
-//! Tools:
-//! - [`ToolCatalogEntry`] - One tool the runtime can provide to agents
-//! - [`ToolCatalogKind`] - Which tools are available
-//! - [`default_tools()`] - The standard tool set (read, write, edit, glob, grep, bash, webfetch, todo, task)
-//!
 //! Task delegation:
 //! - [`summarize_callable_targets()`] - Builds target summaries with names and descriptions
 //! - [`callable_targets()`] - Returns the agents the active agent may delegate to
@@ -45,11 +40,9 @@ mod builder;
 mod model;
 mod state;
 mod task;
-mod tool_catalog;
 
 pub use builder::AgentRuntimeBuilder;
 pub use model::{resolve_model_with_catalog, ModelResolutionError, ResolvedModel};
 pub use reloaded_code_core::TaskSettings;
 pub use state::{AgentDefaults, AgentRuntime};
 pub use task::{callable_targets, summarize_callable_targets, TaskTargetSummary};
-pub use tool_catalog::{default_tools, ToolCatalogEntry, ToolCatalogKind};

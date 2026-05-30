@@ -175,7 +175,8 @@ Fallback settings used when an individual agent doesn't specify them:
 
 ### Tool Catalog
 
-`default_tools()` returns 10 entries:
+`reloaded-code-core::default_tools()` returns 10 entries that
+`AgentRuntimeBuilder` uses by default:
 
 | Kind      | Tool name   |
 | --------- | ----------- |
@@ -340,8 +341,7 @@ reloaded-code-agents
 │   ├── state.rs            AgentRuntime, AgentDefaults
 │   ├── builder.rs          AgentRuntimeBuilder
 │   ├── model.rs            resolve_model_with_catalog(), ResolvedModel, ModelResolutionError
-│   ├── task.rs             callable_targets(), summarize_callable_targets(), allowed_tools()
-│   └── tool_catalog.rs     ToolCatalogEntry, ToolCatalogKind, default_tools()
+│   └── task.rs             callable_targets(), summarize_callable_targets(), allowed_tools()
 └── benches/
     └── parser.rs           Criterion benchmarks for frontmatter parsing
 ```

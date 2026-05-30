@@ -118,6 +118,58 @@ permission:
 | [**todoread**](#todoread-todowrite)  | `read_todos`             | Read shared todo list state                             |
 | [**todowrite**](#todoread-todowrite) | `write_todos`            | Update shared todo list state                           |
 | [**task**](#task)                    | `TaskInput`/`TaskOutput` | Delegate work to a named sub-agent                      |
+| [**custom**](#custom-tools)          | `ToolFactory`            | User-defined tool registered by the embedder            |
+
+### Custom tools
+
+Custom tools let embedders add non-built-in tools to an agent runtime.
+
+```rust
+use reloaded_code_agents::AgentRuntimeBuilder;
+use reloaded_code_core::{
+    ToolBuildContext, ToolCatalogEntry, ToolCatalogKind, ToolContext, ToolFactory,
+};
+use reloaded_code_core::context::ToolPrompt;
+use std::any::Any;
+
+struct WebSearchFactory;
+
+// Name + prompt guidance.
+impl ToolContext for WebSearchFactory {
+    fn name(&self) -> &'static str { "web_search" }
+    fn context(&self) -> ToolPrompt {
+        ToolPrompt::Static("Use web_search to find information online.")
+    }
+}
+
+// Build framework-specific tool instance.
+impl ToolFactory for WebSearchFactory {
+    fn create(&self, _ctx: &ToolBuildContext) -> Box<dyn Any + Send + Sync> {
+        // SerdesAI: return Box::new(Box<dyn serdes_ai::Tool<()>>).
+        todo!("return your tool")
+    }
+}
+
+let runtime = AgentRuntimeBuilder::new()
+    // Register factory.
+    .custom_tool(WebSearchFactory)
+    // Enable tool in catalog.
+    .tools(vec![
+        ToolCatalogEntry::new("web_search", ToolCatalogKind::Custom),
+    ])
+    .build()?;
+```
+
+Rules:
+
+- Factory name must match catalog entry name.
+- `ToolContext::context()` adds system-prompt guidance.
+- Custom tool names work in agent `permission` maps.
+- Missing factory: `AgentBuildError::UnknownCustomTool`.
+- Wrong return type: `AgentBuildError::CustomToolDowncastFailed`.
+
+See [reloaded-code-core API docs](https://docs.rs/reloaded-code-core/latest)
+for full API details.
 
 ### read
 
@@ -423,5 +475,3 @@ For a deeper dive into path security, see [Sandboxing](sandboxing.md).
 [create_todo_tools]: https://docs.rs/reloaded-code-serdesai/latest/reloaded_code_serdesai/tools/todo/fn.create_todo_tools.html
 [reloaded-code-core]: https://docs.rs/reloaded-code-core
 [reloaded-code-serdesai]: https://docs.rs/reloaded-code-serdesai
-[Agents]: agents.md
-[agent files]: agents.md

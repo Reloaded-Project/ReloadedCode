@@ -12,12 +12,14 @@ graph TD
     serdesai["reloaded-code-serdesai<br/><i>SerdesAI framework integration</i>"]
     bubblewrap["reloaded-code-bubblewrap<br/><i>Linux sandbox profiles</i>"]
     modelsdev["reloaded-code-models-dev<br/><i>models.dev catalog sync</i>"]
+    providerconfig["reloaded-code-provider-config<br/><i>Provider config loading</i>"]
 
     agents --> core
     serdesai --> core
     serdesai --> agents
     serdesai -.->|optional| bubblewrap
     modelsdev --> core
+    providerconfig --> core
 
     classDef default fill:#1C1C1C,stroke:#fa7774,strokeWidth:2px,color:#fff
 ```
@@ -32,6 +34,8 @@ The foundation. Contains every tool implementation as a plain function
 - **Path resolvers** - control which files tools can access
 - **System prompt builder** - generates context-aware tool guidance
 - **Permission engine** - last-match-wins rules with wildcard patterns
+- **Custom tool registry + catalog** - framework-agnostic `ToolFactory`,
+  `CustomToolRegistry`, and `ToolCatalogEntry` types
 - **Credential resolver** - API key lookup with override support ([details](getting-started.md#credential-management))
 - **Model catalog** - compact hash-table-based provider/model lookup
 
@@ -46,6 +50,7 @@ Loads agent definitions from markdown files with YAML frontmatter. Provides:
 - **AgentLoader** - scans directories for `.md` agent files
 - **AgentCatalog** - name-to-config lookup table
 - **AgentRuntime** - bundles catalog + defaults + permissions + task settings
+- **AgentRuntimeBuilder** - accepts core tool catalogs and custom tool factories
 
 The agent file format mirrors [OpenCode]'s schema - similar enough that many
 files are drop-in compatible, but [not identical](migration.md). The most
@@ -81,6 +86,11 @@ Syncs the online [models.dev](https://models.dev) catalog into a compact
 - [zstd]-compressed cache (~24 KiB for ~3000 models)
 - Offline fallback when network is unavailable
 - Cache load in ~0.3 ms
+
+### reloaded-code-provider-config
+
+Loads provider override configuration and turns it into provider catalog entries
+that can be merged with or replace the defaults from models.dev.
 
 ## Where your code plugs in
 

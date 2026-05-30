@@ -8,7 +8,7 @@ pub mod task;
 pub mod tools;
 
 /// Re-export core types for convenience.
-pub use reloaded_code_core::{ToolError, ToolOutput, ToolResult};
+pub use reloaded_code_core::{TaskSettings, ToolError, ToolOutput, ToolResult};
 
 /// Re-export bash execution mode and mode-aware execution.
 pub use reloaded_code_core::{BashExecutionMode, execute_command_with_mode};
@@ -45,5 +45,5 @@ pub use reloaded_code_core::{
 pub use agent_runtime::{AgentBuildContext, AgentBuildError};
 pub use reloaded_code_agents::{
     AgentDefaults, AgentRuntime, AgentRuntimeBuilder, ModelResolutionError, ResolvedModel,
-    TaskSettings, ToolCatalogEntry, ToolCatalogKind, default_tools, resolve_model_with_catalog,
+    resolve_model_with_catalog,
 };

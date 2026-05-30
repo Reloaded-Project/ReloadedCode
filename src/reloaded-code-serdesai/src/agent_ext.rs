@@ -50,6 +50,26 @@ impl<Deps: Send + Sync + 'static, T: Tool<Deps>> ToolExecutor<Deps> for ToolAsEx
     }
 }
 
+/// Adapter for boxed trait object tools, similar to [`ToolAsExecutor`] but
+/// for dynamically dispatched tools where the concrete type is not known
+/// at compile time.
+struct DynToolAsExecutor<Deps>(Box<dyn Tool<Deps> + Send + Sync>);
+
+#[async_trait]
+impl<Deps: Send + Sync + 'static> ToolExecutor<Deps> for DynToolAsExecutor<Deps> {
+    async fn execute(
+        &self,
+        args: JsonValue,
+        ctx: &AgentRunContext<Deps>,
+    ) -> Result<ToolReturn, ToolError> {
+        let tools_ctx = ToolsRunContext::from_arc(ctx.deps.clone(), &ctx.model_name)
+            .with_run_id(&ctx.run_id)
+            .with_model_settings(ctx.model_settings.clone());
+
+        self.0.call(&tools_ctx, args).await
+    }
+}
+
 /// Extension trait for [`AgentBuilder`] to add tools that implement [`Tool`].
 pub trait AgentBuilderExt<Deps, Output> {
     /// Add a tool that implements the [`Tool`] trait.
@@ -73,6 +93,16 @@ pub trait AgentBuilderExt<Deps, Output> {
     /// # }
     /// ```
     fn tool<T: Tool<Deps> + 'static>(self, tool: T) -> Self;
+
+    /// Add a boxed trait object tool.
+    ///
+    /// This is useful for dynamically created tools where the concrete type
+    /// is not known at compile time (e.g., custom tools from a factory).
+    fn tool_dyn(
+        self,
+        definition: serdes_ai::ToolDefinition,
+        tool: Box<dyn Tool<Deps> + Send + Sync>,
+    ) -> Self;
 }
 
 impl<Deps, Output> AgentBuilderExt<Deps, Output> for AgentBuilder<Deps, Output>
@@ -83,6 +113,14 @@ where
     fn tool<T: Tool<Deps> + 'static>(self, tool: T) -> Self {
         let definition = tool.definition();
         self.tool_with_executor(definition, ToolAsExecutor(tool))
+    }
+
+    fn tool_dyn(
+        self,
+        definition: serdes_ai::ToolDefinition,
+        tool: Box<dyn Tool<Deps> + Send + Sync>,
+    ) -> Self {
+        self.tool_with_executor(definition, DynToolAsExecutor(tool))
     }
 }
 

@@ -92,6 +92,17 @@ Evaluation uses **last-match-wins**: the final matching rule takes effect.
 For the full rule table and examples, see
 [Tools > Permission rules](tools.md#permission-rules).
 
+#### Custom tool permissions
+
+Custom tools are referenced in the `permission` map by name, same as built-in tools.
+See [Custom tools](tools.md#custom-tools) for registration.
+
+```yaml
+permission:
+  web_search: allow    # custom tool
+  database: deny       # custom tool
+```
+
 ### Model specification
 
 Format: `provider/model-id` or `synthetic/hf:huggingface-model-id`.

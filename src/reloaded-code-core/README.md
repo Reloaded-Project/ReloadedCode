@@ -3,7 +3,8 @@
 [![Crates.io](https://img.shields.io/crates/v/reloaded-code-core.svg)](https://crates.io/crates/reloaded-code-core) [![Docs.rs](https://docs.rs/reloaded-code-core/badge.svg)](https://docs.rs/reloaded-code-core)
 
 Framework-agnostic core tools for building coding agents - file operations,
-search, shell execution, sandboxing, permissions, and system prompt generation.
+search, shell execution, sandboxing, permissions, custom tool registries, and
+system prompt generation.
 
 Headless, TUI, or anything in between. Production-grade implementations with minimal overhead.
 
@@ -22,6 +23,7 @@ Headless, TUI, or anything in between. Production-grade implementations with min
     - [Context and wrapper mapping](#context-and-wrapper-mapping)
   - [System prompt builder](#system-prompt-builder)
     - [Typical wrapper integration (serdesAI)](#typical-wrapper-integration-serdesai)
+  - [Custom tool registry](#custom-tool-registry)
   - [Permissions](#permissions)
   - [Credentials](#credentials)
 
@@ -227,11 +229,17 @@ guidance in sync.
 [`SystemPromptBuilder`] builds one prompt string for agent runtimes.
 
 - [`track(&mut self, tool: T)`] records tool guidance and returns the tool unchanged.
+- [`track_entry(&mut self, name, prompt)`] records a raw context entry without wrapping a
+  tool. Use this when you have name and prompt but no tool instance to wrap via
+  [`SystemPromptBuilder::track`].
 - [`working_directory(self, path)`] and [`allowed_paths(self, resolver)`] add environment metadata.
 - [`add_context(self, name, context)`] appends supplemental sections (for example `GIT_WORKFLOW`).
 - [`system_prompt(self, prompt)`] prepends custom instructions; [`build(self)`] renders the final prompt.
 
 You usually build framework wrappers from these primitives (`ToolContext` + `SystemPromptBuilder`).
+
+If tools are selected from a catalog or created later, use [`ToolFactory`],
+[`ToolCatalogEntry`], and [`CustomToolRegistry`] from core.
 
 ### Typical wrapper integration (serdesAI)
 
@@ -262,6 +270,25 @@ To preview the built-in guidelines and their static cost, run the `system_prompt
 The system prompt is auto-optimized: cross-tool references e.g.
 `prefer X tool over Y for Z` are ommitted unless all tools are present.
 Currently uses ~2000 tokens for full toolset, ~560 tokens for search-only.
+
+## Custom tool registry
+
+Core provides framework-agnostic plumbing for user-defined tools:
+
+- [`ToolFactory`] - trait for building a tool from build-time context. Returns a
+  type-erased `Box<dyn Any>` so adapter crates can downcast to their own tool trait.
+- [`ToolBuildContext`] - shared build-time info passed to every factory (workspace
+  root, permissions). Create once, reuse.
+- [`CustomToolRegistry`] - stores factories by tool name. Insert, lookup, iterate.
+- [`SharedToolRegistry`] - same as above, wrapped in `Arc`. Cheap to clone and
+  pass around runtime builders.
+- [`ToolCatalogEntry`] - pairs a model-facing tool name with its [`ToolCatalogKind`].
+- [`ToolCatalogKind`] - enum listing every tool type (Read, Write, Bash, etc.).
+  Adapters use this to know which tools to build.
+
+Adapter crates downcast the `Box<dyn Any>` returned by [`ToolFactory::create`]
+to their framework's tool trait. This keeps core free of dependencies on any
+specific LLM framework like SerdesAI.
 
 ## Permissions
 
@@ -344,6 +371,7 @@ let key = resolver.resolve("OPENAI_API_KEY");
 [`TaskSettings`]: crate::TaskSettings
 [`SystemPromptBuilder`]: crate::SystemPromptBuilder
 [`track(&mut self, tool: T)`]: crate::SystemPromptBuilder::track
+[`track_entry(&mut self, name, prompt)`]: crate::SystemPromptBuilder::track_entry
 [`working_directory(self, path)`]: crate::SystemPromptBuilder::working_directory
 [`allowed_paths(self, resolver)`]: crate::SystemPromptBuilder::allowed_paths
 [`add_context(self, name, context)`]: crate::SystemPromptBuilder::add_context
@@ -351,6 +379,13 @@ let key = resolver.resolve("OPENAI_API_KEY");
 [`build(self)`]: crate::SystemPromptBuilder::build
 [`context`]: crate::context
 [`ToolContext`]: crate::context::ToolContext
+[`ToolFactory`]: crate::ToolFactory
+[`ToolFactory::create`]: crate::ToolFactory::create
+[`ToolBuildContext`]: crate::ToolBuildContext
+[`CustomToolRegistry`]: crate::CustomToolRegistry
+[`SharedToolRegistry`]: crate::SharedToolRegistry
+[`ToolCatalogEntry`]: crate::ToolCatalogEntry
+[`ToolCatalogKind`]: crate::ToolCatalogKind
 [`PathResolver`]: crate::PathResolver
 [`AbsolutePathResolver`]: crate::AbsolutePathResolver
 [`AllowedGlobResolver`]: crate::path::AllowedGlobResolver

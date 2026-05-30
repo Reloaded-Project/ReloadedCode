@@ -9,6 +9,7 @@ compile_error!("Either an async runtime (e.g., `tokio`) or `blocking` feature mu
 
 pub mod context;
 pub mod credentials;
+pub mod custom_tool;
 pub mod error;
 pub mod fs;
 pub mod models;
@@ -17,6 +18,7 @@ pub mod path;
 pub mod permissions;
 pub mod permissions_ext;
 pub mod system_prompt;
+pub mod tool_catalog;
 pub mod tool_context;
 pub mod tool_metadata;
 pub mod tools;
@@ -27,11 +29,12 @@ mod internal;
 
 pub use context::ToolContext;
 pub use credentials::{CredentialLookup, CredentialResolver};
+pub use custom_tool::{CustomToolRegistry, SharedToolRegistry, ToolBuildContext, ToolFactory};
 pub use error::{ToolError, ToolResult};
 pub use output::ToolOutput;
 pub use path::{AbsolutePathResolver, AllowedGlobResolver, AllowedPathResolver, PathResolver};
 pub use system_prompt::SystemPromptBuilder;
-pub use tool_context::ToolBuildContext;
+pub use tool_catalog::{default_tools, ToolCatalogEntry, ToolCatalogKind};
 pub use workspace::resolve_workspace_root;
 
 // Re-export tools (always available, sync or async based on runtime feature)
