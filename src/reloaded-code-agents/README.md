@@ -365,4 +365,4 @@ For the internal architecture, see [ARCHITECTURE.md](https://github.com/Reloaded
 [API Reference]: https://docs.rs/reloaded-code-agents
 [`ToolFactory`]: https://docs.rs/reloaded_code_core/latest/reloaded_code_core/trait.ToolFactory.html
 [`ToolContext`]: https://docs.rs/reloaded_code_core/latest/reloaded_code_core/trait.ToolContext.html
-[`ToolBuildContext`]: https://docs.rs/reloaded_code_core/latest/reloaded_code_core/struct.ToolBuildContext.html
+
