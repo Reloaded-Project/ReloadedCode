@@ -475,7 +475,3 @@ For a deeper dive into path security, see [Sandboxing](sandboxing.md).
 [create_todo_tools]: https://docs.rs/reloaded-code-serdesai/latest/reloaded_code_serdesai/tools/todo/fn.create_todo_tools.html
 [reloaded-code-core]: https://docs.rs/reloaded-code-core
 [reloaded-code-serdesai]: https://docs.rs/reloaded-code-serdesai
-[Agents]: agents.md
-[agent files]: agents.md
-[`ToolFactory`]: https://docs.rs/reloaded-code-core/latest/reloaded_code_core/trait.ToolFactory.html
-[`ToolContext`]: https://docs.rs/reloaded-code-core/latest/reloaded_code_core/trait.ToolContext.html
