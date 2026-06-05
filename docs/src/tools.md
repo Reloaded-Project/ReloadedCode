@@ -127,12 +127,16 @@ Custom tools let embedders add non-built-in tools to an agent runtime.
 ```rust
 use reloaded_code_agents::AgentRuntimeBuilder;
 use reloaded_code_core::{
-    ToolBuildContext, ToolCatalogEntry, ToolCatalogKind, ToolContext, ToolFactory,
+    CustomTool, CustomToolDefinition, CustomToolFuture, ToolBuildContext,
+    ToolCatalogEntry, ToolCatalogKind, ToolContext, ToolFactory, ToolOutput,
+    ToolResult, ToolRunContext,
 };
 use reloaded_code_core::context::ToolPrompt;
-use std::any::Any;
+use serde_json::json;
+use std::sync::Arc;
 
 struct WebSearchFactory;
+struct WebSearchTool;
 
 // Name + prompt guidance.
 impl ToolContext for WebSearchFactory {
@@ -142,11 +146,37 @@ impl ToolContext for WebSearchFactory {
     }
 }
 
-// Build framework-specific tool instance.
+// Build portable tool instance.
 impl ToolFactory for WebSearchFactory {
-    fn create(&self, _ctx: &ToolBuildContext) -> Box<dyn Any + Send + Sync> {
-        // SerdesAI: return Box::new(Box<dyn serdes_ai::Tool<()>>).
-        todo!("return your tool")
+    fn create(&self, _ctx: &ToolBuildContext) -> ToolResult<Arc<dyn CustomTool>> {
+        Ok(Arc::new(WebSearchTool))
+    }
+}
+
+impl ToolContext for WebSearchTool {
+    fn name(&self) -> &'static str { "web_search" }
+    fn context(&self) -> ToolPrompt {
+        ToolPrompt::Static("Use web_search to find information online.")
+    }
+}
+
+impl CustomTool for WebSearchTool {
+    fn definition(&self) -> CustomToolDefinition {
+        CustomToolDefinition::new("web_search", "Find information online")
+            .with_parameters(json!({
+                "type": "object",
+                "properties": {
+                    "query": { "type": "string", "description": "Search query" }
+                },
+                "required": ["query"]
+            }))
+    }
+
+    fn call<'a>(&'a self, _ctx: ToolRunContext<'a>, args: serde_json::Value) -> CustomToolFuture<'a> {
+        Box::pin(async move {
+            let query = args["query"].as_str().unwrap_or_default();
+            Ok(ToolOutput::new(format!("searched for {query}")))
+        })
     }
 }
 
@@ -163,10 +193,12 @@ let runtime = AgentRuntimeBuilder::new()
 Rules:
 
 - Factory name must match catalog entry name.
+- Custom tool definition name must match catalog entry name.
 - `ToolContext::context()` adds system-prompt guidance.
 - Custom tool names work in agent `permission` maps.
 - Missing factory: `AgentBuildError::UnknownCustomTool`.
-- Wrong return type: `AgentBuildError::CustomToolDowncastFailed`.
+- Factory creation failure: `AgentBuildError::CustomToolCreateFailed`.
+- Definition/catalog mismatch: `AgentBuildError::CustomToolNameMismatch`.
 
 See [reloaded-code-core API docs](https://docs.rs/reloaded-code-core/latest)
 for full API details.

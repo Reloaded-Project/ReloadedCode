@@ -275,8 +275,9 @@ Currently uses ~2000 tokens for full toolset, ~560 tokens for search-only.
 
 Core provides framework-agnostic plumbing for user-defined tools:
 
-- [`ToolFactory`] - trait for building a tool from build-time context. Returns a
-  type-erased `Box<dyn Any>` so adapter crates can downcast to their own tool trait.
+- [`ToolFactory`] - builds a tool from context, returning a portable [`CustomTool`].
+- [`CustomToolDefinition`] - framework-neutral name, description, and JSON Schema.
+- [`ToolRunContext`] - optional framework metadata for tool calls.
 - [`ToolBuildContext`] - shared build-time info passed to every factory (workspace
   root, permissions). Create once, reuse.
 - [`CustomToolRegistry`] - stores factories by tool name. Insert, lookup, iterate.
@@ -286,9 +287,9 @@ Core provides framework-agnostic plumbing for user-defined tools:
 - [`ToolCatalogKind`] - enum listing every tool type (Read, Write, Bash, etc.).
   Adapters use this to know which tools to build.
 
-Adapter crates downcast the `Box<dyn Any>` returned by [`ToolFactory::create`]
-to their framework's tool trait. This keeps core free of dependencies on any
-specific LLM framework like SerdesAI.
+Adapters wrap the [`CustomTool`] from [`ToolFactory::create`] in their
+framework's native tool trait, keeping core framework-free and enabling reuse
+across adapters.
 
 ## Permissions
 
@@ -379,9 +380,12 @@ let key = resolver.resolve("OPENAI_API_KEY");
 [`build(self)`]: crate::SystemPromptBuilder::build
 [`context`]: crate::context
 [`ToolContext`]: crate::context::ToolContext
+[`CustomTool`]: crate::CustomTool
+[`CustomToolDefinition`]: crate::CustomToolDefinition
 [`ToolFactory`]: crate::ToolFactory
 [`ToolFactory::create`]: crate::ToolFactory::create
 [`ToolBuildContext`]: crate::ToolBuildContext
+[`ToolRunContext`]: crate::ToolRunContext
 [`CustomToolRegistry`]: crate::CustomToolRegistry
 [`SharedToolRegistry`]: crate::SharedToolRegistry
 [`ToolCatalogEntry`]: crate::ToolCatalogEntry

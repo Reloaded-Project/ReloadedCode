@@ -164,41 +164,105 @@ See [examples/serdesai-agents.rs](examples/serdesai-agents.rs) and
 
 ## Custom tools
 
-Register custom tools that integrate with the SerdesAI agent builder. Your
-tool must implement `serdes_ai::Tool<()>` and be wrapped by a core
-[`ToolFactory`]:
+Define a portable [`CustomTool`] once (depends only on `reloaded-code-core`),
+then attach it either directly or via the agent runtime.
 
 ```rust,no_run
-use reloaded_code_agents::AgentRuntimeBuilder;
-use reloaded_code_core::{ToolBuildContext, ToolCatalogEntry, ToolCatalogKind, ToolContext, ToolFactory};
-use reloaded_code_core::context::ToolPrompt;
-use serdes_ai::tools::{RunContext, SchemaBuilder, Tool, ToolDefinition, ToolResult, ToolReturn};
-use std::any::Any;
-use async_trait::async_trait;
+use reloaded_code_core::{
+    CustomTool, CustomToolDefinition, CustomToolFuture, ToolOutput,
+    ToolRunContext, ToolContext, context::ToolPrompt,
+};
+use serde_json::json;
+use std::sync::Arc;
 
-// 1. Define the tool - implement Tool<()> with a definition and call handler
 struct EchoTool;
 
-#[async_trait]
-impl Tool<()> for EchoTool {
-    fn definition(&self) -> ToolDefinition {
-        // For tools without parameters, just use ToolDefinition::new(name, description)
-        ToolDefinition::new("echo", "Echo a message back")
-            .with_parameters(
-                SchemaBuilder::new()
-                    .string("message", "Message to echo", true)
-                    .build()
-                    .unwrap(),
-            )
-    }
-
-    async fn call(&self, _ctx: &RunContext<()>, args: serde_json::Value) -> ToolResult {
-        let msg = args["message"].as_str().unwrap_or_default();
-        Ok(ToolReturn::text(msg))
+impl ToolContext for EchoTool {
+    fn name(&self) -> &'static str { "echo" }
+    fn context(&self) -> ToolPrompt {
+        ToolPrompt::Static("Use echo to repeat a message.")
     }
 }
 
-// 2. Provide name and prompt guidance via ToolContext
+impl CustomTool for EchoTool {
+    fn definition(&self) -> CustomToolDefinition {
+        CustomToolDefinition::new("echo", "Echo a message back")
+            .with_parameters(json!({
+                "type": "object",
+                "properties": {
+                    "message": { "type": "string", "description": "Message to echo" }
+                },
+                "required": ["message"]
+            }))
+    }
+
+    fn call<'a>(&'a self, _ctx: ToolRunContext<'a>, args: serde_json::Value) -> CustomToolFuture<'a> {
+        Box::pin(async move {
+            let msg = args["message"].as_str().unwrap_or_default();
+            Ok(ToolOutput::new(msg))
+        })
+    }
+}
+```
+
+### Direct attachment (no agent runtime)
+
+Wrap with [`CustomToolAdapter`] and attach to a plain SerdesAI agent:
+
+```rust,no_run
+use reloaded_code_serdesai::{CustomToolAdapter, SystemPromptBuilder};
+use reloaded_code_serdesai::agent_ext::AgentBuilderExt;
+use serdes_ai::prelude::*;
+# use reloaded_code_core::{CustomTool, CustomToolDefinition, CustomToolFuture, ToolOutput,
+#     ToolRunContext, ToolContext, context::ToolPrompt};
+# use serde_json::json;
+# use std::sync::Arc;
+# struct EchoTool;
+# impl ToolContext for EchoTool {
+#     fn name(&self) -> &'static str { "echo" }
+#     fn context(&self) -> ToolPrompt { ToolPrompt::Static("") }
+# }
+# impl CustomTool for EchoTool {
+#     fn definition(&self) -> CustomToolDefinition { CustomToolDefinition::new("echo", "") }
+#     fn call<'a>(&'a self, _: ToolRunContext<'a>, _: serde_json::Value) -> CustomToolFuture<'a> {
+#         Box::pin(async { Ok(ToolOutput::new("")) })
+#     }
+# }
+
+let mut pb = SystemPromptBuilder::new();
+let agent = AgentBuilder::<(), String>::from_model("openai:gpt-5.4")?
+    .tool(pb.track(CustomToolAdapter::new(Arc::new(EchoTool))))
+    .system_prompt(pb.build())
+    .build();
+# Ok::<(), Box<dyn std::error::Error>>(())
+```
+
+### Agent runtime registration
+
+Register a factory with [`AgentRuntimeBuilder`]. The build layer wraps the
+portable tool automatically:
+
+```rust,no_run
+use reloaded_code_agents::AgentRuntimeBuilder;
+use reloaded_code_core::{
+    CustomTool, ToolBuildContext, ToolCatalogEntry, ToolCatalogKind,
+    ToolContext, ToolFactory, ToolResult, context::ToolPrompt,
+};
+use std::sync::Arc;
+# use reloaded_code_core::{CustomToolDefinition, CustomToolFuture, ToolOutput, ToolRunContext};
+# use serde_json::json;
+# struct EchoTool;
+# impl ToolContext for EchoTool {
+#     fn name(&self) -> &'static str { "echo" }
+#     fn context(&self) -> ToolPrompt { ToolPrompt::Static("") }
+# }
+# impl CustomTool for EchoTool {
+#     fn definition(&self) -> CustomToolDefinition { CustomToolDefinition::new("echo", "") }
+#     fn call<'a>(&'a self, _: ToolRunContext<'a>, _: serde_json::Value) -> CustomToolFuture<'a> {
+#         Box::pin(async { Ok(ToolOutput::new("")) })
+#     }
+# }
+
 struct EchoFactory;
 impl ToolContext for EchoFactory {
     fn name(&self) -> &'static str { "echo" }
@@ -207,40 +271,34 @@ impl ToolContext for EchoFactory {
     }
 }
 
-// 3. Create the tool at build time via ToolFactory
 impl ToolFactory for EchoFactory {
-    fn create(&self, _ctx: &ToolBuildContext) -> Box<dyn Any + Send + Sync> {
-        Box::new(Box::new(EchoTool) as Box<dyn Tool<()>>)
+    fn create(&self, _ctx: &ToolBuildContext) -> ToolResult<Arc<dyn CustomTool>> {
+        Ok(Arc::new(EchoTool))
     }
 }
 
-// 4. Register and build
-fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let tools = vec![
-        // ...existing tools...
-        ToolCatalogEntry::new("echo", ToolCatalogKind::Custom),
-    ];
+let tools = vec![
+    ToolCatalogEntry::new("echo", ToolCatalogKind::Custom),
+];
 
-    let runtime = AgentRuntimeBuilder::new()
-        .custom_tool(EchoFactory)
-        .tools(tools)
-        .build()?;
-    Ok(())
-}
+let runtime = AgentRuntimeBuilder::new()
+    .custom_tool(EchoFactory)
+    .tools(tools)
+    .build()?;
+# Ok::<(), reloaded_code_core::permissions::ExpandError>(())
 ```
 
 The SerdesAI build layer automatically:
 
-1. Looks up the factory by name in the custom tool registry
-2. Calls `create()` with a shared `ToolBuildContext` (workspace root + permissions)
-3. Downcasts the type-erased return to `Box<dyn Tool<()>>`
+1. Looks up the factory by name in the registry
+2. Calls `create()` with a `ToolBuildContext` (workspace root + permissions)
+3. Wraps the returned `CustomTool` as a SerdesAI tool
 4. Registers prompt guidance via `SystemPromptBuilder::track_entry()`
 5. Attaches the tool to the agent builder
 
-If a catalog entry references a custom tool with no registered factory, the
-build returns `AgentBuildError::UnknownCustomTool`. If `create()` returns a
-value that cannot be downcast, it returns
-`AgentBuildError::CustomToolDowncastFailed`.
+Errors: missing factory → `AgentBuildError::UnknownCustomTool`,
+`create()` failure → `AgentBuildError::CustomToolCreateFailed`,
+name mismatch → `AgentBuildError::CustomToolNameMismatch`.
 
 ## Linux Shell Sandboxing
 
@@ -283,6 +341,9 @@ cargo run --example serdesai-sandboxed-bash --features linux-bubblewrap -p reloa
 # Markdown agent runtime (shared build context)
 cargo run --example serdesai-agents -p reloaded-code-serdesai
 
+# Portable custom tool with models.dev catalog
+cargo run --example serdesai-custom-tool -p reloaded-code-serdesai
+
 # Stateless single-hop Task delegation
 cargo run --example serdesai-task -p reloaded-code-serdesai
 ```
@@ -299,3 +360,4 @@ Apache 2.0
 [Documentation]: https://reloaded-project.github.io/ReloadedCode/
 [API Reference]: https://docs.rs/reloaded-code-serdesai
 [`ToolFactory`]: https://docs.rs/reloaded-code-core/latest/reloaded_code_core/trait.ToolFactory.html
+[`CustomTool`]: https://docs.rs/reloaded-code-core/latest/reloaded_code_core/trait.CustomTool.html

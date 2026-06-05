@@ -31,8 +31,8 @@ pub use reloaded_code_core::path::{
 
 // Re-export tools from the tools module
 pub use tools::{
-    BashTool, EditTool, GlobTool, GrepTool, ReadTool, TodoReadTool, TodoWriteTool, WebFetchTool,
-    WriteTool, create_todo_tools,
+    BashTool, CustomToolAdapter, EditTool, GlobTool, GrepTool, ReadTool, TodoReadTool,
+    TodoWriteTool, WebFetchTool, WriteTool, create_todo_tools,
 };
 
 // Re-export core operation types used by tools

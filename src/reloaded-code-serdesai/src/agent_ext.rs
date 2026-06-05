@@ -44,7 +44,11 @@ impl<Deps: Send + Sync + 'static, T: Tool<Deps>> ToolExecutor<Deps> for ToolAsEx
         // Convert agent::RunContext to tools::RunContext
         let tools_ctx = ToolsRunContext::from_arc(ctx.deps.clone(), &ctx.model_name)
             .with_run_id(&ctx.run_id)
-            .with_model_settings(ctx.model_settings.clone());
+            .with_model_settings(ctx.model_settings.clone())
+            .with_tool_context(
+                ctx.tool_name.as_deref().unwrap_or_default(),
+                ctx.tool_call_id.clone(),
+            );
 
         self.0.call(&tools_ctx, args).await
     }
@@ -64,7 +68,11 @@ impl<Deps: Send + Sync + 'static> ToolExecutor<Deps> for DynToolAsExecutor<Deps>
     ) -> Result<ToolReturn, ToolError> {
         let tools_ctx = ToolsRunContext::from_arc(ctx.deps.clone(), &ctx.model_name)
             .with_run_id(&ctx.run_id)
-            .with_model_settings(ctx.model_settings.clone());
+            .with_model_settings(ctx.model_settings.clone())
+            .with_tool_context(
+                ctx.tool_name.as_deref().unwrap_or_default(),
+                ctx.tool_call_id.clone(),
+            );
 
         self.0.call(&tools_ctx, args).await
     }

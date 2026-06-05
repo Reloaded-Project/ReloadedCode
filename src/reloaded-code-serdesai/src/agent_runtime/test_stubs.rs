@@ -1,34 +1,48 @@
 //! Shared test stubs for SerdesAI custom tool tests.
-//!
-//! These combine a [`serdes_ai::Tool<()>`] implementation with a
-//! [`ToolFactory`] so tests can exercise the full agent-build pipeline
-//! including tool attachment and prompt guidance injection.
 
-use async_trait::async_trait;
 use reloaded_code_core::context::{ToolContext, ToolPrompt};
-use reloaded_code_core::{ToolBuildContext, ToolFactory};
-use serdes_ai::tools::{RunContext, ToolDefinition, ToolReturn};
-use std::any::Any;
+use reloaded_code_core::{
+    CustomTool, CustomToolDefinition, CustomToolFuture, ToolBuildContext, ToolFactory, ToolOutput,
+    ToolResult, ToolRunContext,
+};
+use std::sync::Arc;
 
-/// A minimal `serdes_ai::Tool<()>` that returns a configurable text response.
+/// A minimal portable custom tool that returns a configurable text response.
 struct SerdesTestTool {
     name: &'static str,
+    prompt: &'static str,
     response: &'static str,
 }
 
-#[async_trait]
-impl serdes_ai::Tool<()> for SerdesTestTool {
-    fn definition(&self) -> ToolDefinition {
-        ToolDefinition::new(self.name, self.name)
+impl ToolContext for SerdesTestTool {
+    #[inline]
+    fn name(&self) -> &'static str {
+        self.name
     }
 
-    async fn call(&self, _ctx: &RunContext<()>, _args: serde_json::Value) -> serdes_ai::ToolResult {
-        Ok(ToolReturn::text(self.response))
+    #[inline]
+    fn context(&self) -> ToolPrompt {
+        ToolPrompt::Static(self.prompt)
     }
 }
 
-/// A `ToolFactory` that creates a [`SerdesTestTool`] and returns it as a
-/// double-boxed `Box<dyn Any + Send + Sync>`.
+impl CustomTool for SerdesTestTool {
+    #[inline]
+    fn definition(&self) -> CustomToolDefinition {
+        CustomToolDefinition::new(self.name, self.name)
+    }
+
+    #[inline]
+    fn call<'a>(
+        &'a self,
+        _ctx: ToolRunContext<'a>,
+        _args: serde_json::Value,
+    ) -> CustomToolFuture<'a> {
+        Box::pin(async move { Ok(ToolOutput::new(self.response)) })
+    }
+}
+
+/// A `ToolFactory` that creates a portable [`SerdesTestTool`].
 ///
 /// `name` and `prompt` are surfaced via `ToolContext` for system-prompt
 /// guidance injection. `response` is returned by the tool's `call()`.
@@ -69,11 +83,11 @@ impl ToolContext for SerdesTestFactory {
 
 impl ToolFactory for SerdesTestFactory {
     #[inline]
-    fn create(&self, _ctx: &ToolBuildContext) -> Box<dyn Any + Send + Sync> {
-        let tool: Box<dyn serdes_ai::Tool<()>> = Box::new(SerdesTestTool {
+    fn create(&self, _ctx: &ToolBuildContext) -> ToolResult<Arc<dyn CustomTool>> {
+        Ok(Arc::new(SerdesTestTool {
             name: self.name,
+            prompt: self.prompt,
             response: self.response,
-        });
-        Box::new(tool)
+        }))
     }
 }

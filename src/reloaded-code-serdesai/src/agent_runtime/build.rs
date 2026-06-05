@@ -8,6 +8,7 @@ use super::model::resolve_model;
 use super::provider_bridge::build_serdes_model;
 use crate::agent_ext::{AgentBuilderExt, ToolResultExt};
 use crate::task::{TaskHandle, TaskTool};
+use crate::tools::CustomToolAdapter;
 use crate::{
     BashTool, EditTool, GlobTool, GrepTool, ReadTool, SystemPromptBuilder, WebFetchTool, WriteTool,
     create_todo_tools,
@@ -58,11 +59,22 @@ pub enum AgentBuildError {
         /// The tool name with no registered factory.
         name: Box<str>,
     },
-    /// A custom tool factory returned a value that cannot be downcast to the expected type.
-    #[error("custom tool `{name}` factory returned incompatible type")]
-    CustomToolDowncastFailed {
-        /// The tool name whose factory returned the wrong type.
+    /// A custom tool factory failed while creating the tool.
+    #[error("failed to create custom tool `{name}`: {source}")]
+    CustomToolCreateFailed {
+        /// The tool name whose factory failed.
         name: Box<str>,
+        /// The underlying Core tool error.
+        #[source]
+        source: ToolError,
+    },
+    /// A custom tool's own name or definition name does not match the catalog entry.
+    #[error("custom tool catalog entry `{catalog_name}` produced tool named `{actual_name}`")]
+    CustomToolNameMismatch {
+        /// The catalog entry name.
+        catalog_name: Box<str>,
+        /// The mismatched name returned by the custom tool.
+        actual_name: Box<str>,
     },
     /// The runtime contains a tool kind this adapter cannot materialise.
     #[error("tool `{name}` is not supported")]
@@ -179,8 +191,8 @@ where
 /// Returns [`AgentBuildError::UnknownCustomTool`] when a [`ToolCatalogKind::Custom`] entry
 /// names a tool absent from the custom-tool registry.
 ///
-/// Returns [`AgentBuildError::CustomToolDowncastFailed`] when the type-erased object
-/// produced by a custom-tool factory cannot be downcast to `Box<dyn Tool<()>>`.
+/// Returns [`AgentBuildError::CustomToolCreateFailed`] when a custom-tool
+/// factory cannot create its portable tool object.
 ///
 /// Returns [`AgentBuildError::ToolSettingsValidation`] when resolver creation or settings
 /// building fails for any tool, including:
@@ -303,31 +315,40 @@ where
                     }
                 })?;
 
-                // create() returns type-erased Box<dyn Any> for the
-                // cross-crate boundary; downcast to the concrete Tool<()>
-                // that the serdesai builder expects.
-                let boxed = factory.create(&build_context);
+                let tool = factory.create(&build_context).map_err(|source| {
+                    AgentBuildError::CustomToolCreateFailed {
+                        name: entry.name.into(),
+                        source,
+                    }
+                })?;
 
-                // Downcast yields Box<Box<dyn Tool<()>>> because create()
-                // wrapped Box<dyn Tool<()>> as Box<dyn Any>.
-                let double_boxed: Box<Box<dyn serdes_ai::Tool<()>>> =
-                    boxed
-                        .downcast()
-                        .map_err(|_| AgentBuildError::CustomToolDowncastFailed {
-                            name: entry.name.into(),
-                        })?;
+                if tool.name() != entry.name {
+                    return Err(AgentBuildError::CustomToolNameMismatch {
+                        catalog_name: entry.name.into(),
+                        actual_name: tool.name().into(),
+                    });
+                }
 
-                // Use ToolContext (which ToolFactory extends) to get
-                // name and prompt guidance consistently with built-in tools.
-                let tool_prompt = factory.context();
+                let definition = tool.definition();
+                if definition.name != entry.name {
+                    return Err(AgentBuildError::CustomToolNameMismatch {
+                        catalog_name: entry.name.into(),
+                        actual_name: definition.name.into(),
+                    });
+                }
+
+                // Use ToolContext to get name and prompt guidance consistently
+                // with built-in tools. ToolPrompt::Static("") means no guidance.
+                let tool_prompt = tool.context();
                 // ToolPrompt::Static("") means no guidance (equivalent to
                 // the old prompt() returning None).
                 if !matches!(tool_prompt, ToolPrompt::Static("")) {
-                    prompt_builder.track_entry(factory.name(), tool_prompt);
+                    prompt_builder.track_entry(tool.name(), tool_prompt);
                 }
-                // Unwrap the double box to get Box<dyn Tool<()>>.
-                let tool = *double_boxed;
-                builder = builder.tool_dyn(tool.definition(), tool);
+
+                let serdes_definition = crate::convert::custom_definition_to_serdes(definition);
+                builder =
+                    builder.tool_dyn(serdes_definition, Box::new(CustomToolAdapter::new(tool)));
             }
             _ => {
                 return Err(AgentBuildError::UnsupportedToolKind {
@@ -401,12 +422,14 @@ mod tests {
         bash as bash_meta, glob as glob_meta, grep as grep_meta, read as read_meta,
     };
     use reloaded_code_core::{
-        CredentialResolver, SharedToolRegistry, ToolBuildContext, ToolCatalogEntry,
-        ToolCatalogKind, ToolFactory,
+        CredentialResolver, CustomTool, CustomToolDefinition, CustomToolFuture, SharedToolRegistry,
+        ToolBuildContext, ToolCatalogEntry, ToolCatalogKind, ToolError, ToolFactory, ToolOutput,
+        ToolResult, ToolRunContext,
     };
     use serdes_ai::AgentBuilder;
     use serdes_ai_models::MockModel;
     use std::collections::HashSet;
+    use std::sync::Arc;
 
     type TestResult = Result<(), ExpandError>;
 
@@ -778,9 +801,7 @@ mod tests {
     }
 
     #[test]
-    fn build_returns_error_on_custom_tool_downcast_failure() -> TestResult {
-        use std::any::Any;
-
+    fn build_returns_error_on_custom_tool_create_failure() -> TestResult {
         struct BadFactory;
         impl ToolContext for BadFactory {
             fn name(&self) -> &'static str {
@@ -791,17 +812,65 @@ mod tests {
             }
         }
         impl ToolFactory for BadFactory {
-            fn create(&self, _ctx: &ToolBuildContext) -> Box<dyn Any + Send + Sync> {
-                // Returns wrong type - not Box<dyn Tool<()>>
-                Box::new(42_usize)
+            fn create(&self, _ctx: &ToolBuildContext) -> ToolResult<Arc<dyn CustomTool>> {
+                Err(ToolError::validation("bad custom tool setup"))
             }
         }
 
         let runtime = custom_tool_runtime("bad_agent", "bad_tool", BadFactory)?;
         let result = attach_test_agent(&runtime, "bad_agent");
         assert!(
-            matches!(&result, Err(AgentBuildError::CustomToolDowncastFailed { name } ) if &**name == "bad_tool"),
-            "expected CustomToolDowncastFailed for bad_tool, got a different result"
+            matches!(&result, Err(AgentBuildError::CustomToolCreateFailed { name, .. } ) if &**name == "bad_tool"),
+            "expected CustomToolCreateFailed for bad_tool, got a different result"
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn build_returns_error_on_custom_tool_name_mismatch() -> TestResult {
+        struct MismatchFactory;
+        impl ToolContext for MismatchFactory {
+            fn name(&self) -> &'static str {
+                "catalog_tool"
+            }
+            fn context(&self) -> ToolPrompt {
+                ToolPrompt::Static("Mismatch tool guidance.")
+            }
+        }
+        impl ToolFactory for MismatchFactory {
+            fn create(&self, _ctx: &ToolBuildContext) -> ToolResult<Arc<dyn CustomTool>> {
+                Ok(Arc::new(MismatchTool))
+            }
+        }
+
+        struct MismatchTool;
+        impl ToolContext for MismatchTool {
+            fn name(&self) -> &'static str {
+                "definition_tool"
+            }
+            fn context(&self) -> ToolPrompt {
+                ToolPrompt::Static("Mismatch tool guidance.")
+            }
+        }
+        impl CustomTool for MismatchTool {
+            fn definition(&self) -> CustomToolDefinition {
+                CustomToolDefinition::new("definition_tool", "wrong name")
+            }
+
+            fn call<'a>(
+                &'a self,
+                _ctx: ToolRunContext<'a>,
+                _args: serde_json::Value,
+            ) -> CustomToolFuture<'a> {
+                Box::pin(async { Ok(ToolOutput::new("ok")) })
+            }
+        }
+
+        let runtime = custom_tool_runtime("bad_agent", "catalog_tool", MismatchFactory)?;
+        let result = attach_test_agent(&runtime, "bad_agent");
+        assert!(
+            matches!(&result, Err(AgentBuildError::CustomToolNameMismatch { catalog_name, actual_name }) if &**catalog_name == "catalog_tool" && &**actual_name == "definition_tool"),
+            "expected CustomToolNameMismatch, got a different result"
         );
         Ok(())
     }

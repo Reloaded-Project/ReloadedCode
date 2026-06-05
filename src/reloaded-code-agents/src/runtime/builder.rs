@@ -109,10 +109,10 @@ mod tests {
     use reloaded_code_core::permissions::{ExpandError, PermissionAction};
     use reloaded_code_core::tool_metadata::{glob as glob_meta, read as read_meta};
     use reloaded_code_core::{
-        default_tools, TaskSettings, ToolBuildContext, ToolCatalogEntry, ToolCatalogKind,
-        ToolFactory,
+        default_tools, CustomTool, CustomToolDefinition, CustomToolFuture, TaskSettings,
+        ToolBuildContext, ToolCatalogEntry, ToolCatalogKind, ToolFactory, ToolOutput, ToolResult,
+        ToolRunContext,
     };
-    use std::any::Any;
     use std::sync::Arc;
 
     type TestResult = Result<(), ExpandError>;
@@ -241,8 +241,40 @@ mod tests {
         }
 
         impl ToolFactory for TestFactory {
-            fn create(&self, _ctx: &ToolBuildContext) -> Box<dyn Any + Send + Sync> {
-                Box::new(())
+            fn create(&self, _ctx: &ToolBuildContext) -> ToolResult<Arc<dyn CustomTool>> {
+                Ok(Arc::new(TestTool {
+                    name: self.name,
+                    prompt: self.prompt,
+                }))
+            }
+        }
+
+        struct TestTool {
+            name: &'static str,
+            prompt: &'static str,
+        }
+
+        impl ToolContext for TestTool {
+            fn name(&self) -> &'static str {
+                self.name
+            }
+
+            fn context(&self) -> ToolPrompt {
+                ToolPrompt::Static(self.prompt)
+            }
+        }
+
+        impl CustomTool for TestTool {
+            fn definition(&self) -> CustomToolDefinition {
+                CustomToolDefinition::new(self.name, "test tool")
+            }
+
+            fn call<'a>(
+                &'a self,
+                _ctx: ToolRunContext<'a>,
+                _args: serde_json::Value,
+            ) -> CustomToolFuture<'a> {
+                Box::pin(async { Ok(ToolOutput::new("ok")) })
             }
         }
 

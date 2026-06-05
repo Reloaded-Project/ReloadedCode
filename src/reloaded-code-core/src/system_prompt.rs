@@ -81,30 +81,8 @@ impl SystemPromptBuilder {
 
     /// Records context and returns tool unchanged.
     ///
-    /// Use this to wrap tools before registering them with your tool collection:
-    /// ```no_run
-    /// use reloaded_code_core::context::{PathMode, ToolContext, ToolPrompt};
-    /// use reloaded_code_core::SystemPromptBuilder;
-    ///
-    /// struct MyTool;
-    ///
-    /// impl ToolContext for MyTool {
-    ///     fn name(&self) -> &'static str {
-    ///         "read"
-    ///     }
-    ///
-    ///     fn context(&self) -> ToolPrompt {
-    ///         ToolPrompt::Read {
-    ///             path_mode: PathMode::Absolute,
-    ///             line_numbers: true,
-    ///         }
-    ///     }
-    /// }
-    ///
-    /// let mut pb = SystemPromptBuilder::new();
-    /// let _my_tool = pb.track(MyTool);
-    /// // register _my_tool with your tool collection
-    /// ```
+    /// Use this to wrap tools before registering them with your tool collection.
+    /// See [`SystemPromptBuilder`] for a full `track()` usage demonstration.
     ///
     /// For example, if working with serdesAI:
     /// ```text

@@ -5,9 +5,11 @@
 //!
 //! [`reloaded_code_core`]: reloaded_code_core
 
-use reloaded_code_core::{ToolError as CoreError, ToolOutput, ToolResult as CoreResult};
+use reloaded_code_core::{
+    CustomToolDefinition, ToolError as CoreError, ToolOutput, ToolResult as CoreResult,
+};
 use serde_json::json;
-use serdes_ai::tools::{ToolError as SerdesError, ToolReturn};
+use serdes_ai::tools::{ToolDefinition, ToolError as SerdesError, ToolReturn};
 
 /// Convert [`ToolOutput`] to [`ToolReturn`] (serdesAI).
 ///
@@ -106,6 +108,38 @@ fn field_for_out_of_bounds(msg: &str) -> Option<String> {
         Some("limit".to_string())
     } else {
         None
+    }
+}
+
+/// Convert a portable [`CustomToolDefinition`] to a SerdesAI [`ToolDefinition`].
+///
+/// Fields map 1:1. The SerdesAI `outer_typed_dict_key` field is always `None`
+/// because portable definitions do not carry framework-specific metadata.
+///
+/// # Example
+///
+/// ```
+/// use reloaded_code_serdesai::convert::custom_definition_to_serdes;
+/// use reloaded_code_core::CustomToolDefinition;
+/// use serde_json::json;
+///
+/// let def = CustomToolDefinition::new("my_tool", "Does things")
+///     .with_parameters(json!({"type": "object", "properties": {}}))
+///     .with_strict(true);
+///
+/// let serdes_def = custom_definition_to_serdes(def);
+/// assert_eq!(serdes_def.name, "my_tool");
+/// assert_eq!(serdes_def.strict, Some(true));
+/// assert!(serdes_def.outer_typed_dict_key.is_none());
+/// ```
+#[inline]
+pub fn custom_definition_to_serdes(definition: CustomToolDefinition) -> ToolDefinition {
+    ToolDefinition {
+        name: definition.name,
+        description: definition.description,
+        parameters_json_schema: definition.parameters_json_schema,
+        strict: definition.strict,
+        outer_typed_dict_key: None,
     }
 }
 
@@ -243,5 +277,31 @@ mod tests {
             }
             _ => unreachable!(),
         }
+    }
+
+    #[test]
+    fn custom_definition_to_serdes_maps_all_fields() {
+        use reloaded_code_core::CustomToolDefinition;
+
+        let def = CustomToolDefinition::new("my_tool", "Does things")
+            .with_parameters(json!({"type": "object", "properties": {"q": {"type": "string"}}}))
+            .with_strict(true);
+
+        let serdes_def = super::custom_definition_to_serdes(def);
+        assert_eq!(serdes_def.name, "my_tool");
+        assert_eq!(serdes_def.description, "Does things");
+        assert_eq!(serdes_def.strict, Some(true));
+        assert!(serdes_def.outer_typed_dict_key.is_none());
+        assert!(serdes_def.parameters_json_schema["properties"]["q"].is_object());
+    }
+
+    #[test]
+    fn custom_definition_to_serdes_defaults_strict_to_none() {
+        use reloaded_code_core::CustomToolDefinition;
+
+        let def = CustomToolDefinition::new("basic", "no strict");
+        let serdes_def = super::custom_definition_to_serdes(def);
+        assert_eq!(serdes_def.strict, None);
+        assert_eq!(serdes_def.outer_typed_dict_key, None);
     }
 }

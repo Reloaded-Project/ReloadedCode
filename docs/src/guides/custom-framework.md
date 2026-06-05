@@ -108,6 +108,28 @@ The builder includes guidance only for tracked tools. Cross-tool references
 (e.g. "prefer grep over read for searching") are included only when both tools
 are present.
 
+## Portable custom tools
+
+Custom tools implement `CustomTool` in `reloaded-code-core`, not a framework
+trait. Your adapter only needs a thin wrapper that:
+
+1. Converts `CustomToolDefinition` into your framework's tool definition type
+2. Forwards JSON arguments to `CustomTool::call(ToolRunContext, args)`
+3. Converts the returned `ToolOutput` into your framework's tool return type
+
+That means the same custom tool implementation can be registered once through
+`ToolFactory` and reused by SerdesAI or any other Rust LLM framework adapter.
+
+!!! tip "Adapter example"
+
+    See SerdesAI's
+    [`CustomToolAdapter`](https://github.com/Reloaded-Project/ReloadedCode/blob/main/src/reloaded-code-serdesai/src/tools/custom.rs)
+    for a concrete adapter implementation, plus
+    [`serdesai-custom-tool`](../examples.md#serdesai-integration) for a runnable
+    portable custom tool example using the agent runtime, or
+    [`serdesai-custom-tool-standalone`](../examples.md#serdesai-integration) for a
+    direct `AgentBuilder` example without the runtime.
+
 ## Step 3: Choose a path resolver
 
 | Resolver               | Use when                                                                                    |
@@ -156,7 +178,8 @@ let glob = AllowedGlobResolver::new(["/workspace/project"])?
 | `read_todos`, `write_todos`                    | Shared todo state                                        |
 | `SystemPromptBuilder`                          | Context-aware system prompt generation                   |
 | `ToolContext` trait                            | Tool metadata interface for prompt building              |
-| `ToolFactory` / `CustomToolRegistry`           | Framework-agnostic custom tool creation and lookup       |
+| `CustomTool`                                   | Portable custom tool definition and execution            |
+| `ToolFactory` / `CustomToolRegistry`           | Portable custom tool creation and lookup                 |
 | `ToolCatalogEntry` / `ToolCatalogKind`         | Standard/custom tool catalog for adapters                |
 | `PathResolver` trait                           | Path security boundary                                   |
 | `AllowedPathResolver`                          | Directory-based sandbox                                  |

@@ -1,7 +1,10 @@
 //! Tool adapters for the serdes_ai tool framework.
 //!
-//! Each tool wraps a core operation and adapts it to the [`Tool`] trait
+//! Built-in tools wrap core operations and adapt them to the [`Tool`] trait
 //! from `serdes_ai`.
+//!
+//! [`CustomToolAdapter`] wraps a portable custom tool so user-defined tools
+//! can be attached without writing a SerdesAI-specific wrapper.
 //!
 //! File tools use a [`PathResolver`] to validate and resolve paths. The
 //! path mode (absolute or sandboxed) is detected automatically from the
@@ -33,6 +36,9 @@
 //! - [`TodoWriteTool`] - write/replace the todo list
 //! - [`create_todo_tools`] - create a linked read/write pair with shared state
 //!
+//! Adapter tools:
+//! - [`CustomToolAdapter`] - wrap a portable [`reloaded_code_core::CustomTool`]
+//!
 //! # Example
 //!
 //! ```no_run
@@ -48,6 +54,7 @@
 //! [`AllowedGlobResolver`]: reloaded_code_core::path::AllowedGlobResolver
 
 mod bash;
+mod custom;
 mod edit;
 mod glob;
 mod grep;
@@ -57,6 +64,7 @@ mod webfetch;
 mod write;
 
 pub use bash::BashTool;
+pub use custom::CustomToolAdapter;
 pub use edit::EditTool;
 pub use glob::GlobTool;
 pub use grep::GrepTool;

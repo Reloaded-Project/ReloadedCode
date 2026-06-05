@@ -29,7 +29,10 @@ mod internal;
 
 pub use context::ToolContext;
 pub use credentials::{CredentialLookup, CredentialResolver};
-pub use custom_tool::{CustomToolRegistry, SharedToolRegistry, ToolBuildContext, ToolFactory};
+pub use custom_tool::{
+    CustomTool, CustomToolDefinition, CustomToolFuture, CustomToolRegistry, SharedToolRegistry,
+    ToolBuildContext, ToolFactory, ToolRunContext,
+};
 pub use error::{ToolError, ToolResult};
 pub use output::ToolOutput;
 pub use path::{AbsolutePathResolver, AllowedGlobResolver, AllowedPathResolver, PathResolver};

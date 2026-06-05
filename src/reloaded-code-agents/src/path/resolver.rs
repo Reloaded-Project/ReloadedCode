@@ -286,7 +286,7 @@ mod tests {
 
         // Bare "**" -> workspace root (same as Action(Allow)).
         let expected = soft_canonicalize(temp.path())?;
-        assert_eq!(inner.allowed_paths(), &[expected.clone()]);
+        assert_eq!(inner.allowed_paths(), std::slice::from_ref(&expected));
 
         // Any path within workspace should be allowed.
         assert!(

@@ -1,11 +1,14 @@
 //! Custom tool registration primitives.
 //!
-//! Embedders implement [`ToolFactory`] to provide custom tools that integrate
-//! with framework adapters, permission rules, and system prompt builders without
-//! depending on an agent runtime.
+//! Embedders implement [`CustomTool`] and [`ToolFactory`] to provide portable
+//! custom tools that integrate with framework adapters, permission rules, and
+//! system prompt builders without depending on a specific LLM framework.
 //!
 //! # Public API
 //!
+//! - [`CustomTool`] - Framework-neutral trait for tool definition and execution.
+//! - [`CustomToolDefinition`] - Framework-neutral name, description, and schema.
+//! - [`ToolRunContext`] - Optional framework metadata passed to tool calls.
 //! - [`ToolFactory`] - Trait for creating custom tools at build time. Extends
 //!   [`ToolContext`](crate::ToolContext) so factories provide name and prompt
 //!   guidance the same way built-in tools do.
@@ -17,12 +20,17 @@
 //! # Usage
 //!
 //! ```rust
-//! use reloaded_code_core::{CustomToolRegistry, ToolBuildContext, ToolFactory};
+//! use reloaded_code_core::{CustomTool, CustomToolDefinition, CustomToolFuture, CustomToolRegistry, ToolBuildContext, ToolFactory, ToolOutput, ToolResult, ToolRunContext};
 //! use reloaded_code_core::context::{ToolContext, ToolPrompt};
-//! use std::any::Any;
+//! use serde_json::json;
+//! use std::sync::Arc;
 //!
 //! struct MyFactory;
+//!
 //! struct MyTool;
+//! impl MyTool {
+//!     fn new(_ctx: &ToolBuildContext) -> Self { Self }
+//! }
 //!
 //! impl ToolContext for MyFactory {
 //!     fn name(&self) -> &'static str { "my_tool" }
@@ -31,9 +39,36 @@
 //!     }
 //! }
 //!
+//! impl ToolContext for MyTool {
+//!     fn name(&self) -> &'static str { "my_tool" }
+//!     fn context(&self) -> ToolPrompt {
+//!         ToolPrompt::Static("Use my_tool to do things.")
+//!     }
+//! }
+//!
+//! impl CustomTool for MyTool {
+//!     fn definition(&self) -> CustomToolDefinition {
+//!         CustomToolDefinition::new("my_tool", "Does things")
+//!             .with_parameters(json!({
+//!                 "type": "object",
+//!                 "properties": {
+//!                     "query": { "type": "string", "description": "Search query" }
+//!                 },
+//!                 "required": ["query"]
+//!             }))
+//!     }
+//!
+//!     fn call<'a>(&'a self, _ctx: ToolRunContext<'a>, args: serde_json::Value) -> CustomToolFuture<'a> {
+//!         Box::pin(async move {
+//!             let query = args["query"].as_str().unwrap_or_default();
+//!             Ok(ToolOutput::new(format!("searched for {query}")))
+//!         })
+//!     }
+//! }
+//!
 //! impl ToolFactory for MyFactory {
-//!     fn create(&self, _ctx: &ToolBuildContext) -> Box<dyn Any + Send + Sync> {
-//!         Box::new(MyTool)
+//!     fn create(&self, ctx: &ToolBuildContext) -> ToolResult<Arc<dyn CustomTool>> {
+//!         Ok(Arc::new(MyTool::new(ctx)))
 //!     }
 //! }
 //!
@@ -42,12 +77,18 @@
 //! assert!(registry.get("my_tool").is_some());
 //! ```
 
+pub(crate) mod definition;
 pub(crate) mod factory;
 pub(crate) mod registry;
+pub(crate) mod runtime;
+pub(crate) mod tool;
 
 pub use crate::tool_context::ToolBuildContext;
+pub use definition::CustomToolDefinition;
 pub use factory::ToolFactory;
 pub use registry::{CustomToolRegistry, SharedToolRegistry};
+pub use runtime::ToolRunContext;
+pub use tool::{CustomTool, CustomToolFuture};
 
 #[cfg(test)]
 pub(crate) mod test_stubs;
@@ -87,12 +128,13 @@ mod tests {
     }
 
     #[test]
-    fn factory_create_returns_boxed_value() {
+    fn factory_create_returns_portable_tool() {
         let factory = EchoFactory::new("echo");
         let ctx = ToolBuildContext::new(std::path::Path::new("/tmp"), None).unwrap();
-        let boxed = factory.create(&ctx);
-        let value = boxed.downcast::<usize>().expect("should downcast to usize");
-        assert_eq!(*value, 42);
+        let tool = factory.create(&ctx).expect("factory should create tool");
+
+        assert_eq!(tool.name(), "echo");
+        assert_eq!(tool.definition().name, "echo");
     }
 
     #[test]

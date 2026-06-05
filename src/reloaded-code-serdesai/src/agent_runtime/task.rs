@@ -174,8 +174,8 @@ where
     ///   contains a tool kind this adapter cannot materialise.
     /// - Returns [`AgentBuildError::UnknownCustomTool`] when a custom tool
     ///   entry names a tool absent from the custom-tool registry.
-    /// - Returns [`AgentBuildError::CustomToolDowncastFailed`] when a
-    ///   custom-tool factory produces an object that cannot be downcast.
+    /// - Returns [`AgentBuildError::CustomToolCreateFailed`] when a
+    ///   custom-tool factory cannot create its portable tool object.
     #[inline]
     pub fn build(&self, name: &str) -> Result<Agent<(), String>, AgentBuildError> {
         build_agent(Arc::clone(&self.context), name, 0)
@@ -306,8 +306,8 @@ where
 ///   contains a tool kind this adapter cannot materialise.
 /// - Returns [`AgentBuildError::UnknownCustomTool`] when a custom tool entry
 ///   names a tool absent from the custom-tool registry.
-/// - Returns [`AgentBuildError::CustomToolDowncastFailed`] when a custom-tool
-///   factory produces an object that cannot be downcast.
+/// - Returns [`AgentBuildError::CustomToolCreateFailed`] when a custom-tool
+///   factory cannot create its portable tool object.
 pub(crate) fn build_agent<C>(
     context: Arc<TaskBuildContext<C>>,
     name: &str,

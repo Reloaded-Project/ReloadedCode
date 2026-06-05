@@ -282,10 +282,11 @@ the factory on the builder:
 ```rust,no_run
 use reloaded_code_agents::AgentRuntimeBuilder;
 use reloaded_code_core::{
-    ToolBuildContext, ToolCatalogEntry, ToolCatalogKind, ToolContext, ToolFactory,
+    CustomTool, ToolBuildContext, ToolCatalogEntry, ToolCatalogKind, ToolContext,
+    ToolFactory, ToolResult,
 };
 use reloaded_code_core::context::ToolPrompt;
-use std::any::Any;
+use std::sync::Arc;
 
 struct WebSearchFactory;
 
@@ -297,8 +298,8 @@ impl ToolContext for WebSearchFactory {
 }
 
 impl ToolFactory for WebSearchFactory {
-    fn create(&self, _ctx: &ToolBuildContext) -> Box<dyn Any + Send + Sync> {
-        todo!("return tool instance")
+    fn create(&self, _ctx: &ToolBuildContext) -> ToolResult<Arc<dyn CustomTool>> {
+        todo!("return portable custom tool instance")
     }
 }
 
@@ -311,10 +312,11 @@ let runtime = AgentRuntimeBuilder::new()
     .tools(tools)
     .build()?;
 
-# Ok::<(), reloaded_code_agents::AgentLoadError>(())
+# Ok::<(), reloaded_code_core::permissions::ExpandError>(())
 ```
 
-`create()` returns `Box<dyn Any + Send + Sync>`.
+`create()` returns a portable `Arc<dyn CustomTool>`. Framework adapters wrap
+that object in their native tool trait.
 
 If a `ToolCatalogKind::Custom` entry has no matching factory, build returns
 `AgentBuildError::UnknownCustomTool`.
@@ -365,4 +367,3 @@ For the internal architecture, see [ARCHITECTURE.md](https://github.com/Reloaded
 [API Reference]: https://docs.rs/reloaded-code-agents
 [`ToolFactory`]: https://docs.rs/reloaded_code_core/latest/reloaded_code_core/trait.ToolFactory.html
 [`ToolContext`]: https://docs.rs/reloaded_code_core/latest/reloaded_code_core/trait.ToolContext.html
-

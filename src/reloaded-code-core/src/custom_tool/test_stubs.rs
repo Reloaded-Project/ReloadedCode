@@ -1,8 +1,9 @@
 //! Shared test stubs for custom tool tests.
 
-use super::{ToolBuildContext, ToolFactory};
+use super::{CustomTool, CustomToolDefinition, CustomToolFuture, ToolBuildContext, ToolFactory};
 use crate::context::{ToolContext, ToolPrompt};
-use std::any::Any;
+use crate::{ToolOutput, ToolResult};
+use std::sync::Arc;
 
 /// Minimal factory returning a configurable prompt and empty boxed value.
 pub(crate) struct TestFactory {
@@ -30,12 +31,15 @@ impl ToolContext for TestFactory {
 }
 
 impl ToolFactory for TestFactory {
-    fn create(&self, _ctx: &ToolBuildContext) -> Box<dyn Any + Send + Sync> {
-        Box::new(())
+    fn create(&self, _ctx: &ToolBuildContext) -> ToolResult<Arc<dyn CustomTool>> {
+        Ok(Arc::new(TestTool {
+            tool_name: self.tool_name,
+            prompt: self.prompt,
+        }))
     }
 }
 
-/// Factory that returns a downcastable integer for registry tests.
+/// Factory that returns a portable echo tool for registry tests.
 pub(crate) struct EchoFactory {
     /// Tool name passed to [`ToolContext::name`].
     pub(crate) tool_name: &'static str,
@@ -59,7 +63,40 @@ impl ToolContext for EchoFactory {
 }
 
 impl ToolFactory for EchoFactory {
-    fn create(&self, _ctx: &ToolBuildContext) -> Box<dyn Any + Send + Sync> {
-        Box::new(42_usize)
+    fn create(&self, _ctx: &ToolBuildContext) -> ToolResult<Arc<dyn CustomTool>> {
+        Ok(Arc::new(TestTool {
+            tool_name: self.tool_name,
+            prompt: "echo tool prompt",
+        }))
+    }
+}
+
+/// Minimal portable custom tool used by factories above.
+struct TestTool {
+    tool_name: &'static str,
+    prompt: &'static str,
+}
+
+impl ToolContext for TestTool {
+    fn name(&self) -> &'static str {
+        self.tool_name
+    }
+
+    fn context(&self) -> ToolPrompt {
+        ToolPrompt::Static(self.prompt)
+    }
+}
+
+impl CustomTool for TestTool {
+    fn definition(&self) -> CustomToolDefinition {
+        CustomToolDefinition::new(self.tool_name, "test custom tool")
+    }
+
+    fn call<'a>(
+        &'a self,
+        _ctx: super::ToolRunContext<'a>,
+        _args: serde_json::Value,
+    ) -> CustomToolFuture<'a> {
+        Box::pin(async { Ok(ToolOutput::new("ok")) })
     }
 }
