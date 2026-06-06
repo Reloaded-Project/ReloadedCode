@@ -64,6 +64,9 @@ run_cmd env RUSTDOCFLAGS="-D warnings" cargo doc "${DOC_ARGS[@]}"
 echo "Formatting..."
 run_cmd cargo fmt --all --quiet
 
+echo "Publish dry-run..."
+run_cmd cargo publish --dry-run --allow-dirty --quiet --workspace
+
 echo "Linux-only feature coverage..."
 if [ "$IS_LINUX" = true ]; then
   echo "Building (linux async features)..."

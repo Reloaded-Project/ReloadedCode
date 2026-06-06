@@ -78,6 +78,9 @@ try {
     Write-Host "Formatting..."
     Invoke-LoggedCommand "cargo" @("fmt", "--all", "--quiet")
 
+    Write-Host "Publish dry-run..."
+    Invoke-LoggedCommand "cargo" @("publish", "--dry-run", "--allow-dirty", "--quiet", "--workspace")
+
     Write-Host "Linux-only feature coverage..."
     if ($onLinux) {
         Write-Host "Building (linux async features)..."
