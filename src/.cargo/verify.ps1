@@ -7,7 +7,32 @@
 # reloaded-code-bubblewrap is Linux-only; all bubblewrap steps
 # are skipped on non-Linux platforms.
 
-$ErrorActionPreference = "Stop"
+$originalDir = Get-Location
+$scriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
+$projectRoot = Join-Path $scriptDir ".."
+$originalRustdocFlags = $env:RUSTDOCFLAGS
+Set-Location $projectRoot -ErrorAction Stop
+
+$script:exitCode = 0
+$script:failedCommands = @()
+
+function Register-CommandFailure {
+    param(
+        [string]$DisplayCommand,
+        [int]$Code,
+        [string]$Message = ""
+    )
+
+    Write-Host ("Command failed with exit code " + $Code + ": " + $DisplayCommand)
+    if ($Message -ne "") {
+        Write-Host $Message
+    }
+
+    $script:failedCommands += $DisplayCommand
+    if ($script:exitCode -eq 0) {
+        $script:exitCode = $Code
+    }
+}
 
 function Invoke-LoggedCommand {
     param(
@@ -15,22 +40,26 @@ function Invoke-LoggedCommand {
         [string[]]$Arguments
     )
 
-    if ($Arguments.Count -gt 0) {
-        Write-Host ($Command + " " + ($Arguments -join " "))
+    $displayCommand = if ($Arguments.Count -gt 0) {
+        $Command + " " + ($Arguments -join " ")
     } else {
-        Write-Host $Command
+        $Command
     }
 
-    & $Command @Arguments
-    if ($LASTEXITCODE -ne 0) {
-        throw "Command '$Command' failed with exit code $LASTEXITCODE"
+    Write-Host $displayCommand
+
+    try {
+        & $Command @Arguments
+        $commandExitCode = $LASTEXITCODE
+    } catch {
+        Register-CommandFailure $displayCommand 1 $_.Exception.Message
+        return
+    }
+
+    if ($commandExitCode -ne 0) {
+        Register-CommandFailure $displayCommand $commandExitCode
     }
 }
-
-$originalDir = Get-Location
-$scriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
-$projectRoot = Join-Path $scriptDir ".."
-Set-Location $projectRoot
 
 $onLinux = $IsLinux -eq $true
 
@@ -67,7 +96,6 @@ try {
 
     Write-Host "Docs..."
     $docArgs = @("--workspace", "--document-private-items", "--no-deps", "--quiet", "--exclude", "reloaded-code-bubblewrap")
-    $originalRustdocFlags = $env:RUSTDOCFLAGS
     $env:RUSTDOCFLAGS = "-D warnings"
     try {
         Invoke-LoggedCommand "cargo" (@("doc") + $docArgs)
@@ -111,19 +139,28 @@ try {
         Invoke-LoggedCommand "cargo" @("clippy", "-p", "reloaded-code-core", "--no-default-features", "--features", "blocking,linux-bubblewrap", "--quiet", "--", "-D", "warnings")
 
         Write-Host "Docs (linux-only package)..."
-        $linuxRustdocFlags = $env:RUSTDOCFLAGS
         $env:RUSTDOCFLAGS = "-D warnings"
         try {
             Invoke-LoggedCommand "cargo" @("doc", "-p", "reloaded-code-bubblewrap", "--document-private-items", "--no-deps", "--quiet")
         } finally {
-            $env:RUSTDOCFLAGS = $linuxRustdocFlags
+            $env:RUSTDOCFLAGS = $originalRustdocFlags
         }
     } else {
         Write-Host "  (skipped - not Linux)"
     }
-
-    Write-Host "All checks passed!"
-}
-finally {
+} finally {
+    $env:RUSTDOCFLAGS = $originalRustdocFlags
     Set-Location $originalDir
 }
+
+if ($script:exitCode -eq 0) {
+    Write-Host "All checks passed!"
+} else {
+    Write-Host "Verification failed."
+    Write-Host "Failed commands:"
+    foreach ($failedCommand in $script:failedCommands) {
+        Write-Host (" - " + $failedCommand)
+    }
+}
+
+exit $script:exitCode

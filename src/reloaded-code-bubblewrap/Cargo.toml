@@ -7,6 +7,10 @@ repository = "https://github.com/Reloaded-Project/ReloadedCode"
 license = "Apache-2.0"
 include = ["src/**/*", "README.md"]
 readme = "README.md"
+# keywords (search terms): https://crates.io/keywords
+keywords = ["bubblewrap", "sandbox", "linux", "container", "security"]
+# categories (fixed list): https://crates.io/categories
+categories = ["os", "virtualization", "security", "development-tools"]
 
 [features]
 default = ["tokio"]

@@ -6,6 +6,10 @@ description = "Lightweight, high-performance serdesAI framework Tool implementat
 repository = "https://github.com/Reloaded-Project/ReloadedCode"
 license = "Apache-2.0"
 readme = "README.md"
+# keywords (search terms): https://crates.io/keywords
+keywords = ["serdesai", "llm", "coding-tools", "agent", "tool-adapter"]
+# categories (fixed list): https://crates.io/categories
+categories = ["development-tools", "artificial-intelligence"]
 include = ["src/**/*", "examples/**/*", "README.md"]
 
 [features]

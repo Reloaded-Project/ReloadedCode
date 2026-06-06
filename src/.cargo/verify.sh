@@ -8,11 +8,22 @@
 # reloaded-code-bubblewrap is Linux-only; all bubblewrap steps
 # are skipped on non-Linux platforms.
 
-set -e
-
 run_cmd() {
   echo "$*"
+
   "$@"
+  local status=$?
+  if [ "$status" -eq 0 ]; then
+    return 0
+  fi
+
+  printf 'Command failed with exit code %s: %s\n' "$status" "$*" >&2
+  FAILED_COMMANDS+=("$*")
+  if [ "$EXIT_CODE" -eq 0 ]; then
+    EXIT_CODE=$status
+  fi
+
+  return 0
 }
 
 ORIGINAL_DIR="$(pwd)"
@@ -21,6 +32,9 @@ PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 cd "$PROJECT_ROOT"
 
 trap 'cd "$ORIGINAL_DIR"' EXIT
+
+EXIT_CODE=0
+FAILED_COMMANDS=()
 
 IS_LINUX=false
 if [ "$(uname -s)" = "Linux" ]; then
@@ -103,4 +117,12 @@ else
   echo "  (skipped - not Linux)"
 fi
 
-echo "All checks passed!"
+if [ "$EXIT_CODE" -eq 0 ]; then
+  echo "All checks passed!"
+else
+  echo "Verification failed."
+  echo "Failed commands:"
+  printf ' - %s\n' "${FAILED_COMMANDS[@]}"
+fi
+
+exit "$EXIT_CODE"

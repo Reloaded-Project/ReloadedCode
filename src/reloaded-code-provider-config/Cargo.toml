@@ -7,6 +7,10 @@ repository = "https://github.com/Reloaded-Project/ReloadedCode"
 license = "Apache-2.0"
 include = ["src/**/*", "README.md"]
 readme = "README.md"
+# keywords (search terms): https://crates.io/keywords
+keywords = ["configuration", "providers", "yaml", "llm", "catalog"]
+# categories (fixed list): https://crates.io/categories
+categories = ["config", "development-tools"]
 
 [dependencies]
 reloaded-code-core = { workspace = true, default-features = false, features = ["tokio"] }
