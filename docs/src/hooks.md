@@ -186,16 +186,9 @@ passes `HookSet::default()`.
 [`ToolHook`]: https://docs.rs/reloaded-code-core/latest/reloaded_code_core/trait.ToolHook.html
 [`ToolOriginal`]: https://docs.rs/reloaded-code-core/latest/reloaded_code_core/struct.ToolOriginal.html
 [`ToolHookFuture`]: https://docs.rs/reloaded-code-core/latest/reloaded_code_core/type.ToolHookFuture.html
-[`ToolExecutor`]: https://docs.rs/reloaded-code-core/latest/reloaded_code_core/trait.ToolExecutor.html
 [`ToolCallContext`]: https://docs.rs/reloaded-code-core/latest/reloaded_code_core/struct.ToolCallContext.html
 [`ToolRequest`]: https://docs.rs/reloaded-code-core/latest/reloaded_code_core/struct.ToolRequest.html
 [`ToolOutput`]: https://docs.rs/reloaded-code-core/latest/reloaded_code_core/struct.ToolOutput.html
-[`SessionContext`]: https://docs.rs/reloaded-code-core/latest/reloaded_code_core/struct.SessionContext.html
-[`EndReason`]: https://docs.rs/reloaded-code-core/latest/reloaded_code_core/enum.EndReason.html
-[`SessionStartFn`]: https://docs.rs/reloaded-code-core/latest/reloaded_code_core/type.SessionStartFn.html
-[`SessionEndFn`]: https://docs.rs/reloaded-code-core/latest/reloaded_code_core/type.SessionEndFn.html
-[`SessionCompactFn`]: https://docs.rs/reloaded-code-core/latest/reloaded_code_core/type.SessionCompactFn.html
 [`HookSet`]: https://docs.rs/reloaded-code-core/latest/reloaded_code_core/struct.HookSet.html
 [`HookSetBuilder`]: https://docs.rs/reloaded-code-core/latest/reloaded_code_core/struct.HookSetBuilder.html
-[`AgentRuntime`]: https://docs.rs/reloaded-code-agents/latest/reloaded_code_agents/runtime/struct.AgentRuntime.html
 [SerdesAI]: https://crates.io/crates/serdes-ai
