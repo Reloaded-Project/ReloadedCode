@@ -36,7 +36,7 @@ shellexpand = "3.1.2"
 soft-canonicalize = "0.5.5"
 dirs = "6"
 tempfile = "3.27"
-ignore = "0.4.25"
+ignore = "0.4.26"
 
 # Data structures
 hashbrown = "0.17"
