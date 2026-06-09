@@ -6,6 +6,7 @@
 //!
 //! # Public API
 //! - [`AgentBuildContext`] - Shared context that builds runnable agents by name.
+//! - [`HookedAgent`] - Built agent wrapper that dispatches through run hooks.
 //! - [`AgentBuildError`] - Build-time failures.
 
 pub use build::AgentBuildError;
@@ -13,7 +14,7 @@ pub use reloaded_code_agents::{
     AgentDefaults, AgentRuntime, AgentRuntimeBuilder, ModelResolutionError, ResolvedModel,
     resolve_model_with_catalog,
 };
-pub use task::AgentBuildContext;
+pub use task::{AgentBuildContext, HookedAgent};
 pub(crate) use task::{TaskBuildContext, build_agent};
 
 mod build;

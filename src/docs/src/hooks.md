@@ -3,7 +3,7 @@
 Hooks let your code see, change, or stop things the agent does.
 
 !!! warning "Work in progress"
-    Backend wiring is not done yet. Core hooks, event types, and container
+    Backend wiring is not done yet. Core hooks, run hook types, and container
     exist. [SerdesAI] dispatch code comes next.
 
 Tool hooks work like game mods.
@@ -111,12 +111,24 @@ let hooks = HookSet::builder()
 | [`ToolRequest`]     | JSON arguments carried through the hook chain.             |
 | [`ToolOutput`]      | Tool call result wrapping content and truncation metadata. |
 
+### Run hook types
+
+| Type              | Purpose                                                      |
+| ----------------- | ------------------------------------------------------------ |
+| [`RunHook`]       | Intercepts a run and may call [`RunOriginal`].               |
+| [`RunOriginal`]   | Pointer to next hook or the real run executor.               |
+| [`RunHookFuture`] | Boxed future returned by run hooks.                          |
+| [`RunConfig`]     | Mutable config a RunHook can change before calling original. |
+| [`RunOutput`]     | Framework-agnostic result of a completed run.                |
+| [`RunExecutor`]   | Final callable used at the end of the run hook chain.        |
+| [`RunUsage`]      | Token usage for a completed run.                             |
+
 ### Container types
 
-| Type               | Purpose                               |
-| ------------------ | ------------------------------------- |
-| [`HookSet`]        | Stores tool hooks and session events. |
-| [`HookSetBuilder`] | Builder for [`HookSet`].              |
+| Type               | Purpose                                           |
+| ------------------ | ------------------------------------------------- |
+| [`HookSet`]        | Stores tool hooks, run hooks, and compact events. |
+| [`HookSetBuilder`] | Builder for [`HookSet`].                          |
 
 ## How tool hooks stack
 
@@ -166,15 +178,13 @@ passes `HookSet::default()`.
 
 ## Design notes
 
-- **Tool hooks, not before/after events.** A tool call has one action with
-  a function to call in the middle. Hooks fit better than events here.
-
-- **Lifecycle events.** Session start/end/compact have no result to wrap.
-  They stay as simple callbacks.
-  They tell you something happened.
+- **Everything is a hook**: Functions like `on_run_start` / `on_run_end` 
+  are convenience wrappers. They register lightweight hook implementations
+  internally. Code before `original` is "start", code after is "end".
+  They participate in the same hook chain with the same ordering rules.
 
 - **Natural unwind order.** Hook code after `original.call(...)` runs in
-  reverse order. Later hooks run first after the tool.
+  reverse order. Later hooks run first after the operation.
 
 - **Blocking by omission.** A hook blocks or replaces a call by not calling
   `original`.
@@ -191,4 +201,11 @@ passes `HookSet::default()`.
 [`ToolOutput`]: https://docs.rs/reloaded-code-core/latest/reloaded_code_core/struct.ToolOutput.html
 [`HookSet`]: https://docs.rs/reloaded-code-core/latest/reloaded_code_core/struct.HookSet.html
 [`HookSetBuilder`]: https://docs.rs/reloaded-code-core/latest/reloaded_code_core/struct.HookSetBuilder.html
+[`RunHook`]: https://docs.rs/reloaded-code-core/latest/reloaded_code_core/trait.RunHook.html
+[`RunOriginal`]: https://docs.rs/reloaded-code-core/latest/reloaded_code_core/struct.RunOriginal.html
+[`RunHookFuture`]: https://docs.rs/reloaded-code-core/latest/reloaded_code_core/type.RunHookFuture.html
+[`RunConfig`]: https://docs.rs/reloaded-code-core/latest/reloaded_code_core/struct.RunConfig.html
+[`RunOutput`]: https://docs.rs/reloaded-code-core/latest/reloaded_code_core/struct.RunOutput.html
+[`RunExecutor`]: https://docs.rs/reloaded-code-core/latest/reloaded_code_core/trait.RunExecutor.html
+[`RunUsage`]: https://docs.rs/reloaded-code-core/latest/reloaded_code_core/struct.RunUsage.html
 [SerdesAI]: https://crates.io/crates/serdes-ai

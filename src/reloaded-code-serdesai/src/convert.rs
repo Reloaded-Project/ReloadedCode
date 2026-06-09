@@ -123,16 +123,6 @@ pub(crate) fn core_error_to_serdes(tool_name: &str, err: CoreError) -> SerdesErr
     }
 }
 
-fn field_for_out_of_bounds(msg: &str) -> Option<String> {
-    if msg.starts_with("offset ") || msg.starts_with("offset must") {
-        Some("offset".to_string())
-    } else if msg.starts_with("limit ") || msg.starts_with("limit must") {
-        Some("limit".to_string())
-    } else {
-        None
-    }
-}
-
 /// Convert [`ToolOutput`] to [`ToolReturn`] (serdesAI).
 ///
 /// - Non-truncated output: `ToolReturn::text(content)`
@@ -141,7 +131,7 @@ fn field_for_out_of_bounds(msg: &str) -> Option<String> {
 /// [`ToolOutput`]: reloaded_code_core::ToolOutput
 /// [`ToolReturn`]: serdes_ai::tools::ToolReturn
 #[inline]
-fn output_to_return(output: ToolOutput) -> ToolReturn {
+pub(crate) fn output_to_return(output: ToolOutput) -> ToolReturn {
     if output.truncated {
         ToolReturn::json(json!({
             "content": output.content,
@@ -149,6 +139,30 @@ fn output_to_return(output: ToolOutput) -> ToolReturn {
         }))
     } else {
         ToolReturn::text(output.content)
+    }
+}
+
+/// Convert a SerdesAI [`ToolReturn`] to a core [`ToolOutput`].
+///
+/// Used by the tool-hook bridge so the hook chain can consume the real tool
+/// result and transform it before it is converted back to SerdesAI types.
+pub(crate) fn return_to_output(tool_return: ToolReturn) -> ToolOutput {
+    if let Some(text) = tool_return.as_text() {
+        ToolOutput::new(text)
+    } else if let Some(json) = tool_return.as_json() {
+        ToolOutput::new(json.to_string())
+    } else {
+        ToolOutput::new(format!("{tool_return:?}"))
+    }
+}
+
+fn field_for_out_of_bounds(msg: &str) -> Option<String> {
+    if msg.starts_with("offset ") || msg.starts_with("offset must") {
+        Some("offset".to_string())
+    } else if msg.starts_with("limit ") || msg.starts_with("limit must") {
+        Some("limit".to_string())
+    } else {
+        None
     }
 }
 

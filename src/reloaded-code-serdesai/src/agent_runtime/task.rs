@@ -2,19 +2,26 @@
 //!
 //! # Public API
 //! - [`AgentBuildContext`] - Reusable shared inputs for building runnable agents.
+//! - [`HookedAgent`] - Built agent wrapper that dispatches through run hooks.
 
 #[cfg(not(all(feature = "linux-bubblewrap", target_os = "linux")))]
 use super::build::Profile;
 use super::build::{AgentBuildError, attach_standard_tools, prepare_build};
 use crate::task::TaskHandle;
+use futures::Stream;
 use reloaded_code_agents::AgentRuntime;
 #[cfg(all(feature = "linux-bubblewrap", target_os = "linux"))]
 use reloaded_code_bubblewrap::{CreateSandboxError, Preset, Profile, TempSandboxDirs};
+use reloaded_code_core::hooks::{
+    EndReason, HookRunContext, HookSet, PreambleRole, RunConfig, RunExecutor, RunHookFuture,
+    RunOutput, RunUsage,
+};
 use reloaded_code_core::{CredentialLookup, CredentialResolver, models::ModelCatalog};
 use serdes_ai::{Agent, AgentBuilder};
 #[cfg(any(test, feature = "mock"))]
 use serdes_ai_models::BoxedModel;
 use std::path::Path;
+use std::pin::Pin;
 use std::sync::Arc;
 
 /// Reusable shared inputs for building runnable SerdesAI agents.
@@ -26,6 +33,34 @@ use std::sync::Arc;
 #[derive(Clone)]
 pub struct AgentBuildContext<C: CredentialLookup + Send + Sync + 'static = CredentialResolver> {
     context: Arc<TaskBuildContext<C>>,
+}
+
+/// Lightweight newtype around a built SerdesAI `Agent` that dispatches
+/// `run()` and `run_stream()` through the core `HookSet::dispatch_run` hook
+/// chain when run hooks are registered. Passes through directly when no hooks
+/// are present for zero overhead.
+pub struct HookedAgent {
+    inner: Agent<(), String>,
+    hooks: HookSet,
+    agent_name: String,
+    model_name: String,
+}
+
+/// Result type returned by `HookedAgent::run`. Provides `.output()` and
+/// `.into_output()` so existing call sites compile without changes.
+pub struct HookedAgentRunResult {
+    content: String,
+}
+
+/// RunExecutor that calls the inner SerdesAI agent synchronously (non-stream).
+///
+/// Applies `RunConfig::preamble_messages` and `system_prompt` to the prompt
+/// text before calling the agent, because the built agent does not support
+/// runtime mutation of those fields.
+struct SerdesRunExecutor<'a> {
+    agent: &'a Agent<(), String>,
+    prompt: String,
+    deps: (),
 }
 
 /// Shared owned state for builds that may happen later during Task delegation.
@@ -52,12 +87,12 @@ where
     ///
     /// [`BashTool`] will run commands directly on the host.
     ///
+    /// [`BashTool`]: crate::BashTool
+    ///
     /// # Platform
     ///
     /// For sandboxed builds on Linux with the `linux-bubblewrap` feature, use
     /// `new_with_sandbox` or `new_with_temp_sandbox` instead.
-    ///
-    /// [`BashTool`]: crate::BashTool
     ///
     /// # Arguments
     /// - `runtime`: Shared agent runtime holding the catalog and defaults.
@@ -96,9 +131,11 @@ where
     /// - `model_catalog`: Available models for agent resolution.
     /// - `credentials`: Credential lookup used to authenticate model requests.
     /// - `workspace_root`: Project directory exposed to tools.
-    /// - `profile`: Pre-built sandbox profile for [`BashTool`](crate::BashTool).
+    /// - `profile`: Pre-built sandbox profile for [`BashTool`].
     /// - `sandbox_tmpdir`: Optional owning temp directories that keep the
     ///   profile's backing storage alive for the context's lifetime.
+    ///
+    /// [`BashTool`]: crate::BashTool
     ///
     /// # Platform
     ///
@@ -179,7 +216,7 @@ where
     /// - `name`: Catalog entry name to build.
     ///
     /// # Returns
-    /// - `Ok(`[`Agent`]`)`: A fully constructed agent ready to run.
+    /// - `Ok(`[`HookedAgent`]`)`: A fully constructed agent ready to run.
     ///
     /// # Errors
     /// - Returns [`AgentBuildError::UnknownAgent`] when `name` is not in the
@@ -194,10 +231,12 @@ where
     ///   contains a tool kind this adapter cannot materialise.
     /// - Returns [`AgentBuildError::UnknownCustomTool`] when a custom tool
     ///   entry names a tool absent from the custom-tool registry.
+    /// - Returns [`AgentBuildError::CustomToolNameMismatch`] when a custom
+    ///   tool's name does not match its catalog entry name.
     /// - Returns [`AgentBuildError::CustomToolCreateFailed`] when a
     ///   custom-tool factory cannot create its portable tool object.
     #[inline]
-    pub fn build(&self, name: &str) -> Result<Agent<(), String>, AgentBuildError> {
+    pub fn build(&self, name: &str) -> Result<HookedAgent, AgentBuildError> {
         build_agent(Arc::clone(&self.context), name, 0)
     }
 
@@ -240,6 +279,144 @@ where
     }
 }
 
+impl HookedAgent {
+    /// Creates the wrapper from a built agent and its runtime metadata.
+    pub(crate) fn new(
+        inner: Agent<(), String>,
+        hooks: HookSet,
+        agent_name: String,
+        model_name: String,
+    ) -> Self {
+        Self {
+            inner,
+            hooks,
+            agent_name,
+            model_name,
+        }
+    }
+
+    /// Returns attached tool definitions (delegates to inner agent).
+    pub fn tools(&self) -> Vec<&serdes_ai::ToolDefinition> {
+        self.inner.tools()
+    }
+
+    /// Runs the agent with the given prompt, dispatching through run hooks.
+    ///
+    /// When no run hooks are registered this delegates directly to the inner
+    /// agent for zero overhead. Otherwise it builds a `RunConfig`, runs the
+    /// hook chain, applies any `preamble_messages` or `system_prompt`
+    /// mutations to the prompt text, and returns the result.
+    ///
+    /// # Errors
+    ///
+    /// - Returns [`serdes_ai::agent::AgentRunError`] when the inner agent fails to complete a run.
+    /// - Returns [`serdes_ai::agent::AgentRunError::Other`] when a registered run hook returns
+    ///   an error during dispatch.
+    pub async fn run(
+        &self,
+        prompt: impl Into<String>,
+        deps: (),
+    ) -> Result<HookedAgentRunResult, serdes_ai::agent::AgentRunError> {
+        let prompt = prompt.into();
+        if self.hooks.run_hooks_is_empty() {
+            let response = self.inner.run(prompt, deps).await?;
+            return Ok(HookedAgentRunResult::from_response(response));
+        }
+
+        let ctx = HookRunContext {
+            agent_name: &self.agent_name,
+            run_id: "",
+            model_name: &self.model_name,
+        };
+        let config = RunConfig::default();
+
+        let executor = SerdesRunExecutor {
+            agent: &self.inner,
+            prompt,
+            deps,
+        };
+
+        let output = self
+            .hooks
+            .dispatch_run(&ctx, config, &executor)
+            .await
+            .map_err(|e| {
+                serdes_ai::agent::AgentRunError::Other(anyhow::anyhow!("run hook error: {e}"))
+            })?;
+
+        Ok(HookedAgentRunResult::from_run_output(output))
+    }
+
+    /// Runs the agent in streaming mode.
+    ///
+    /// When no run hooks are registered this delegates directly to the inner
+    /// agent's `run_stream`. When hooks are present it reuses [`Self::run`]
+    /// (which already dispatches through the hook chain) and emits a synthetic
+    /// stream containing the final text output.
+    ///
+    /// # Errors
+    ///
+    /// - Returns [`serdes_ai::agent::AgentRunError`] when the inner agent stream fails.
+    /// - Returns [`serdes_ai::agent::AgentRunError::Other`] when a registered run hook returns
+    ///   an error during dispatch.
+    pub async fn run_stream(
+        &self,
+        prompt: impl Into<serdes_ai::core::UserContent>,
+        deps: (),
+    ) -> Result<
+        Pin<
+            Box<
+                dyn Stream<
+                        Item = Result<serdes_ai::AgentStreamEvent, serdes_ai::agent::AgentRunError>,
+                    > + Send,
+            >,
+        >,
+        serdes_ai::agent::AgentRunError,
+    > {
+        let prompt = prompt.into();
+        if self.hooks.run_hooks_is_empty() {
+            let stream = self.inner.run_stream(prompt, deps).await?;
+            return Ok(Box::pin(stream));
+        }
+        let result = self
+            .run(prompt.as_text().unwrap_or("").to_string(), deps)
+            .await?;
+        let text = result.output().to_string();
+        let events = vec![
+            Ok(serdes_ai::AgentStreamEvent::TextDelta { text: text.clone() }),
+            Ok(serdes_ai::AgentStreamEvent::OutputReady),
+            Ok(serdes_ai::AgentStreamEvent::RunComplete {
+                run_id: String::new(),
+                messages: Vec::new(),
+            }),
+        ];
+        Ok(Box::pin(futures::stream::iter(events)))
+    }
+}
+
+impl HookedAgentRunResult {
+    /// Returns the text output.
+    pub fn output(&self) -> &str {
+        &self.content
+    }
+    /// Consumes self and returns the owned text output.
+    pub fn into_output(self) -> String {
+        self.content
+    }
+
+    fn from_response(response: serdes_ai::agent::AgentRunResult<String>) -> Self {
+        Self {
+            content: response.output().to_string(),
+        }
+    }
+
+    fn from_run_output(output: RunOutput) -> Self {
+        Self {
+            content: output.content,
+        }
+    }
+}
+
 impl<C> TaskBuildContext<C>
 where
     C: CredentialLookup + Send + Sync + 'static,
@@ -260,9 +437,11 @@ where
     /// - `model_catalog`: Available models for agent resolution.
     /// - `credentials`: Credential lookup used to authenticate model requests.
     /// - `workspace_root`: Project directory exposed to tools.
-    /// - `bash_sandbox`: Pre-built sandbox profile for [`BashTool`](crate::BashTool).
+    /// - `bash_sandbox`: Pre-built sandbox profile for [`BashTool`].
     /// - `_sandbox_tmpdir`: Optional owning temp directories that keep the
     ///   profile's backing storage alive.
+    ///
+    /// [`BashTool`]: crate::BashTool
     #[cfg(all(feature = "linux-bubblewrap", target_os = "linux"))]
     pub(crate) fn new_with_sandbox(
         runtime: Arc<AgentRuntime>,
@@ -312,6 +491,40 @@ where
     }
 }
 
+impl<'a> RunExecutor for SerdesRunExecutor<'a> {
+    fn execute<'b>(&'b self, _ctx: &'b HookRunContext<'b>, config: RunConfig) -> RunHookFuture<'b> {
+        let agent = self.agent;
+        let mut prompt = self.prompt.clone();
+
+        // Apply RunConfig modifications that can be expressed by prepending
+        // to the prompt text.
+        if let Some(sys) = &config.system_prompt {
+            prompt = format!("{sys}\n\n{prompt}");
+        }
+        for msg in &config.preamble_messages {
+            match msg.role {
+                PreambleRole::System => prompt = format!("[System] {}\n\n{}", msg.content, prompt),
+                PreambleRole::User => prompt = format!("[User] {}\n\n{}", msg.content, prompt),
+            }
+        }
+
+        #[allow(clippy::let_unit_value)]
+        let deps = self.deps;
+        #[allow(clippy::unit_arg)]
+        Box::pin(async move {
+            let response = agent
+                .run(prompt, deps)
+                .await
+                .map_err(|e| reloaded_code_core::ToolError::Execution(e.to_string()))?;
+            Ok(RunOutput {
+                content: response.output().to_string(),
+                reason: EndReason::Completed,
+                usage: RunUsage::default(),
+            })
+        })
+    }
+}
+
 /// Builds one runnable agent using the shared build context.
 ///
 /// # Arguments
@@ -321,7 +534,7 @@ where
 /// - `current_depth`: Current Task delegation depth (0 for top-level calls).
 ///
 /// # Returns
-/// - `Ok(`[`Agent`]`)`: A fully constructed agent ready to run.
+/// - `Ok(`[`HookedAgent`]`)`: A fully constructed agent ready to run.
 ///
 /// # Errors
 /// - Returns [`AgentBuildError::UnknownAgent`] when `name` is not in the
@@ -336,13 +549,15 @@ where
 ///   contains a tool kind this adapter cannot materialise.
 /// - Returns [`AgentBuildError::UnknownCustomTool`] when a custom tool entry
 ///   names a tool absent from the custom-tool registry.
+/// - Returns [`AgentBuildError::CustomToolNameMismatch`] when a custom
+///   tool's name does not match its catalog entry name.
 /// - Returns [`AgentBuildError::CustomToolCreateFailed`] when a custom-tool
 ///   factory cannot create its portable tool object.
 pub(crate) fn build_agent<C>(
     context: Arc<TaskBuildContext<C>>,
     name: &str,
     current_depth: u8,
-) -> Result<Agent<(), String>, AgentBuildError>
+) -> Result<HookedAgent, AgentBuildError>
 where
     C: CredentialLookup + Send + Sync + 'static,
 {
@@ -383,8 +598,12 @@ where
         &context.workspace_root,
         sandbox_ref,
         context.runtime.custom_tool_registry(),
+        context.runtime().hooks(),
     )?;
-    Ok(builder.system_prompt(prompt_builder.build()).build())
+    let agent = builder.system_prompt(prompt_builder.build()).build();
+    let hooks = context.runtime().hooks().clone();
+    let model_name = prepared.model().name().to_string();
+    Ok(HookedAgent::new(agent, hooks, name.to_string(), model_name))
 }
 
 #[cfg(test)]

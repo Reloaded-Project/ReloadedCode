@@ -22,22 +22,45 @@
 
 use crate::AgentBuildError;
 use async_trait::async_trait;
+use reloaded_code_core::hooks::{
+    HookSet, ToolCallContext, ToolExecutor as CoreToolExecutor, ToolHookFuture, ToolRequest,
+};
 use serde_json::Value as JsonValue;
 use serdes_ai::agent::ToolExecutor;
 use serdes_ai::tools::{RunContext as ToolsRunContext, Tool, ToolError, ToolReturn};
 use serdes_ai::{AgentBuilder, RunContext as AgentRunContext};
+use std::sync::Arc;
+
+/// Bridges a SerdesAI `ToolExecutor` back to the core `ToolExecutor` trait so
+/// [`HookSet::dispatch_tool`] can call the real tool at the end of the hook chain.
+///
+/// Borrows the original execution context to avoid cloning strings and settings.
+struct CoreToolBridge<'a, Deps> {
+    inner: &'a dyn serdes_ai::agent::ToolExecutor<Deps>,
+    ctx: &'a AgentRunContext<Deps>,
+}
 
 /// Adapter for boxed trait object tools, similar to [`ToolAsExecutor`] but
 /// for dynamically dispatched tools where the concrete type is not known
 /// at compile time.
-struct DynToolAsExecutor<Deps>(Box<dyn Tool<Deps> + Send + Sync>);
+pub(crate) struct DynToolAsExecutor<Deps>(pub(crate) Box<dyn Tool<Deps> + Send + Sync>);
+
+/// Wraps a SerdesAI [`ToolExecutor`] so that [`HookSet::dispatch_tool`] is called
+/// before the inner executor when tool hooks are registered. Pass-through when
+/// no tool hooks are present.
+pub(crate) struct HookedToolExecutor<Deps> {
+    inner: Arc<dyn serdes_ai::agent::ToolExecutor<Deps> + Send + Sync>,
+    hooks: HookSet,
+    agent_name: String,
+    tool_name: &'static str,
+}
 
 /// Adapter that wraps a [`Tool`] to implement [`ToolExecutor`].
 ///
 /// This bridges the gap between `serdes_ai::tools::Tool` (which uses
 /// `tools::RunContext`) and `serdes_ai::agent::ToolExecutor` (which uses
 /// `agent::RunContext`).
-struct ToolAsExecutor<T>(T);
+pub(crate) struct ToolAsExecutor<T>(T);
 
 /// Extension trait for [`AgentBuilder`] to add tools that implement [`Tool`].
 pub trait AgentBuilderExt<Deps, Output> {
@@ -101,6 +124,58 @@ pub trait ToolResultExt<T> {
     fn with_tool(self, tool: &'static str) -> Result<T, AgentBuildError>;
 }
 
+impl<Deps> HookedToolExecutor<Deps> {
+    pub(crate) fn new<T: Tool<Deps> + 'static>(
+        tool: T,
+        hooks: &HookSet,
+        agent_name: &str,
+        tool_name: &'static str,
+    ) -> Self
+    where
+        Deps: Send + Sync + 'static,
+    {
+        Self {
+            inner: Arc::new(ToolAsExecutor(tool)),
+            hooks: hooks.clone(),
+            agent_name: agent_name.into(),
+            tool_name,
+        }
+    }
+
+    pub(crate) fn from_dyn(
+        executor: Box<dyn serdes_ai::agent::ToolExecutor<Deps> + Send + Sync>,
+        hooks: &HookSet,
+        agent_name: &str,
+        tool_name: &'static str,
+    ) -> Self {
+        Self {
+            inner: Arc::from(executor),
+            hooks: hooks.clone(),
+            agent_name: agent_name.into(),
+            tool_name,
+        }
+    }
+}
+
+impl<'a, Deps: Send + Sync + 'static> CoreToolExecutor for CoreToolBridge<'a, Deps> {
+    fn execute<'b>(
+        &'b self,
+        _ctx: &'b ToolCallContext<'b>,
+        req: ToolRequest,
+    ) -> ToolHookFuture<'b> {
+        let inner = self.inner;
+        let ctx = self.ctx;
+        let args = req.args;
+        Box::pin(async move {
+            let tool_return = inner
+                .execute(args, ctx)
+                .await
+                .map_err(|e| reloaded_code_core::ToolError::Execution(e.to_string()))?;
+            Ok(crate::convert::return_to_output(tool_return))
+        })
+    }
+}
+
 #[async_trait]
 impl<Deps: Send + Sync + 'static> ToolExecutor<Deps> for DynToolAsExecutor<Deps> {
     async fn execute(
@@ -117,6 +192,49 @@ impl<Deps: Send + Sync + 'static> ToolExecutor<Deps> for DynToolAsExecutor<Deps>
             );
 
         self.0.call(&tools_ctx, args).await
+    }
+}
+
+// Derived from serdes-ai trait signatures:
+//  - [`AgentBuilder::tool_with_executor`] stores a `dyn serdes_ai::agent::ToolExecutor<Deps>`.
+//  - [`ToolExecutor::execute`] receives `(args: JsonValue, ctx: &RunContext<Deps>)` and returns `Result<ToolReturn, ToolError>`.
+//  - [`HookSet::dispatch_tool`] needs a `dyn reloaded_code_core::hooks::ToolExecutor`,
+//    whose [`execute`](reloaded_code_core::hooks::ToolExecutor::execute) takes `(ctx: &ToolCallContext, req: ToolRequest)` and returns a pinned future.
+//
+// [`HookedToolExecutor`] wraps the stored serdes-ai executor. When hooks are present,
+// it adapts args to [`ToolRequest`], borrows the incoming [`AgentRunContext`] by reference,
+// and passes a [`CoreToolBridge`] as the core [`ToolExecutor`](reloaded_code_core::hooks::ToolExecutor). The bridge delegates back
+// to the original serdes-ai executor inside the hook chain, so hooks can intercept
+// or wrap the real tool call.
+//
+// When no hooks are registered, this passes through directly to `inner.execute(args, ctx)`
+// with no extra allocations.
+#[async_trait]
+impl<Deps: Send + Sync + 'static> serdes_ai::agent::ToolExecutor<Deps>
+    for HookedToolExecutor<Deps>
+{
+    async fn execute(
+        &self,
+        args: JsonValue,
+        ctx: &AgentRunContext<Deps>,
+    ) -> Result<ToolReturn, ToolError> {
+        if self.hooks.tool_hooks_is_empty() {
+            return self.inner.execute(args, ctx).await;
+        }
+        let tool_ctx = ToolCallContext {
+            tool_name: self.tool_name,
+            agent_name: &self.agent_name,
+            run_id: &ctx.run_id,
+        };
+        let tool_req = ToolRequest::new(args);
+        let bridge = CoreToolBridge {
+            inner: &*self.inner,
+            ctx,
+        };
+        let result = self.hooks.dispatch_tool(&tool_ctx, tool_req, &bridge).await;
+        result
+            .map(crate::convert::output_to_return)
+            .map_err(|e| crate::convert::core_error_to_serdes(self.tool_name, e))
     }
 }
 
