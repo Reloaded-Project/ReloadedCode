@@ -24,7 +24,7 @@ const _: () = assert!(MODALITY_BITS + MAX_OUTPUT_BITS + MAX_INPUT_BITS == 64);
 
 /// Packed model metadata row.
 #[bitfield(u64)]
-#[derive(Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(PartialEq, Eq, Hash)]
 pub struct PackedModelEntry {
     modalities: u8,
     #[bits(27)]

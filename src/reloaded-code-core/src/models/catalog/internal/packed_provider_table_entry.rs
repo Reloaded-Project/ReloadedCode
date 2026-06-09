@@ -21,7 +21,7 @@ const _: () = assert!(PROVIDER_TABLE_HASH_BITS + 16 == 64);
 
 /// Packed provider-table entry.
 #[bitfield(u64)]
-#[derive(Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(PartialEq, Eq, Hash)]
 pub struct PackedProviderTableEntry {
     #[bits(48)]
     hash48: u64,

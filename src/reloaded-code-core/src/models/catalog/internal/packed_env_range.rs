@@ -15,7 +15,7 @@ pub const MAX_ENV_START: u16 = (1u16 << 13) - 1; // 8191
 ///
 /// Stores (start, count) for env keys in the provider_env_keys StringTable.
 #[bitfield(u16)]
-#[derive(Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(PartialEq, Eq, Hash)]
 pub struct PackedEnvRange {
     #[bits(13)]
     start: u16,
