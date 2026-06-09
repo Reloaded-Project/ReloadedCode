@@ -1,5 +1,5 @@
-//! Two RunHooks showing unwind order - code before original runs forward,
-//! code after runs in reverse.
+//! Multiple `RunHook`s — registration order determines nesting; code before
+//! `original.call()` runs forward, code after runs in reverse (unwind).
 //!
 //! Expected output:
 //!   [First] before original
@@ -8,27 +8,27 @@
 //!   [First] after original
 //!
 //! Run with:
-//!   cargo run --example hooks-run-hook-chain -p reloaded-code-serdesai --features mock
+//!   cargo run --example hooks-run-chain -p reloaded-code-serdesai --features mock
 
 use reloaded_code_core::{
     EndReason, HookRunContext, HookSet, PreambleMessage, PreambleRole, RunConfig, RunHook,
     RunHookFuture, RunOriginal, RunOutput, RunUsage,
 };
 
-/// First hook: sets system_prompt, prints before/after.
+/// First hook: sets a system prompt, prints before/after.
 struct FirstHook;
 
 impl RunHook for FirstHook {
     fn hook<'a>(
         &'a self,
-        ctx: &'a HookRunContext<'a>,
+        _ctx: &'a HookRunContext<'a>,
         mut config: RunConfig,
         original: RunOriginal<'a>,
     ) -> RunHookFuture<'a> {
         Box::pin(async move {
             println!("[First] before original");
             config.system_prompt = Some("FirstHook system prompt".into());
-            let output = original.call(ctx, config).await?;
+            let output = original.call(_ctx, config).await?;
             println!("[First] after original");
             Ok(output)
         })
@@ -60,7 +60,7 @@ impl RunHook for SecondHook {
 
 #[tokio::main]
 async fn main() {
-    // Build the hook set with two run hooks in registration order.
+    // Registration order: FirstHook outer → SecondHook inner.
     let hooks = HookSet::builder()
         .run_hook(FirstHook)
         .run_hook(SecondHook)
@@ -72,7 +72,7 @@ async fn main() {
         model_name: "mock-model",
     };
 
-    // Mock executor that prints the config it received.
+    // Mock executor prints the config it received.
     struct ChainExecutor;
     impl reloaded_code_core::RunExecutor for ChainExecutor {
         fn execute<'a>(

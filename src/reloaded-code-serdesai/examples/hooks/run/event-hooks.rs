@@ -1,42 +1,22 @@
-//! Run hooks demo with mock models - shows `on_run_start`/`on_run_end`
-//! convenience callbacks and `RunHook` intercept working together.
+//! Event-style hooks — `on_run_start` fires before the run, `on_run_end`
+//! fires after (even on error). No `RunHook` trait needed.
+//!
+//! Expected output:
+//!   [on_run_start] agent=demo-agent, run_id=run-001, model=mock-model
+//!   [MockExecutor] executing run for agent=demo-agent
+//!   [on_run_end] agent=demo-agent, run_id=run-001, reason=Completed
+//!   [Result] content=Run completed successfully., reason=Completed
 //!
 //! Run with:
-//!   cargo run --example hooks-run-start-end -p reloaded-code-serdesai --features mock
+//!   cargo run --example hooks-run-event -p reloaded-code-serdesai --features mock
 
 use reloaded_code_core::{
-    EndReason, HookRunContext, HookSet, PreambleMessage, PreambleRole, RunConfig, RunHook,
-    RunHookFuture, RunOriginal, RunOutput, RunUsage,
+    EndReason, HookRunContext, HookSet, RunConfig, RunHookFuture, RunOutput, RunUsage,
 };
-
-/// RunHook that adds a preamble message before the run.
-struct PreambleInjector;
-
-impl RunHook for PreambleInjector {
-    fn hook<'a>(
-        &'a self,
-        ctx: &'a HookRunContext<'a>,
-        mut config: RunConfig,
-        original: RunOriginal<'a>,
-    ) -> RunHookFuture<'a> {
-        Box::pin(async move {
-            println!(
-                "[PreambleInjector] injecting preamble for agent={}",
-                ctx.agent_name
-            );
-            config.preamble_messages.push(PreambleMessage {
-                role: PreambleRole::System,
-                content: "You are a helpful assistant.".into(),
-            });
-            original.call(ctx, config).await
-        })
-    }
-}
 
 #[tokio::main]
 async fn main() {
-    // Build the hook set: on_run_start fires first, then PreambleInjector,
-    // then on_run_end fires after the chain unwinds.
+    // Build hook set using only event callbacks (no RunHook trait).
     let hooks = HookSet::builder()
         .on_run_start(|ctx: &HookRunContext<'_>| {
             println!(
@@ -44,7 +24,6 @@ async fn main() {
                 ctx.agent_name, ctx.run_id, ctx.model_name
             );
         })
-        .run_hook(PreambleInjector)
         .on_run_end(|ctx: &HookRunContext<'_>, reason: EndReason| {
             println!(
                 "[on_run_end] agent={}, run_id={}, reason={:?}",
@@ -59,8 +38,6 @@ async fn main() {
         model_name: "mock-model",
     };
 
-    // The RunExecutor wraps the actual agent run. Here we use a simple
-    // mock executor for demonstration.
     struct MockExecutor;
     impl reloaded_code_core::RunExecutor for MockExecutor {
         fn execute<'a>(
@@ -82,7 +59,6 @@ async fn main() {
         }
     }
 
-    // Dispatch the run through the hook chain.
     let output = hooks
         .dispatch_run(&ctx, RunConfig::default(), &MockExecutor)
         .await

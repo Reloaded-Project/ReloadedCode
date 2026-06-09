@@ -100,11 +100,16 @@ rstest = { workspace = true }
 reloaded-code-models-dev = { workspace = true }
 
 [[example]]
-name = "hooks-run-start-end"
-path = "examples/hooks/run-start-end.rs"
+name = "hooks-run-hook"
+path = "examples/hooks/run/run-hook.rs"
 required-features = ["mock"]
 
 [[example]]
-name = "hooks-run-hook-chain"
-path = "examples/hooks/run-hook-chain.rs"
+name = "hooks-run-chain"
+path = "examples/hooks/run/chain.rs"
+required-features = ["mock"]
+
+[[example]]
+name = "hooks-run-event"
+path = "examples/hooks/run/event-hooks.rs"
 required-features = ["mock"]
