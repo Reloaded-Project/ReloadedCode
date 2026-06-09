@@ -98,3 +98,13 @@ temp-env = { workspace = true }
 rstest = { workspace = true }
 # models.dev catalog loader for examples
 reloaded-code-models-dev = { workspace = true }
+
+[[example]]
+name = "hooks-run-start-end"
+path = "examples/hooks/run-start-end.rs"
+required-features = ["mock"]
+
+[[example]]
+name = "hooks-run-hook-chain"
+path = "examples/hooks/run-hook-chain.rs"
+required-features = ["mock"]

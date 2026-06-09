@@ -40,8 +40,8 @@ The foundation. Contains every tool implementation as a plain function
 - **Model catalog** - compact hash-table-based provider/model lookup
 - **Hook types** - `HookSet`, `HookSetBuilder`, tool hook types
   (`ToolHook`, `ToolOriginal`, `ToolHookFuture`, `ToolExecutor`,
-  `ToolCallContext`, `ToolRequest`), and session event types
-  (`SessionContext`, `EndReason`). See [Hooks](hooks).
+  `ToolCallContext`, `ToolRequest`), and hook run event types
+  (`HookRunContext`, `EndReason`). See [Hooks](hooks).
 
 Core is **framework-agnostic**: it has no dependencies on any specific LLM
 framework. Your integration layer wraps these functions into framework-specific

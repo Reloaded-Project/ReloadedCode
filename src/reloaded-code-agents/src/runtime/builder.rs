@@ -86,7 +86,7 @@ impl AgentRuntimeBuilder {
         self
     }
 
-    /// Sets the hook set for tool interception and session lifecycle.
+    /// Sets the hook set for tool interception and run lifecycle.
     #[inline]
     pub fn hooks(mut self, hooks: HookSet) -> Self {
         self.hooks = hooks;
@@ -178,21 +178,19 @@ mod tests {
     }
 
     #[test]
-    fn builder_overrides_task_settings() -> TestResult {
-        let runtime = AgentRuntimeBuilder::new().max_task_depth(5).build()?;
-
-        assert_eq!(runtime.task_settings(), TaskSettings::with_max_depth(5));
-        Ok(())
-    }
-
-    #[test]
-    fn builder_defaults_to_empty_catalog_defaults_and_default_tools() -> TestResult {
+    fn builder_defaults_and_overrides() -> TestResult {
+        // default: empty catalog, default AgentDefaults, default task settings, default tools
         let runtime = AgentRuntimeBuilder::new().build()?;
 
         assert_eq!(runtime.catalog().iter().count(), 0);
         assert_eq!(runtime.defaults(), &AgentDefaults::default());
         assert_eq!(runtime.task_settings(), TaskSettings::default());
         assert_eq!(runtime.tools(), default_tools().as_slice());
+
+        // override: max_task_depth(5) replaces default task settings
+        let runtime = AgentRuntimeBuilder::new().max_task_depth(5).build()?;
+
+        assert_eq!(runtime.task_settings(), TaskSettings::with_max_depth(5));
         Ok(())
     }
 
@@ -304,17 +302,39 @@ mod tests {
     }
 
     #[test]
-    fn builder_default_hooks_are_empty() -> TestResult {
+    fn builder_hooks() -> TestResult {
+        // default: no hooks registered
         let runtime = AgentRuntimeBuilder::new().build()?;
         assert!(runtime.hooks().is_empty());
-        Ok(())
-    }
 
-    #[test]
-    fn builder_hooks_sets_hook_set() -> TestResult {
-        let custom_hooks = HookSet::builder().build();
-        let runtime = AgentRuntimeBuilder::new().hooks(custom_hooks).build()?;
+        // explicit empty HookSet stays empty
+        let runtime = AgentRuntimeBuilder::new()
+            .hooks(HookSet::builder().build())
+            .build()?;
         assert!(runtime.hooks().is_empty());
+
+        // run hook survives build and populates hook set
+        struct NoopRun;
+        impl reloaded_code_core::RunHook for NoopRun {
+            fn hook<'a>(
+                &'a self,
+                ctx: &'a reloaded_code_core::HookRunContext<'a>,
+                config: reloaded_code_core::RunConfig,
+                original: reloaded_code_core::RunOriginal<'a>,
+            ) -> reloaded_code_core::RunHookFuture<'a> {
+                original.call(ctx, config)
+            }
+        }
+
+        let runtime = AgentRuntimeBuilder::new()
+            .hooks(
+                reloaded_code_core::HookSet::builder()
+                    .run_hook(NoopRun)
+                    .build(),
+            )
+            .build()?;
+        assert!(!runtime.hooks().is_empty());
+        assert!(!runtime.hooks().run_hooks_is_empty());
         Ok(())
     }
 }

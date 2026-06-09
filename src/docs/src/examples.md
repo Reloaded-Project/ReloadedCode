@@ -13,6 +13,8 @@ Runnable examples live in the repository under each crate's `examples/` director
 | [serdesai-task]                   | Orchestrator delegates a read-only task to a reader sub-agent, with streamed transcript and tool-call logging.        | `cargo run --example serdesai-task -p reloaded-code-serdesai`                                       |
 | [serdesai-sandboxed]              | Agent with `AllowedPathResolver` - file operations restricted to specific directories.                                | `cargo run --example serdesai-sandboxed -p reloaded-code-serdesai`                                  |
 | [serdesai-sandboxed-bash]         | Sandboxed shell execution with a bubblewrap `public_bot` profile (Linux only).                                        | `cargo run --example serdesai-sandboxed-bash --features linux-bubblewrap -p reloaded-code-serdesai` |
+| [hooks-run-start-end]             | Hooks fire at run start and end. Inject system text via mocks.                                                        | `cargo run --example hooks-run-start-end -p reloaded-code-serdesai --features mock`                 |
+| [hooks-run-hook-chain]            | Hooks chain. Each change config. Post-`original` code run in reverse.                                                 | `cargo run --example hooks-run-hook-chain -p reloaded-code-serdesai --features mock`                |
 
 [serdesai-basic]: https://github.com/Reloaded-Project/ReloadedCode/blob/main/src/reloaded-code-serdesai/examples/serdesai-basic.rs
 [serdesai-agents]: https://github.com/Reloaded-Project/ReloadedCode/blob/main/src/reloaded-code-serdesai/examples/serdesai-agents.rs
@@ -21,6 +23,8 @@ Runnable examples live in the repository under each crate's `examples/` director
 [serdesai-task]: https://github.com/Reloaded-Project/ReloadedCode/blob/main/src/reloaded-code-serdesai/examples/serdesai-task.rs
 [serdesai-sandboxed]: https://github.com/Reloaded-Project/ReloadedCode/blob/main/src/reloaded-code-serdesai/examples/serdesai-sandboxed.rs
 [serdesai-sandboxed-bash]: https://github.com/Reloaded-Project/ReloadedCode/blob/main/src/reloaded-code-serdesai/examples/serdesai-sandboxed-bash.rs
+[hooks-run-start-end]: https://github.com/Reloaded-Project/ReloadedCode/blob/main/src/reloaded-code-serdesai/examples/hooks/run-start-end.rs
+[hooks-run-hook-chain]: https://github.com/Reloaded-Project/ReloadedCode/blob/main/src/reloaded-code-serdesai/examples/hooks/run-hook-chain.rs
 
 ## Core Library
 
