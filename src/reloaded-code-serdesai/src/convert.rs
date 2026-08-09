@@ -16,6 +16,10 @@ use serdes_ai::tools::{ToolDefinition, ToolError as SerdesError, ToolReturn};
 /// Fields map 1:1. The SerdesAI `outer_typed_dict_key` field is always `None`
 /// because portable definitions do not carry framework-specific metadata.
 ///
+/// # Arguments
+///
+/// - `definition` - the portable core tool definition to convert.
+///
 /// # Example
 ///
 /// ```
@@ -47,6 +51,11 @@ pub fn custom_definition_to_serdes(definition: CustomToolDefinition) -> ToolDefi
 ///
 /// This is the primary conversion function for tool implementations.
 /// Requires tool_name for proper error context in validation errors.
+///
+/// # Arguments
+///
+/// - `tool_name` - the name of the tool, used for error context in validation errors.
+/// - `result` - the core tool result to convert.
 ///
 /// # Example
 ///

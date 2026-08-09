@@ -165,15 +165,21 @@ impl ToolPromptFacts {
     }
 }
 
+/// Appends a text block to `output` without adding a trailing newline.
 pub(super) fn push_block(output: &mut String, block: &str) {
     output.push_str(block);
 }
 
+/// Appends a text line followed by a trailing newline to `output`.
 pub(super) fn push_line(output: &mut String, line: &str) {
     output.push_str(line);
     output.push('\n');
 }
 
+/// Writes a human-readable list of tool names into `output`.
+///
+/// Renders zero, one, two, or many tools, joining items with commas and "and"
+/// as appropriate.
 pub(super) fn write_tool_list(output: &mut String, tools: &[&str]) {
     match tools {
         [] => {}

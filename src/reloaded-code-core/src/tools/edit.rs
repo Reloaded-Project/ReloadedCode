@@ -100,6 +100,12 @@ impl From<EditError> for ToolError {
 ///
 /// Returns success message with replacement count.
 ///
+/// # Arguments
+/// - `resolver`: [`PathResolver`] used to resolve `request.file_path` to a filesystem path.
+/// - `request`: [`EditRequest`] carrying the file path, `old_string`, `new_string`, and
+///   the `replace_all` flag.
+/// - `_settings`: [`EditSettings`] (currently unused).
+///
 /// # Errors
 /// - Returns [`EditError::EmptyOldString`] when `request.old_string` is empty.
 /// - Returns [`EditError::IdenticalStrings`] when `old_string` and `new_string`

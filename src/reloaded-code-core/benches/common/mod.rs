@@ -33,18 +33,32 @@ const CORPUS_LARGE_RAW: &str = include_str!("corpus_large.rs");
 const CORPUS_MEDIUM_RAW: &str = include_str!("corpus_medium.rs");
 const CORPUS_SMALL_RAW: &str = include_str!("corpus_small.rs");
 
+/// Selects which benchmark corpus to load.
 #[derive(Clone, Copy)]
 pub enum CorpusSize {
+    /// Small corpus (plan handler).
     Small,
+    /// Medium corpus (outgoing message handling).
     Medium,
+    /// Large corpus (session manager).
     Large,
 }
 
 #[allow(dead_code)] // Used by some benchmarks but not all
+/// Returns the requested corpus with `\n` line endings replaced by CRLF.
+///
+/// # Arguments
+///
+/// - `size`: the corpus to select.
 pub fn corpus_crlf(size: CorpusSize) -> String {
     corpus_content(size).replace('\n', "\r\n")
 }
 
+/// Returns the raw source text for the requested corpus.
+///
+/// # Arguments
+///
+/// - `size`: the corpus to select.
 pub fn corpus_content(size: CorpusSize) -> &'static str {
     match size {
         CorpusSize::Small => CORPUS_SMALL_RAW,

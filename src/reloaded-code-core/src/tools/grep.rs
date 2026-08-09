@@ -287,6 +287,12 @@ impl Default for GrepSettings {
 ///
 /// Results are sorted by modification time (newest first).
 /// Binary files are automatically skipped.
+///
+/// # Arguments
+/// - `resolver`: [`PathResolver`] used to resolve `request.path` to an absolute directory.
+/// - `request`: [`GrepRequest`] carrying the regex pattern, search path, optional filename
+///   filter, and optional result limit.
+/// - `settings`: [`GrepSettings`] providing the maximum result limit.
 pub fn grep_search<R: PathResolver>(
     resolver: &R,
     request: GrepRequest,

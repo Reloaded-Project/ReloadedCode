@@ -193,6 +193,11 @@ impl Default for PermissionRule {
 
 /// Parses a model identifier string into `(provider, model)` parts.
 ///
+/// # Arguments
+///
+/// - `value` - the model identifier string to parse, expected in `"provider/model-id"`
+///   form (e.g., `"openai/gpt-4"`, `"synthetic/hf:moonshotai/Kimi-K2.5"`).
+///
 /// ## Expected Format
 /// `"provider/model-id"` (e.g., `"openai/gpt-4"`, `"synthetic/hf:moonshotai/Kimi-K2.5"`).
 ///

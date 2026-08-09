@@ -60,6 +60,12 @@ impl<'a> LinuxBwrapWrappedCommand<'a> {
 /// Builds a `bwrap` command line that runs `command` inside the sandbox
 /// described by `profile`.
 ///
+/// # Arguments
+///
+/// - `profile` - the validated sandbox profile used to build the `bwrap` command line
+/// - `command` - the shell command string to run inside the sandbox
+/// - `workdir` - optional host working directory for the command
+///
 /// # Errors
 /// - Returns [`LinuxBwrapError::InvalidPath`] when `workdir` is not an absolute path.
 /// - Returns [`LinuxBwrapError::InvalidPath`] when `workdir` does not exist or is not a directory.

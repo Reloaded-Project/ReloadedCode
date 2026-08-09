@@ -173,6 +173,11 @@ impl Default for WebFetchSettings {
 }
 
 /// Formats JSON content for readability.
+///
+/// Invalid JSON is returned unchanged.
+///
+/// # Arguments
+/// - `json_str`: JSON text to pretty-print.
 pub fn format_json(json_str: &str) -> String {
     match serde_json::from_str::<serde_json::Value>(json_str) {
         Ok(value) => serde_json::to_string_pretty(&value).unwrap_or_else(|_| json_str.to_string()),
@@ -181,6 +186,11 @@ pub fn format_json(json_str: &str) -> String {
 }
 
 /// Converts HTML to markdown for LLM-friendly output.
+///
+/// Unparseable input is returned unchanged.
+///
+/// # Arguments
+/// - `html`: HTML source to convert.
 pub fn html_to_markdown(html: &str) -> String {
     let options = ConversionOptions {
         preprocessing: PreprocessingOptions {

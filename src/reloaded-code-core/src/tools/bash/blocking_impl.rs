@@ -34,6 +34,13 @@ enum WaitOutcome {
 /// - Windows: Job Objects
 /// - Unix: Process groups
 ///
+/// # Arguments
+/// - `mode`: The execution mode (host or Linux sandbox).
+/// - `request`: The bash request carrying the command, optional working directory, and
+///   optional timeout.
+/// - `settings`: The bash settings providing permission checks, default working directory,
+///   and timeout limits.
+///
 /// # Errors
 /// - Returns [`ToolError::PermissionDenied`] when the command is blocked by `settings.permission`.
 /// - Returns `ToolError::Validation` if timeout is 0 or exceeds max_timeout_ms.

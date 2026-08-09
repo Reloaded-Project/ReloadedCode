@@ -11,6 +11,12 @@ use std::time::Duration;
 /// - Other content types returned as-is
 /// - Response size is limited to `max_response_size` bytes
 ///
+/// # Arguments
+/// - `client`: Async HTTP client used to perform the request.
+/// - `request`: The fetch request containing the URL and optional timeout.
+/// - `settings`: Runtime settings that determine the default timeout and the
+///   maximum allowed timeout and response size.
+///
 /// # Errors
 ///
 /// Returns `ToolError::Validation` if timeout_ms is 0 or exceeds max_timeout_ms.

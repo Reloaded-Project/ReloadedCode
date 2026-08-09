@@ -157,6 +157,15 @@ impl std::error::Error for ModelResolutionError {}
 /// # Returns
 ///
 /// A [`ResolvedModel`] on success, or a [`ModelResolutionError`] if something's wrong.
+///
+/// # Errors
+///
+/// Returns [`ModelResolutionError::MalformedModelIdentifier`] when the agent or
+/// runtime default model is not in `provider/model-id` form,
+/// [`ModelResolutionError::MissingEffectiveModel`] when neither source sets a
+/// model, [`ModelResolutionError::UnknownProvider`] when the provider is not in
+/// the catalog, or [`ModelResolutionError::UnknownModel`] when the model is not
+/// in the catalog for that provider.
 pub fn resolve_model_with_catalog(
     catalog: &ModelCatalog,
     defaults: &super::state::AgentDefaults,

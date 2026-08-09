@@ -29,6 +29,7 @@ pub(crate) struct OutgoingMessageSender {
     request_id_to_callback: Mutex<HashMap<RequestId, oneshot::Sender<Result>>>,
 }
 
+/// Parameters carried by an outgoing notification to the client.
 #[derive(Debug, Clone, PartialEq, Serialize)]
 pub(crate) struct OutgoingNotificationParams {
     #[serde(rename = "_meta", default, skip_serializing_if = "Option::is_none")]
@@ -49,18 +50,21 @@ pub(crate) enum OutgoingMessage {
 // Additional mcp-specific data to be added to a [`codex_core::protocol::Event`] as notification.params._meta
 // MCP Spec: https://modelcontextprotocol.io/specification/2025-06-18/basic#meta
 // Typescript Schema: https://github.com/modelcontextprotocol/modelcontextprotocol/blob/0695a497eb50a804fc0e88c18a93a21a675d6b3e/schema/2025-06-18/schema.ts
+/// Additional MCP-specific data attached to a notification's `_meta` parameter.
 #[derive(Debug, Clone, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct OutgoingNotificationMeta {
     pub request_id: Option<RequestId>,
 }
 
+/// An error response sent from the server to the client.
 #[derive(Debug, Clone, PartialEq, Serialize)]
 pub(crate) struct OutgoingError {
     pub error: JSONRPCErrorError,
     pub id: RequestId,
 }
 
+/// A notification message sent from the server to the client.
 #[derive(Debug, Clone, PartialEq, Serialize)]
 pub(crate) struct OutgoingNotification {
     pub method: String,
@@ -68,6 +72,7 @@ pub(crate) struct OutgoingNotification {
     pub params: Option<serde_json::Value>,
 }
 
+/// A request message sent from the server to the client.
 #[derive(Debug, Clone, PartialEq, Serialize)]
 pub(crate) struct OutgoingRequest {
     pub id: RequestId,
@@ -76,6 +81,7 @@ pub(crate) struct OutgoingRequest {
     pub params: Option<serde_json::Value>,
 }
 
+/// A response message sent from the server to the client.
 #[derive(Debug, Clone, PartialEq, Serialize)]
 pub(crate) struct OutgoingResponse {
     pub id: RequestId,

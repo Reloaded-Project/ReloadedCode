@@ -12,6 +12,10 @@ pub const DEFAULT_API_TYPE: &str = "openai-compatible";
 /// OpenAI-API-compatible endpoint.
 ///
 /// Returns [`ProviderType::Unknown`] for unrecognized strings.
+///
+/// # Arguments
+///
+/// - `s` - the YAML `api_type` string to map.
 pub fn api_type_from_str(s: &str) -> ProviderType {
     match s {
         "openai" | "openai-compatible" => ProviderType::OpenAiCompletions,

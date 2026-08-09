@@ -125,6 +125,13 @@ impl<T: ModelTrait + Send + Sync> ModelTrait for Streamed<T> {
 /// The second-turn response includes whatever the real tool returned, so
 /// the output reflects actual tool execution rather than a canned message.
 ///
+/// # Arguments
+///
+/// - `tool_name` - name of the tool to call on the first turn.
+/// - `args` - JSON arguments passed to the tool call on the first turn.
+/// - `fallback_text` - text prefix for the second-turn response; the real tool
+///   return is appended after it.
+///
 /// # Example
 ///
 /// ```rust,no_run

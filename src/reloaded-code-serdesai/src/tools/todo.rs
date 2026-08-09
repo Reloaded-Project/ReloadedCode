@@ -21,14 +21,14 @@ use serdes_ai::tools::{RunContext, SchemaBuilder, Tool, ToolDefinition, ToolResu
 // Re-export core types
 pub use reloaded_code_core::{Todo, TodoPriority, TodoState, TodoStatus};
 
-/// Tool for reading the current todo list.
+/// Tool for reading the current task list.
 #[derive(Debug, Clone)]
 pub struct TodoReadTool {
     definition: ToolDefinition,
     state: TodoState,
 }
 
-/// Tool for writing/replacing the todo list.
+/// Tool for writing/replacing the task list.
 #[derive(Debug, Clone)]
 pub struct TodoWriteTool {
     definition: ToolDefinition,
@@ -103,7 +103,7 @@ impl ToolContext for TodoWriteTool {
     }
 }
 
-/// Creates a pair of todo tools with shared state.
+/// Creates a linked read/write pair of tools with shared state.
 ///
 /// Returns `(TodoReadTool, TodoWriteTool, TodoState)` for cases where
 /// the caller needs access to the underlying state.

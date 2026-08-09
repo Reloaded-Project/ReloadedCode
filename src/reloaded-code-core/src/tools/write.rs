@@ -43,6 +43,11 @@ impl WriteSettings {
 ///
 /// Overwrites existing files. Returns a success message with byte count.
 ///
+/// # Arguments
+/// - `resolver`: Resolves `request.file_path` to an absolute path.
+/// - `request`: The write request containing the target path and content.
+/// - `_settings`: Runtime settings; currently unused.
+///
 /// # Errors
 /// - Returns [`ToolError::InvalidPath`] when `resolver.resolve()` fails to
 ///   resolve `request.file_path` (e.g., path is not absolute or violates policy).

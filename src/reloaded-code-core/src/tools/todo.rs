@@ -8,17 +8,17 @@ use serde_json::Value;
 use std::fmt::Write;
 use std::sync::Arc;
 
-/// Serde-friendly todo-read request owned by the core crate.
+/// Serde-friendly request for reading the task list, owned by the core crate.
 #[derive(Debug, Clone, Deserialize)]
 pub struct TodoReadRequest {}
 
-/// Thread-safe shared state for todo list.
+/// Thread-safe shared state holding the tracked task list.
 #[derive(Debug, Clone, Default)]
 pub struct TodoState {
     todos: Arc<RwLock<Vec<Todo>>>,
 }
 
-/// Serde-friendly todo-write request owned by the core crate.
+/// Serde-friendly request for replacing the task list, owned by the core crate.
 #[derive(Debug, Clone, Deserialize)]
 pub struct TodoWriteRequest {
     /// The complete list of todos to set.
@@ -108,7 +108,12 @@ impl TodoStatus {
     }
 }
 
-/// Reads and formats the current todo list.
+/// Reads and formats the current list of tracked tasks.
+///
+/// # Arguments
+/// - `state`: Shared state holding the task list to read.
+/// - `_request`: Placeholder request required by the tool dispatch signature;
+///   it carries no fields.
 pub fn read_todos(state: &TodoState, _request: TodoReadRequest) -> String {
     let todos = state.todos.read();
 
@@ -132,13 +137,17 @@ pub fn read_todos(state: &TodoState, _request: TodoReadRequest) -> String {
     output
 }
 
-/// Writes/replaces the todo list with new items.
+/// Replaces the current task list with new items.
 ///
 /// Validates that all todos have non-empty id and content.
 ///
+/// # Arguments
+/// - `state`: Shared state whose task list is replaced by the new items.
+/// - `request`: Request carrying the new list of todos to store.
+///
 /// # Errors
-/// - Returns [`ToolError::Validation`] when any todo has an empty or whitespace-only `id`.
-/// - Returns [`ToolError::Validation`] when any todo has empty or whitespace-only `content`.
+/// - Returns [`ToolError::Validation`] when any task has an empty or whitespace-only `id`.
+/// - Returns [`ToolError::Validation`] when any task has empty or whitespace-only `content`.
 pub fn write_todos(state: &TodoState, request: TodoWriteRequest) -> ToolResult<String> {
     for todo in &request.todos {
         if todo.id.trim().is_empty() {

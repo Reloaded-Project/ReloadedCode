@@ -5,6 +5,9 @@ use std::path::Path;
 
 /// Creates a directory and all parent directories.
 ///
+/// # Arguments
+/// - `path`: The directory path to create, including any missing parent directories.
+///
 /// # Errors
 /// - Returns [`ToolError::Io`] when the directory cannot be created (e.g., permission
 ///   denied or other I/O error).
@@ -15,6 +18,10 @@ pub fn create_dir_all(path: impl AsRef<Path>) -> ToolResult<()> {
 }
 
 /// Opens a file for buffered reading.
+///
+/// # Arguments
+/// - `path`: The path of the file to open for buffered reading.
+/// - `capacity`: The buffer capacity in bytes.
 ///
 /// # Errors
 /// - Returns [`ToolError::Io`] when the file cannot be opened (e.g., file does not exist,
@@ -31,6 +38,9 @@ pub fn open_buffered(
 
 /// Reads a file to string.
 ///
+/// # Arguments
+/// - `path`: The path of the file to read.
+///
 /// # Errors
 /// - Returns [`ToolError::Io`] when the file cannot be read (e.g., file does not exist,
 ///   permission denied, or other I/O error).
@@ -41,6 +51,10 @@ pub fn read_to_string(path: impl AsRef<Path>) -> ToolResult<String> {
 }
 
 /// Writes content to a file.
+///
+/// # Arguments
+/// - `path`: The path of the file to write to.
+/// - `contents`: The bytes to write to the file.
 ///
 /// # Errors
 /// - Returns [`ToolError::Io`] when the file cannot be written (e.g., parent directory

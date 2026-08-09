@@ -9,6 +9,9 @@ use std::path::{Path, PathBuf};
 /// Wraps the internal expansion logic with fail-fast error handling: returns
 /// `ToolError::InvalidPath` if expansion fails (e.g., unset variable).
 ///
+/// # Arguments
+/// - `path`: The path pattern string to expand (e.g., `~/foo`, `$VAR/bar`).
+///
 /// # Errors
 /// - Returns [`ToolError::InvalidPath`] when shell expansion fails (e.g., unset
 ///   environment variable in the path pattern).

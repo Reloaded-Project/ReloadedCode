@@ -16,6 +16,8 @@ use crate::models::catalog::internal::Fixed4;
 use crate::models::ProviderType;
 use tinyvec::TinyVec;
 
+/// Number of environment variable strings inlined inline (without heap
+/// allocation) into a [`ProviderEnvVars`] value.
 pub(crate) const INLINE_PROVIDER_ENV_VARS: usize = 2;
 
 /// Model lookup result.
@@ -46,6 +48,7 @@ pub struct Provider<'a> {
     pub api_type: ProviderType,
 }
 
+/// Candidate environment variables used to resolve a provider's API key.
 pub(crate) type ProviderEnvVars<'a> = TinyVec<[&'a str; INLINE_PROVIDER_ENV_VARS]>;
 
 impl Model {

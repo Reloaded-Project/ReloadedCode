@@ -12,6 +12,12 @@ use std::process::Stdio;
 
 /// Builds a sync [`CommandWrap`] from a [`Profile`].
 ///
+/// # Arguments
+///
+/// - `profile` - the validated sandbox profile to wrap the command in
+/// - `command` - the shell command string to run inside the sandbox
+/// - `workdir` - optional host working directory for the command
+///
 /// # Errors
 /// - Returns [`LinuxBwrapError::InvalidPath`] when `workdir` is not an absolute path,
 ///   does not exist, is not a directory, or is not visible inside the sandbox.
