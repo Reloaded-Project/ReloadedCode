@@ -114,14 +114,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
 ## Crate Map
 
-| Crate                                                                     | Version | Description                                                                                      |
-| ------------------------------------------------------------------------- | ------- | ------------------------------------------------------------------------------------------------ |
-| [**reloaded-code-core**](./src/reloaded-code-core/)                       | 0.2     | Framework-agnostic tool implementations, path resolvers, permissions, custom tool registry       |
-| [**reloaded-code-agents**](./src/reloaded-code-agents/)                   | 0.1     | agent markdown loader similar to [OpenCode], typed catalog, runtime builder |
-| [**reloaded-code-serdesai**](./src/reloaded-code-serdesai/)               | 0.2     | SerdesAI framework integration, tool adapters, 15 provider bridges, task delegation              |
-| [**reloaded-code-bubblewrap**](./src/reloaded-code-bubblewrap/)           | 0.1     | Linux bubblewrap sandbox profiles (Public Bot + Trusted Maintenance)                             |
-| [**reloaded-code-models-dev**](./src/reloaded-code-models-dev/)           | 0.1     | models.dev catalog sync with ETag caching and offline fallback                                   |
-| [**reloaded-code-provider-config**](./src/reloaded-code-provider-config/) | 0.1     | Provider configuration loading and provider catalog overrides                                    |
+| Crate                                                                     | Version | Description                                                                                |
+| ------------------------------------------------------------------------- | ------- | ------------------------------------------------------------------------------------------ |
+| [**reloaded-code-core**](./src/reloaded-code-core/)                       | 0.2     | Framework-agnostic tool implementations, path resolvers, permissions, custom tool registry |
+| [**reloaded-code-agents**](./src/reloaded-code-agents/)                   | 0.1     | agent markdown loader similar to [OpenCode], typed catalog, runtime builder                |
+| [**reloaded-code-serdesai**](./src/reloaded-code-serdesai/)               | 0.2     | SerdesAI framework integration, tool adapters, 15 provider bridges, task delegation        |
+| [**reloaded-code-bubblewrap**](./src/reloaded-code-bubblewrap/)           | 0.1     | Linux bubblewrap sandbox profiles (Public Bot + Trusted Maintenance)                       |
+| [**reloaded-code-models-dev**](./src/reloaded-code-models-dev/)           | 0.1     | models.dev catalog sync with ETag caching and offline fallback                             |
+| [**reloaded-code-provider-config**](./src/reloaded-code-provider-config/) | 0.1     | Provider configuration loading and provider catalog overrides                              |
 
 ## Examples
 

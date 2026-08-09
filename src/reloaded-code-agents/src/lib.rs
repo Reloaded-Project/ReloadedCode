@@ -22,6 +22,6 @@ mod loader;
 mod parser;
 mod path;
 mod runtime;
+mod types;
 #[cfg(test)]
 mod test_helpers;
-mod types;
