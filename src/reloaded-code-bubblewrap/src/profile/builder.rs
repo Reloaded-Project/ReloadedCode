@@ -112,8 +112,12 @@ pub struct Builder {
     /// [`extra_env`]: Self::extra_env
     pub(crate) clear_env: bool,
     /// Env vars always set (applied before [`extra_env`]).
+    ///
+    /// [`extra_env`]: Self::extra_env
     pub(crate) default_env: Arc<[EnvVar]>,
     /// Additional env vars set on top of [`default_env`].
+    ///
+    /// [`default_env`]: Self::default_env
     pub(crate) extra_env: Arc<[EnvVar]>,
     /// Tracks whether `bwrap` is usable (checked during [`build`](Self::build)).
     pub(crate) availability: Availability,

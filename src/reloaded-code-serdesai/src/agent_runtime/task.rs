@@ -96,7 +96,7 @@ where
     /// - `model_catalog`: Available models for agent resolution.
     /// - `credentials`: Credential lookup used to authenticate model requests.
     /// - `workspace_root`: Project directory exposed to tools.
-    /// - `profile`: Pre-built sandbox profile for [`BashTool`].
+    /// - `profile`: Pre-built sandbox profile for [`BashTool`](crate::BashTool).
     /// - `sandbox_tmpdir`: Optional owning temp directories that keep the
     ///   profile's backing storage alive for the context's lifetime.
     ///
@@ -260,7 +260,7 @@ where
     /// - `model_catalog`: Available models for agent resolution.
     /// - `credentials`: Credential lookup used to authenticate model requests.
     /// - `workspace_root`: Project directory exposed to tools.
-    /// - `bash_sandbox`: Pre-built sandbox profile for [`BashTool`].
+    /// - `bash_sandbox`: Pre-built sandbox profile for [`BashTool`](crate::BashTool).
     /// - `_sandbox_tmpdir`: Optional owning temp directories that keep the
     ///   profile's backing storage alive.
     #[cfg(all(feature = "linux-bubblewrap", target_os = "linux"))]

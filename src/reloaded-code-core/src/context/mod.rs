@@ -52,7 +52,7 @@ pub const GITHUB_CLI: &str = include_str!("github_cli.txt");
 /// Git workflow context - commit creation guidance.
 ///
 /// Supplemental context for agents using git via the `bash` tool.
-/// Include via [`SystemPromptBuilder::add_context`].
+/// Include via [`SystemPromptBuilder::add_context`](crate::SystemPromptBuilder::add_context).
 pub const GIT_WORKFLOW: &str = include_str!("git_workflow.txt");
 
 /// Trait for tools that provide guidance for system prompts.
