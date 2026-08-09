@@ -148,7 +148,7 @@ impl GrepOutput {
     ///
     /// # Arguments
     ///
-    /// * `formatting` - The formatting settings to use for output
+    /// - `formatting`: The formatting settings to use for output
     pub fn format(&self, formatting: GrepFormattingSettings) -> String {
         let line_numbers = formatting.line_numbers();
         let max_line_len = formatting.max_line_length();

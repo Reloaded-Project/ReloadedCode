@@ -17,6 +17,6 @@ mod error;
 mod path_util;
 mod probe;
 pub mod profile;
-pub mod wrap;
 #[cfg(test)]
 mod test_helpers;
+pub mod wrap;

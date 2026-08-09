@@ -16,8 +16,8 @@ use crate::models::catalog::internal::Fixed4;
 use crate::models::ProviderType;
 use tinyvec::TinyVec;
 
-/// Number of environment variable strings inlined inline (without heap
-/// allocation) into a [`ProviderEnvVars`] value.
+/// Number of environment variable strings stored inline (without heap
+/// allocation) in a [`ProviderEnvVars`] value.
 pub(crate) const INLINE_PROVIDER_ENV_VARS: usize = 2;
 
 /// Model lookup result.

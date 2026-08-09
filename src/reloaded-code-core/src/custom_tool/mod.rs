@@ -88,9 +88,9 @@ pub(crate) mod definition;
 pub(crate) mod factory;
 pub(crate) mod registry;
 pub(crate) mod runtime;
-pub(crate) mod tool;
 #[cfg(test)]
 pub(crate) mod test_stubs;
+pub(crate) mod tool;
 #[cfg(test)]
 mod tests {
     use super::test_stubs::{EchoFactory, TestFactory};

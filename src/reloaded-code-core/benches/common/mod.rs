@@ -44,12 +44,12 @@ pub enum CorpusSize {
     Large,
 }
 
-#[allow(dead_code)] // Used by some benchmarks but not all
 /// Returns the requested corpus with `\n` line endings replaced by CRLF.
 ///
 /// # Arguments
 ///
 /// - `size`: the corpus to select.
+#[allow(dead_code)] // Used by some benchmarks but not all
 pub fn corpus_crlf(size: CorpusSize) -> String {
     corpus_content(size).replace('\n', "\r\n")
 }
