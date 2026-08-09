@@ -1,17 +1,12 @@
 //! Benchmarks for agent parsing.
 
+criterion_group!(benches, benchmark_parse_frontmatter);
+
+criterion_main!(benches);
+
 use core::hint::black_box;
 use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion, Throughput};
 use reloaded_code_agents::{AgentCatalog, AgentLoader};
-
-/// Loads a real agent fixture file at runtime.
-fn load_fixture() -> String {
-    std::fs::read_to_string(concat!(
-        env!("CARGO_MANIFEST_DIR"),
-        "/benches/fixtures/orchestrator-quality-gate-gpt5.md"
-    ))
-    .expect("failed to load fixture file")
-}
 
 fn benchmark_parse_frontmatter(c: &mut Criterion) {
     let real_lf = load_fixture();
@@ -38,5 +33,11 @@ fn benchmark_parse_frontmatter(c: &mut Criterion) {
     group.finish();
 }
 
-criterion_group!(benches, benchmark_parse_frontmatter);
-criterion_main!(benches);
+/// Loads a real agent fixture file at runtime.
+fn load_fixture() -> String {
+    std::fs::read_to_string(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/benches/fixtures/orchestrator-quality-gate-gpt5.md"
+    ))
+    .expect("failed to load fixture file")
+}

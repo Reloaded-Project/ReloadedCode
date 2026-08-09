@@ -11,16 +11,15 @@ compile_error!("Features tokio and blocking are mutually exclusive");
 #[cfg(not(any(feature = "tokio", feature = "blocking")))]
 compile_error!("Either tokio or blocking feature must be enabled for the fs module");
 
-#[cfg(feature = "tokio")]
-mod tokio_impl;
+#[cfg(feature = "blocking")]
+pub use blocking_impl::*;
 #[cfg(feature = "tokio")]
 pub use tokio_impl::*;
 
 #[cfg(feature = "blocking")]
 mod blocking_impl;
-#[cfg(feature = "blocking")]
-pub use blocking_impl::*;
-
+#[cfg(feature = "tokio")]
+mod tokio_impl;
 #[cfg(test)]
 mod tests {
     use super::*;

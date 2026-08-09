@@ -27,56 +27,17 @@ use serdes_ai::agent::ToolExecutor;
 use serdes_ai::tools::{RunContext as ToolsRunContext, Tool, ToolError, ToolReturn};
 use serdes_ai::{AgentBuilder, RunContext as AgentRunContext};
 
+/// Adapter for boxed trait object tools, similar to [`ToolAsExecutor`] but
+/// for dynamically dispatched tools where the concrete type is not known
+/// at compile time.
+struct DynToolAsExecutor<Deps>(Box<dyn Tool<Deps> + Send + Sync>);
+
 /// Adapter that wraps a [`Tool`] to implement [`ToolExecutor`].
 ///
 /// This bridges the gap between `serdes_ai::tools::Tool` (which uses
 /// `tools::RunContext`) and `serdes_ai::agent::ToolExecutor` (which uses
 /// `agent::RunContext`).
 struct ToolAsExecutor<T>(T);
-
-#[async_trait]
-impl<Deps: Send + Sync + 'static, T: Tool<Deps>> ToolExecutor<Deps> for ToolAsExecutor<T> {
-    async fn execute(
-        &self,
-        args: JsonValue,
-        ctx: &AgentRunContext<Deps>,
-    ) -> Result<ToolReturn, ToolError> {
-        // Convert agent::RunContext to tools::RunContext
-        let tools_ctx = ToolsRunContext::from_arc(ctx.deps.clone(), &ctx.model_name)
-            .with_run_id(&ctx.run_id)
-            .with_model_settings(ctx.model_settings.clone())
-            .with_tool_context(
-                ctx.tool_name.as_deref().unwrap_or_default(),
-                ctx.tool_call_id.clone(),
-            );
-
-        self.0.call(&tools_ctx, args).await
-    }
-}
-
-/// Adapter for boxed trait object tools, similar to [`ToolAsExecutor`] but
-/// for dynamically dispatched tools where the concrete type is not known
-/// at compile time.
-struct DynToolAsExecutor<Deps>(Box<dyn Tool<Deps> + Send + Sync>);
-
-#[async_trait]
-impl<Deps: Send + Sync + 'static> ToolExecutor<Deps> for DynToolAsExecutor<Deps> {
-    async fn execute(
-        &self,
-        args: JsonValue,
-        ctx: &AgentRunContext<Deps>,
-    ) -> Result<ToolReturn, ToolError> {
-        let tools_ctx = ToolsRunContext::from_arc(ctx.deps.clone(), &ctx.model_name)
-            .with_run_id(&ctx.run_id)
-            .with_model_settings(ctx.model_settings.clone())
-            .with_tool_context(
-                ctx.tool_name.as_deref().unwrap_or_default(),
-                ctx.tool_call_id.clone(),
-            );
-
-        self.0.call(&tools_ctx, args).await
-    }
-}
 
 /// Extension trait for [`AgentBuilder`] to add tools that implement [`Tool`].
 pub trait AgentBuilderExt<Deps, Output> {
@@ -113,25 +74,6 @@ pub trait AgentBuilderExt<Deps, Output> {
     ) -> Self;
 }
 
-impl<Deps, Output> AgentBuilderExt<Deps, Output> for AgentBuilder<Deps, Output>
-where
-    Deps: Send + Sync + 'static,
-    Output: Send + Sync + 'static,
-{
-    fn tool<T: Tool<Deps> + 'static>(self, tool: T) -> Self {
-        let definition = tool.definition();
-        self.tool_with_executor(definition, ToolAsExecutor(tool))
-    }
-
-    fn tool_dyn(
-        self,
-        definition: serdes_ai::ToolDefinition,
-        tool: Box<dyn Tool<Deps> + Send + Sync>,
-    ) -> Self {
-        self.tool_with_executor(definition, DynToolAsExecutor(tool))
-    }
-}
-
 /// Extension for converting [`ToolError`] results into [`AgentBuildError`].
 ///
 /// This avoids repeating the full `ToolSettingsValidation` struct literal at
@@ -155,6 +97,64 @@ pub trait ToolResultExt<T> {
     /// - Returns [`AgentBuildError::ToolSettingsValidation`] when the original result
     ///   contains a [`ToolError`], preserving the tool name and original error.
     fn with_tool(self, tool: &'static str) -> Result<T, AgentBuildError>;
+}
+
+#[async_trait]
+impl<Deps: Send + Sync + 'static> ToolExecutor<Deps> for DynToolAsExecutor<Deps> {
+    async fn execute(
+        &self,
+        args: JsonValue,
+        ctx: &AgentRunContext<Deps>,
+    ) -> Result<ToolReturn, ToolError> {
+        let tools_ctx = ToolsRunContext::from_arc(ctx.deps.clone(), &ctx.model_name)
+            .with_run_id(&ctx.run_id)
+            .with_model_settings(ctx.model_settings.clone())
+            .with_tool_context(
+                ctx.tool_name.as_deref().unwrap_or_default(),
+                ctx.tool_call_id.clone(),
+            );
+
+        self.0.call(&tools_ctx, args).await
+    }
+}
+
+#[async_trait]
+impl<Deps: Send + Sync + 'static, T: Tool<Deps>> ToolExecutor<Deps> for ToolAsExecutor<T> {
+    async fn execute(
+        &self,
+        args: JsonValue,
+        ctx: &AgentRunContext<Deps>,
+    ) -> Result<ToolReturn, ToolError> {
+        // Convert agent::RunContext to tools::RunContext
+        let tools_ctx = ToolsRunContext::from_arc(ctx.deps.clone(), &ctx.model_name)
+            .with_run_id(&ctx.run_id)
+            .with_model_settings(ctx.model_settings.clone())
+            .with_tool_context(
+                ctx.tool_name.as_deref().unwrap_or_default(),
+                ctx.tool_call_id.clone(),
+            );
+
+        self.0.call(&tools_ctx, args).await
+    }
+}
+
+impl<Deps, Output> AgentBuilderExt<Deps, Output> for AgentBuilder<Deps, Output>
+where
+    Deps: Send + Sync + 'static,
+    Output: Send + Sync + 'static,
+{
+    fn tool<T: Tool<Deps> + 'static>(self, tool: T) -> Self {
+        let definition = tool.definition();
+        self.tool_with_executor(definition, ToolAsExecutor(tool))
+    }
+
+    fn tool_dyn(
+        self,
+        definition: serdes_ai::ToolDefinition,
+        tool: Box<dyn Tool<Deps> + Send + Sync>,
+    ) -> Self {
+        self.tool_with_executor(definition, DynToolAsExecutor(tool))
+    }
 }
 
 impl<T> ToolResultExt<T> for Result<T, reloaded_code_core::ToolError> {

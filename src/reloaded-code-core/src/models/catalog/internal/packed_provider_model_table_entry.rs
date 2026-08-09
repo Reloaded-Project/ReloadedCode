@@ -7,17 +7,15 @@
 use crate::models::catalog::public::ModelIdx;
 use bitfields::bitfield;
 
-/// Number of retained hash bits for provider-model lookup entries.
-pub const PROVIDER_MODEL_TABLE_HASH_BITS: u32 = 48;
-/// Bitmask used to truncate hashes to 48 bits.
-pub const PROVIDER_MODEL_TABLE_HASH_MASK: u64 = (1u64 << PROVIDER_MODEL_TABLE_HASH_BITS) - 1;
-
-/// Maximum model-configuration index representable by `u16`.
-pub const MAX_MODEL_CONFIG_IDX: u16 = u16::MAX;
 /// Maximum model-configuration entry count representable by `u16`.
 pub const MAX_MODEL_CONFIG_COUNT: usize = (MAX_MODEL_CONFIG_IDX as usize) + 1;
-
+/// Bitmask used to truncate hashes to 48 bits.
+pub const PROVIDER_MODEL_TABLE_HASH_MASK: u64 = (1u64 << PROVIDER_MODEL_TABLE_HASH_BITS) - 1;
 const _: () = assert!(PROVIDER_MODEL_TABLE_HASH_BITS + 16 == 64);
+/// Maximum model-configuration index representable by `u16`.
+pub const MAX_MODEL_CONFIG_IDX: u16 = u16::MAX;
+/// Number of retained hash bits for provider-model lookup entries.
+pub const PROVIDER_MODEL_TABLE_HASH_BITS: u32 = 48;
 
 /// Packed provider-model-table entry.
 #[bitfield(u64)]

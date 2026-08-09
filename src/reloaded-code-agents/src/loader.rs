@@ -269,6 +269,29 @@ impl AgentLoader {
     }
 }
 
+/// Strict parser for catalog-only string loading (validates non-empty name).
+fn config_from_str_strict(
+    markdown: impl Into<String>,
+    default_name: impl Into<Box<str>>,
+) -> AgentLoadResult<AgentConfig> {
+    let config = parse_agent_config(markdown.into(), default_name)
+        .map_err(|err| map_parse_error(None, err))?;
+    if config.name.is_empty() {
+        return Err(AgentLoadError::schema_validation(
+            None,
+            "agent name is empty",
+        ));
+    }
+    Ok(config)
+}
+
+/// Loads a single agent configuration from a file.
+fn load_agent_file(path: &Path, name: impl Into<Box<str>>) -> AgentLoadResult<AgentConfig> {
+    let content =
+        fs::read_to_string(path).map_err(|e| AgentLoadError::io(Some(path.to_path_buf()), e))?;
+    parse_agent_config(content, name).map_err(|err| map_parse_error(Some(path.to_path_buf()), err))
+}
+
 /// Shared directory scan helper used by catalog loading.
 fn load_directory_with(
     dir: &Path,
@@ -331,58 +354,6 @@ fn load_directory_with(
     Ok(())
 }
 
-/// Shared parse helper that reuses existing loader parsing.
-fn parse_agent_config(
-    content: String,
-    default_name: impl Into<Box<str>>,
-) -> Result<AgentConfig, AgentParseError> {
-    let result = parse_agent::<RawFrontmatter>(content)?;
-    Ok(AgentConfig::from_raw(
-        default_name,
-        result.data,
-        result.content,
-    ))
-}
-
-fn map_parse_error(path: Option<PathBuf>, err: AgentParseError) -> AgentLoadError {
-    match err {
-        AgentParseError::SchemaValidation { message } => {
-            AgentLoadError::schema_validation(path, message)
-        }
-        other => AgentLoadError::parse(path, other),
-    }
-}
-
-/// Loads a single agent configuration from a file.
-fn load_agent_file(path: &Path, name: impl Into<Box<str>>) -> AgentLoadResult<AgentConfig> {
-    let content =
-        fs::read_to_string(path).map_err(|e| AgentLoadError::io(Some(path.to_path_buf()), e))?;
-    parse_agent_config(content, name).map_err(|err| map_parse_error(Some(path.to_path_buf()), err))
-}
-
-/// Strict parser for catalog-only string loading (validates non-empty name).
-fn config_from_str_strict(
-    markdown: impl Into<String>,
-    default_name: impl Into<Box<str>>,
-) -> AgentLoadResult<AgentConfig> {
-    let config = parse_agent_config(markdown.into(), default_name)
-        .map_err(|err| map_parse_error(None, err))?;
-    if config.name.is_empty() {
-        return Err(AgentLoadError::schema_validation(
-            None,
-            "agent name is empty",
-        ));
-    }
-    Ok(config)
-}
-
-/// Checks if a relative path matches `agent/**/*.md` or `agents/**/*.md`.
-fn matches_agent_pattern(rel_path: &str) -> bool {
-    let is_agent_dir = rel_path.starts_with("agent/") || rel_path.starts_with("agents/");
-    let is_md_file = rel_path.ends_with(".md");
-    is_agent_dir && is_md_file
-}
-
 /// Derives agent name from relative path.
 ///
 /// Strips leading `agent/` or `agents/` segment and `.md` extension.
@@ -407,6 +378,35 @@ fn derive_agent_name_from_rel(rel_path: &str) -> Option<String> {
     } else {
         Some(name)
     }
+}
+
+fn map_parse_error(path: Option<PathBuf>, err: AgentParseError) -> AgentLoadError {
+    match err {
+        AgentParseError::SchemaValidation { message } => {
+            AgentLoadError::schema_validation(path, message)
+        }
+        other => AgentLoadError::parse(path, other),
+    }
+}
+
+/// Checks if a relative path matches `agent/**/*.md` or `agents/**/*.md`.
+fn matches_agent_pattern(rel_path: &str) -> bool {
+    let is_agent_dir = rel_path.starts_with("agent/") || rel_path.starts_with("agents/");
+    let is_md_file = rel_path.ends_with(".md");
+    is_agent_dir && is_md_file
+}
+
+/// Shared parse helper that reuses existing loader parsing.
+fn parse_agent_config(
+    content: String,
+    default_name: impl Into<Box<str>>,
+) -> Result<AgentConfig, AgentParseError> {
+    let result = parse_agent::<RawFrontmatter>(content)?;
+    Ok(AgentConfig::from_raw(
+        default_name,
+        result.data,
+        result.content,
+    ))
 }
 
 #[cfg(test)]

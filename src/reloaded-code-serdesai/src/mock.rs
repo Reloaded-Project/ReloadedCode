@@ -18,14 +18,13 @@
 //! to inject the mock model before calling [`build()`](crate::AgentBuildContext::build).
 
 // Re-export upstream mock types so users can still access the raw variants when needed.
-pub use serdes_ai_models::{FunctionModel, MockModel, TestModel};
-
 use async_trait::async_trait;
 use futures::stream;
 use serdes_ai::core::{
     FinishReason, ModelRequest, ModelResponse, ModelResponsePart, ModelResponseStreamEvent,
 };
 use serdes_ai_models::Model as ModelTrait;
+pub use serdes_ai_models::{FunctionModel, MockModel, TestModel};
 // Re-export the types from where serdes-ai-models exposes them.
 use serdes_ai::core::ModelSettings;
 use serdes_ai_models::{
@@ -182,21 +181,6 @@ pub fn tool_then_text(
     Streamed::new(model)
 }
 
-// ============================================================================
-// Private helpers
-// ============================================================================
-
-fn response_to_stream_events(response: ModelResponse) -> Vec<ModelResponseStreamEvent> {
-    let mut events = Vec::with_capacity(response.parts.len() * 2 + 1);
-
-    for (index, part) in response.parts.into_iter().enumerate() {
-        events.push(ModelResponseStreamEvent::part_start(index, part));
-        events.push(ModelResponseStreamEvent::part_end(index));
-    }
-
-    events
-}
-
 /// Extract human-readable text from a [`ToolReturnPart`].
 ///
 /// Uses serde JSON round-tripping to avoid depending on the
@@ -232,4 +216,19 @@ fn extract_tool_return_text(tr: &serdes_ai::core::ToolReturnPart) -> String {
 
     // Fallback: pretty-print the whole thing.
     serde_json::to_string_pretty(&val).unwrap_or_else(|_| format!("{:?}", tr.content))
+}
+
+// ============================================================================
+// Private helpers
+// ============================================================================
+
+fn response_to_stream_events(response: ModelResponse) -> Vec<ModelResponseStreamEvent> {
+    let mut events = Vec::with_capacity(response.parts.len() * 2 + 1);
+
+    for (index, part) in response.parts.into_iter().enumerate() {
+        events.push(ModelResponseStreamEvent::part_start(index, part));
+        events.push(ModelResponseStreamEvent::part_end(index));
+    }
+
+    events
 }

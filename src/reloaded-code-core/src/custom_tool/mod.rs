@@ -77,12 +77,6 @@
 //! assert!(registry.get("my_tool").is_some());
 //! ```
 
-pub(crate) mod definition;
-pub(crate) mod factory;
-pub(crate) mod registry;
-pub(crate) mod runtime;
-pub(crate) mod tool;
-
 pub use crate::tool_context::ToolBuildContext;
 pub use definition::CustomToolDefinition;
 pub use factory::ToolFactory;
@@ -90,9 +84,13 @@ pub use registry::{CustomToolRegistry, SharedToolRegistry};
 pub use runtime::ToolRunContext;
 pub use tool::{CustomTool, CustomToolFuture};
 
+pub(crate) mod definition;
+pub(crate) mod factory;
+pub(crate) mod registry;
+pub(crate) mod runtime;
 #[cfg(test)]
 pub(crate) mod test_stubs;
-
+pub(crate) mod tool;
 #[cfg(test)]
 mod tests {
     use super::test_stubs::{EchoFactory, TestFactory};

@@ -19,19 +19,19 @@
 //!
 //! 2. Population-wide averages were computed across all files:
 //!
-//!    | Metric                       | Population average |
-//!    |------------------------------|--------------------|
-//!    | Non-blank avg line length    | 37.7 chars         |
-//!    | Blank line ratio             | ~10.5%             |
-//!    | Avg bytes/line               | 34.7               |
+//! | Metric                    | Population average |
+//! | ------------------------- | ------------------ |
+//! | Non-blank avg line length | 37.7 chars         |
+//! | Blank line ratio          | ~10.5%             |
+//! | Avg bytes/line            | 34.7               |
 //!
 //! 3. Each candidate file was scored by distance from these population
 //!    averages. The three files above were the closest matches across the
 //!    small / medium / large size brackets.
 
-const CORPUS_SMALL_RAW: &str = include_str!("corpus_small.rs");
-const CORPUS_MEDIUM_RAW: &str = include_str!("corpus_medium.rs");
 const CORPUS_LARGE_RAW: &str = include_str!("corpus_large.rs");
+const CORPUS_MEDIUM_RAW: &str = include_str!("corpus_medium.rs");
+const CORPUS_SMALL_RAW: &str = include_str!("corpus_small.rs");
 
 #[derive(Clone, Copy)]
 pub enum CorpusSize {
@@ -40,15 +40,15 @@ pub enum CorpusSize {
     Large,
 }
 
+#[allow(dead_code)] // Used by some benchmarks but not all
+pub fn corpus_crlf(size: CorpusSize) -> String {
+    corpus_content(size).replace('\n', "\r\n")
+}
+
 pub fn corpus_content(size: CorpusSize) -> &'static str {
     match size {
         CorpusSize::Small => CORPUS_SMALL_RAW,
         CorpusSize::Medium => CORPUS_MEDIUM_RAW,
         CorpusSize::Large => CORPUS_LARGE_RAW,
     }
-}
-
-#[allow(dead_code)] // Used by some benchmarks but not all
-pub fn corpus_crlf(size: CorpusSize) -> String {
-    corpus_content(size).replace('\n', "\r\n")
 }

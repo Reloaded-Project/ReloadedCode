@@ -11,22 +11,35 @@ use reloaded_code_core::{
 use serde_json::json;
 use serdes_ai::tools::{ToolDefinition, ToolError as SerdesError, ToolReturn};
 
-/// Convert [`ToolOutput`] to [`ToolReturn`] (serdesAI).
+/// Convert a portable [`CustomToolDefinition`] to a SerdesAI [`ToolDefinition`].
 ///
-/// - Non-truncated output: `ToolReturn::text(content)`
-/// - Truncated output: `ToolReturn::json({ "content": ..., "truncated": true })`
+/// Fields map 1:1. The SerdesAI `outer_typed_dict_key` field is always `None`
+/// because portable definitions do not carry framework-specific metadata.
 ///
-/// [`ToolOutput`]: reloaded_code_core::ToolOutput
-/// [`ToolReturn`]: serdes_ai::tools::ToolReturn
+/// # Example
+///
+/// ```
+/// use reloaded_code_serdesai::convert::custom_definition_to_serdes;
+/// use reloaded_code_core::CustomToolDefinition;
+/// use serde_json::json;
+///
+/// let def = CustomToolDefinition::new("my_tool", "Does things")
+///     .with_parameters(json!({"type": "object", "properties": {}}))
+///     .with_strict(true);
+///
+/// let serdes_def = custom_definition_to_serdes(def);
+/// assert_eq!(serdes_def.name, "my_tool");
+/// assert_eq!(serdes_def.strict, Some(true));
+/// assert!(serdes_def.outer_typed_dict_key.is_none());
+/// ```
 #[inline]
-fn output_to_return(output: ToolOutput) -> ToolReturn {
-    if output.truncated {
-        ToolReturn::json(json!({
-            "content": output.content,
-            "truncated": true
-        }))
-    } else {
-        ToolReturn::text(output.content)
+pub fn custom_definition_to_serdes(definition: CustomToolDefinition) -> ToolDefinition {
+    ToolDefinition {
+        name: definition.name,
+        description: definition.description,
+        parameters_json_schema: definition.parameters_json_schema,
+        strict: definition.strict,
+        outer_typed_dict_key: None,
     }
 }
 
@@ -111,35 +124,22 @@ fn field_for_out_of_bounds(msg: &str) -> Option<String> {
     }
 }
 
-/// Convert a portable [`CustomToolDefinition`] to a SerdesAI [`ToolDefinition`].
+/// Convert [`ToolOutput`] to [`ToolReturn`] (serdesAI).
 ///
-/// Fields map 1:1. The SerdesAI `outer_typed_dict_key` field is always `None`
-/// because portable definitions do not carry framework-specific metadata.
+/// - Non-truncated output: `ToolReturn::text(content)`
+/// - Truncated output: `ToolReturn::json({ "content": ..., "truncated": true })`
 ///
-/// # Example
-///
-/// ```
-/// use reloaded_code_serdesai::convert::custom_definition_to_serdes;
-/// use reloaded_code_core::CustomToolDefinition;
-/// use serde_json::json;
-///
-/// let def = CustomToolDefinition::new("my_tool", "Does things")
-///     .with_parameters(json!({"type": "object", "properties": {}}))
-///     .with_strict(true);
-///
-/// let serdes_def = custom_definition_to_serdes(def);
-/// assert_eq!(serdes_def.name, "my_tool");
-/// assert_eq!(serdes_def.strict, Some(true));
-/// assert!(serdes_def.outer_typed_dict_key.is_none());
-/// ```
+/// [`ToolOutput`]: reloaded_code_core::ToolOutput
+/// [`ToolReturn`]: serdes_ai::tools::ToolReturn
 #[inline]
-pub fn custom_definition_to_serdes(definition: CustomToolDefinition) -> ToolDefinition {
-    ToolDefinition {
-        name: definition.name,
-        description: definition.description,
-        parameters_json_schema: definition.parameters_json_schema,
-        strict: definition.strict,
-        outer_typed_dict_key: None,
+fn output_to_return(output: ToolOutput) -> ToolReturn {
+    if output.truncated {
+        ToolReturn::json(json!({
+            "content": output.content,
+            "truncated": true
+        }))
+    } else {
+        ToolReturn::text(output.content)
     }
 }
 

@@ -16,6 +16,12 @@
 
 use ahash::AHashMap;
 
+/// Resolves named credentials from explicit overrides map.
+#[derive(Debug, Clone)]
+pub struct CredentialResolver<const READ_ENV: bool = true> {
+    overrides: AHashMap<Box<str>, Box<str>>,
+}
+
 /// Trait for resolving named credentials.
 ///
 /// Implemented by [`CredentialResolver`] regardless of its `READ_ENV` parameter.
@@ -25,19 +31,6 @@ pub trait CredentialLookup {
     ///
     /// Returns `None` when neither overrides nor environment variables provide a non-empty value.
     fn resolve(&self, name: &str) -> Option<String>;
-}
-
-/// Resolves named credentials from explicit overrides map.
-#[derive(Debug, Clone)]
-pub struct CredentialResolver<const READ_ENV: bool = true> {
-    overrides: AHashMap<Box<str>, Box<str>>,
-}
-
-impl Default for CredentialResolver {
-    #[inline]
-    fn default() -> Self {
-        Self::new()
-    }
 }
 
 impl CredentialResolver {
@@ -65,6 +58,13 @@ impl<const READ_ENV: bool> CredentialResolver<READ_ENV> {
     #[inline]
     pub fn set_override(&mut self, name: impl Into<Box<str>>, value: impl Into<Box<str>>) {
         self.overrides.insert(name.into(), value.into());
+    }
+}
+
+impl Default for CredentialResolver {
+    #[inline]
+    fn default() -> Self {
+        Self::new()
     }
 }
 

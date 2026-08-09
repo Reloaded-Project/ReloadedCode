@@ -25,66 +25,12 @@ const PIPE_DRAIN_GRACE_PERIOD: Duration = Duration::from_millis(100);
 /// Read chunk size for async pipe draining.
 const PIPE_DRAIN_READ_CHUNK: usize = 8 * 1024;
 
-type SharedPipeBuffer = Arc<Mutex<Vec<u8>>>;
-
 struct PipeDrainTask {
     handle: JoinHandle<()>,
     buffer: SharedPipeBuffer,
 }
 
-#[inline]
-fn spawn_pipe_drain_task<R>(mut pipe: R) -> PipeDrainTask
-where
-    R: AsyncRead + Unpin + Send + 'static,
-{
-    let buffer: SharedPipeBuffer = Arc::new(Mutex::new(Vec::with_capacity(PIPE_BUFFER_CAPACITY)));
-    let task_buffer = Arc::clone(&buffer);
-
-    let handle = tokio::spawn(async move {
-        let mut chunk = [0_u8; PIPE_DRAIN_READ_CHUNK];
-        loop {
-            match pipe.read(&mut chunk).await {
-                Ok(0) => break,
-                Ok(read) => task_buffer.lock().extend_from_slice(&chunk[..read]),
-                Err(_) => break,
-            }
-        }
-    });
-
-    PipeDrainTask { handle, buffer }
-}
-
-#[inline]
-fn take_pipe_buffer(buffer: SharedPipeBuffer) -> Vec<u8> {
-    match Arc::try_unwrap(buffer) {
-        Ok(mutex) => mutex.into_inner(),
-        Err(shared) => core::mem::take(&mut *shared.lock()),
-    }
-}
-
-#[inline]
-async fn await_pipe_drain_task(task: PipeDrainTask) -> Vec<u8> {
-    let PipeDrainTask { handle, buffer } = task;
-    let _ = handle.await;
-    take_pipe_buffer(buffer)
-}
-
-#[inline]
-async fn await_pipe_drain_task_with_grace(task: PipeDrainTask, grace: Duration) -> Vec<u8> {
-    let PipeDrainTask { mut handle, buffer } = task;
-
-    tokio::select! {
-        _ = &mut handle => {},
-        _ = tokio::time::sleep(grace) => {
-            // Preserve strict timeout semantics while retaining buffered bytes.
-            // Buffer state is shared outside the task so abort cannot discard it.
-            handle.abort();
-            let _ = handle.await;
-        }
-    }
-
-    take_pipe_buffer(buffer)
-}
+type SharedPipeBuffer = Arc<Mutex<Vec<u8>>>;
 
 /// Executes a shell command with optional working directory and timeout.
 ///
@@ -236,6 +182,30 @@ pub(in crate::tools::bash) async fn run_wrapped_command(
     }
 }
 
+#[inline]
+async fn await_pipe_drain_task(task: PipeDrainTask) -> Vec<u8> {
+    let PipeDrainTask { handle, buffer } = task;
+    let _ = handle.await;
+    take_pipe_buffer(buffer)
+}
+
+#[inline]
+async fn await_pipe_drain_task_with_grace(task: PipeDrainTask, grace: Duration) -> Vec<u8> {
+    let PipeDrainTask { mut handle, buffer } = task;
+
+    tokio::select! {
+        _ = &mut handle => {},
+        _ = tokio::time::sleep(grace) => {
+            // Preserve strict timeout semantics while retaining buffered bytes.
+            // Buffer state is shared outside the task so abort cannot discard it.
+            handle.abort();
+            let _ = handle.await;
+        }
+    }
+
+    take_pipe_buffer(buffer)
+}
+
 fn build_host_wrap(command: &str, workdir: Option<&Path>) -> ToolResult<CommandWrap> {
     validate_workdir(workdir)?;
 
@@ -267,6 +237,36 @@ fn build_host_wrap(command: &str, workdir: Option<&Path>) -> ToolResult<CommandW
     wrap.wrap(ProcessGroup::leader());
 
     Ok(wrap)
+}
+
+#[inline]
+fn spawn_pipe_drain_task<R>(mut pipe: R) -> PipeDrainTask
+where
+    R: AsyncRead + Unpin + Send + 'static,
+{
+    let buffer: SharedPipeBuffer = Arc::new(Mutex::new(Vec::with_capacity(PIPE_BUFFER_CAPACITY)));
+    let task_buffer = Arc::clone(&buffer);
+
+    let handle = tokio::spawn(async move {
+        let mut chunk = [0_u8; PIPE_DRAIN_READ_CHUNK];
+        loop {
+            match pipe.read(&mut chunk).await {
+                Ok(0) => break,
+                Ok(read) => task_buffer.lock().extend_from_slice(&chunk[..read]),
+                Err(_) => break,
+            }
+        }
+    });
+
+    PipeDrainTask { handle, buffer }
+}
+
+#[inline]
+fn take_pipe_buffer(buffer: SharedPipeBuffer) -> Vec<u8> {
+    match Arc::try_unwrap(buffer) {
+        Ok(mutex) => mutex.into_inner(),
+        Err(shared) => core::mem::take(&mut *shared.lock()),
+    }
 }
 
 #[cfg(test)]

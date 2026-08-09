@@ -2,18 +2,6 @@
 
 use super::ParamMetadata;
 
-/// Canonical tool name.
-pub const NAME: &str = "bash";
-
-/// Default timeout in milliseconds.
-pub const DEFAULT_TIMEOUT_MS: u32 = 120_000;
-
-/// Maximum timeout in milliseconds.
-pub const MAX_TIMEOUT_MS: u32 = 600_000;
-
-/// Tool description.
-pub const DESCRIPTION: &str = "Run a shell command in a fresh process.";
-
 /// Parameter metadata.
 pub mod param {
     use super::{ParamMetadata, DEFAULT_TIMEOUT_MS, MAX_TIMEOUT_MS};
@@ -40,3 +28,12 @@ pub mod param {
         false,
     );
 }
+
+/// Default timeout in milliseconds.
+pub const DEFAULT_TIMEOUT_MS: u32 = 120_000;
+/// Tool description.
+pub const DESCRIPTION: &str = "Run a shell command in a fresh process.";
+/// Maximum timeout in milliseconds.
+pub const MAX_TIMEOUT_MS: u32 = 600_000;
+/// Canonical tool name.
+pub const NAME: &str = "bash";

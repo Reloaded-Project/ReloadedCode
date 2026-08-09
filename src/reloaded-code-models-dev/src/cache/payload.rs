@@ -9,33 +9,33 @@
 //! Using a 1.26 MB `api.json` snapshot (models.dev), converted to bitcode
 //! then compressed with zstd at various levels:
 //!
-//! | Level          | Size      | % of JSON | Time    |
-//! |----------------|-----------|-----------|---------|
-//! | JSON           | 1260.7 KB | 100.00%   | -       |
-//! | (raw bitcode)  | 105.7 KB  | 8.39%     | -       |
-//! | 0              | 29.7 KB   | 2.36%     | 1.4ms   |
-//! | 1              | 32.1 KB   | 2.55%     | 1.0ms   |
-//! | 2              | 31.7 KB   | 2.51%     | 1.0ms   |
-//! | 3              | 29.7 KB   | 2.36%     | 1.1ms   |
-//! | 4              | 29.7 KB   | 2.36%     | 1.9ms   |
-//! | 5              | 27.5 KB   | 2.18%     | 2.9ms   |
-//! | 6              | 27.1 KB   | 2.15%     | 3.6ms   |
-//! | 7              | 26.6 KB   | 2.11%     | 4.8ms   |
-//! | 8              | 26.7 KB   | 2.12%     | 5.0ms   |
-//! | 9              | 26.7 KB   | 2.12%     | 6.3ms   |
-//! | 10             | 26.4 KB   | 2.09%     | 9.1ms   |
-//! | 11             | 26.1 KB   | 2.07%     | 8.5ms   |
-//! | 12             | 26.1 KB   | 2.07%     | 14.4ms  |
-//! | 13             | 26.0 KB   | 2.06%     | 12.0ms  |
-//! | 14             | 26.0 KB   | 2.06%     | 16.4ms  |
-//! | 15             | 25.9 KB   | 2.06%     | 21.6ms  |
-//! | 16             | 23.6 KB   | 1.87%     | 24.2ms  |
-//! | 17             | 23.2 KB   | 1.84%     | 27.6ms  |
-//! | 18             | 23.2 KB   | 1.84%     | 42.6ms  |
-//! | 19             | 23.1 KB   | 1.83%     | 81.3ms  |
-//! | 20             | 23.1 KB   | 1.83%     | 96.3ms  |
-//! | 21             | 23.1 KB   | 1.83%     | 125.4ms |
-//! | 22             | 23.1 KB   | 1.83%     | 207.5ms |
+//! | Level         | Size      | % of JSON | Time    |
+//! | ------------- | --------- | --------- | ------- |
+//! | JSON          | 1260.7 KB | 100.00%   | -       |
+//! | (raw bitcode) | 105.7 KB  | 8.39%     | -       |
+//! | 0             | 29.7 KB   | 2.36%     | 1.4ms   |
+//! | 1             | 32.1 KB   | 2.55%     | 1.0ms   |
+//! | 2             | 31.7 KB   | 2.51%     | 1.0ms   |
+//! | 3             | 29.7 KB   | 2.36%     | 1.1ms   |
+//! | 4             | 29.7 KB   | 2.36%     | 1.9ms   |
+//! | 5             | 27.5 KB   | 2.18%     | 2.9ms   |
+//! | 6             | 27.1 KB   | 2.15%     | 3.6ms   |
+//! | 7             | 26.6 KB   | 2.11%     | 4.8ms   |
+//! | 8             | 26.7 KB   | 2.12%     | 5.0ms   |
+//! | 9             | 26.7 KB   | 2.12%     | 6.3ms   |
+//! | 10            | 26.4 KB   | 2.09%     | 9.1ms   |
+//! | 11            | 26.1 KB   | 2.07%     | 8.5ms   |
+//! | 12            | 26.1 KB   | 2.07%     | 14.4ms  |
+//! | 13            | 26.0 KB   | 2.06%     | 12.0ms  |
+//! | 14            | 26.0 KB   | 2.06%     | 16.4ms  |
+//! | 15            | 25.9 KB   | 2.06%     | 21.6ms  |
+//! | 16            | 23.6 KB   | 1.87%     | 24.2ms  |
+//! | 17            | 23.2 KB   | 1.84%     | 27.6ms  |
+//! | 18            | 23.2 KB   | 1.84%     | 42.6ms  |
+//! | 19            | 23.1 KB   | 1.83%     | 81.3ms  |
+//! | 20            | 23.1 KB   | 1.83%     | 96.3ms  |
+//! | 21            | 23.1 KB   | 1.83%     | 125.4ms |
+//! | 22            | 23.1 KB   | 1.83%     | 207.5ms |
 //!
 //! Levels 1-3 offer the best speed/ratio tradeoff (~1ms, ~2.4% of JSON).
 //! Levels 19-22 provide maximal compression but take 80-200ms.
@@ -53,19 +53,6 @@ pub(crate) struct CatalogCachePayload {
     pub(crate) providers: Vec<CachedProviderRow>,
     /// Model rows that reference providers by index.
     pub(crate) models: Vec<CachedModelRow>,
-}
-
-/// Serializable provider row stored in the cache payload.
-#[derive(Debug, Clone, PartialEq, Eq, bitcode::Encode, bitcode::Decode)]
-pub(crate) struct CachedProviderRow {
-    /// Stable provider lookup key.
-    pub(crate) provider_key: String,
-    /// Base API URL for requests to this provider.
-    pub(crate) api_url: String,
-    /// Environment variables that can supply credentials.
-    pub(crate) env_vars: Vec<String>,
-    /// Provider protocol or API shape.
-    pub(crate) api_type: ProviderType,
 }
 
 /// Serializable model row stored in the cache payload.
@@ -87,19 +74,17 @@ pub(crate) struct CachedModelRow {
     pub(crate) top_p: Option<f32>,
 }
 
-/// Encodes a cache payload into bitcode bytes.
-pub(crate) fn encode_cache_payload(payload: &CatalogCachePayload) -> Vec<u8> {
-    bitcode::encode(payload)
-}
-
-/// Decodes bitcode bytes into an owned cache payload.
-///
-/// # Errors
-///
-/// Returns [`CatalogError::BitcodeDecode`] when the bytes are not a valid cache
-/// payload encoding.
-pub(crate) fn decode_cache_payload(bytes: &[u8]) -> CatalogResult<CatalogCachePayload> {
-    bitcode::decode(bytes).map_err(|error| CatalogError::BitcodeDecode(error.to_string()))
+/// Serializable provider row stored in the cache payload.
+#[derive(Debug, Clone, PartialEq, Eq, bitcode::Encode, bitcode::Decode)]
+pub(crate) struct CachedProviderRow {
+    /// Stable provider lookup key.
+    pub(crate) provider_key: String,
+    /// Base API URL for requests to this provider.
+    pub(crate) api_url: String,
+    /// Environment variables that can supply credentials.
+    pub(crate) env_vars: Vec<String>,
+    /// Provider protocol or API shape.
+    pub(crate) api_type: ProviderType,
 }
 
 /// Rebuilds a [`ModelCatalog`] from decoded cache rows.
@@ -140,6 +125,21 @@ pub(crate) fn catalog_from_cache_payload(
     }
 
     Ok(ModelCatalog::build(&provider_sources, &model_sources)?)
+}
+
+/// Decodes bitcode bytes into an owned cache payload.
+///
+/// # Errors
+///
+/// Returns [`CatalogError::BitcodeDecode`] when the bytes are not a valid cache
+/// payload encoding.
+pub(crate) fn decode_cache_payload(bytes: &[u8]) -> CatalogResult<CatalogCachePayload> {
+    bitcode::decode(bytes).map_err(|error| CatalogError::BitcodeDecode(error.to_string()))
+}
+
+/// Encodes a cache payload into bitcode bytes.
+pub(crate) fn encode_cache_payload(payload: &CatalogCachePayload) -> Vec<u8> {
+    bitcode::encode(payload)
 }
 
 #[cfg(test)]

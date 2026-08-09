@@ -96,6 +96,38 @@ fn model_info_from_entry(model_entry: &ApiModelEntry) -> ModelInfo {
 }
 
 #[inline]
+fn provider_type_from_models_dev_npm(npm_package: Option<&str>) -> ProviderType {
+    match npm_package {
+        Some("@ai-sdk/openai") => ProviderType::OpenAiCompletions,
+        Some("@ai-sdk/openai-compatible") => ProviderType::OpenAiCompletions,
+        Some("@ai-sdk/openai-responses") => ProviderType::OpenAiResponses,
+        Some("@ai-sdk/anthropic") => ProviderType::Anthropic,
+        Some("@ai-sdk/google") => ProviderType::Google,
+        Some("@ai-sdk/groq") => ProviderType::Groq,
+        Some("@ai-sdk/mistral") => ProviderType::Mistral,
+        Some("@ai-sdk/ollama") => ProviderType::Ollama,
+        Some("@ai-sdk/amazon-bedrock") => ProviderType::Bedrock,
+        Some("@ai-sdk/azure") => ProviderType::Azure,
+        Some("@openrouter/ai-sdk-provider") => ProviderType::OpenRouter,
+        Some("@ai-sdk/huggingface") => ProviderType::HuggingFace,
+        Some("@ai-sdk/cohere") => ProviderType::Cohere,
+        Some("@ai-sdk/chatgpt-oauth") => ProviderType::ChatGptOAuth,
+        Some("@ai-sdk/claude-code-oauth") => ProviderType::ClaudeCodeOAuth,
+        Some("@ai-sdk/antigravity") => ProviderType::Antigravity,
+        Some(_) | None => ProviderType::Unknown,
+    }
+}
+
+#[inline]
+fn model_max_input(limit: &ApiModelLimit) -> u32 {
+    if limit.input == 0 {
+        limit.context
+    } else {
+        limit.input
+    }
+}
+
+#[inline]
 fn model_modalities(raw: Option<&ApiModelModalities>) -> Modality {
     let Some(raw) = raw else {
         return Modality::TEXT;
@@ -131,38 +163,6 @@ fn output_modality_flag(label: &str) -> Modality {
         "audio" => Modality::AUDIO_OUTPUT,
         "video" => Modality::VIDEO_OUTPUT,
         _ => Modality::empty(),
-    }
-}
-
-#[inline]
-fn model_max_input(limit: &ApiModelLimit) -> u32 {
-    if limit.input == 0 {
-        limit.context
-    } else {
-        limit.input
-    }
-}
-
-#[inline]
-fn provider_type_from_models_dev_npm(npm_package: Option<&str>) -> ProviderType {
-    match npm_package {
-        Some("@ai-sdk/openai") => ProviderType::OpenAiCompletions,
-        Some("@ai-sdk/openai-compatible") => ProviderType::OpenAiCompletions,
-        Some("@ai-sdk/openai-responses") => ProviderType::OpenAiResponses,
-        Some("@ai-sdk/anthropic") => ProviderType::Anthropic,
-        Some("@ai-sdk/google") => ProviderType::Google,
-        Some("@ai-sdk/groq") => ProviderType::Groq,
-        Some("@ai-sdk/mistral") => ProviderType::Mistral,
-        Some("@ai-sdk/ollama") => ProviderType::Ollama,
-        Some("@ai-sdk/amazon-bedrock") => ProviderType::Bedrock,
-        Some("@ai-sdk/azure") => ProviderType::Azure,
-        Some("@openrouter/ai-sdk-provider") => ProviderType::OpenRouter,
-        Some("@ai-sdk/huggingface") => ProviderType::HuggingFace,
-        Some("@ai-sdk/cohere") => ProviderType::Cohere,
-        Some("@ai-sdk/chatgpt-oauth") => ProviderType::ChatGptOAuth,
-        Some("@ai-sdk/claude-code-oauth") => ProviderType::ClaudeCodeOAuth,
-        Some("@ai-sdk/antigravity") => ProviderType::Antigravity,
-        Some(_) | None => ProviderType::Unknown,
     }
 }
 

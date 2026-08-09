@@ -9,6 +9,7 @@
 //!
 //! [`Tool`]: serdes_ai::tools::Tool
 
+use crate::convert::core_error_to_serdes;
 use async_trait::async_trait;
 use reloaded_code_core::ToolContext;
 use reloaded_code_core::context::{PathMode, ToolPrompt};
@@ -18,7 +19,7 @@ use reloaded_code_core::tools::{GlobOutput, GlobRequest, GlobSettings, glob_file
 use serde_json::json;
 use serdes_ai::tools::{RunContext, SchemaBuilder, Tool, ToolDefinition, ToolResult, ToolReturn};
 
-use crate::convert::core_error_to_serdes;
+const NO_FILES_FOUND: &str = "No files found matching the pattern.";
 
 /// Tool for finding files matching glob patterns.
 ///
@@ -83,38 +84,6 @@ impl<R: PathResolver + Clone + Send + Sync, Deps: Send + Sync> Tool<Deps> for Gl
     }
 }
 
-const NO_FILES_FOUND: &str = "No files found matching the pattern.";
-
-fn output_content(files: &[String]) -> String {
-    if files.is_empty() {
-        NO_FILES_FOUND.to_string()
-    } else {
-        files.join("\n")
-    }
-}
-
-fn glob_output_to_return(output: GlobOutput) -> ToolReturn {
-    let content = output_content(&output.files);
-
-    if output.partial {
-        return ToolReturn::json(json!({
-            "content": content,
-            "partial": true,
-            "errors": output.errors,
-            "truncated": output.truncated,
-        }));
-    }
-
-    if output.truncated {
-        ToolReturn::json(json!({
-            "content": content,
-            "truncated": true,
-        }))
-    } else {
-        ToolReturn::text(content)
-    }
-}
-
 impl<R: PathResolver + Clone> ToolContext for GlobTool<R> {
     fn name(&self) -> &'static str {
         glob_meta::NAME
@@ -155,6 +124,36 @@ fn build_definition(path_mode: PathMode) -> ToolDefinition {
         parameters_json_schema: schema,
         strict: None,
         outer_typed_dict_key: None,
+    }
+}
+
+fn glob_output_to_return(output: GlobOutput) -> ToolReturn {
+    let content = output_content(&output.files);
+
+    if output.partial {
+        return ToolReturn::json(json!({
+            "content": content,
+            "partial": true,
+            "errors": output.errors,
+            "truncated": output.truncated,
+        }));
+    }
+
+    if output.truncated {
+        ToolReturn::json(json!({
+            "content": content,
+            "truncated": true,
+        }))
+    } else {
+        ToolReturn::text(content)
+    }
+}
+
+fn output_content(files: &[String]) -> String {
+    if files.is_empty() {
+        NO_FILES_FOUND.to_string()
+    } else {
+        files.join("\n")
     }
 }
 

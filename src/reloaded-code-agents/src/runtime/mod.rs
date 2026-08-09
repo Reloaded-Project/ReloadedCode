@@ -36,13 +36,13 @@
 //! # }
 //! ```
 
-mod builder;
-mod model;
-mod state;
-mod task;
-
 pub use builder::AgentRuntimeBuilder;
 pub use model::{resolve_model_with_catalog, ModelResolutionError, ResolvedModel};
 pub use reloaded_code_core::TaskSettings;
 pub use state::{AgentDefaults, AgentRuntime};
 pub use task::{callable_targets, summarize_callable_targets, TaskTargetSummary};
+
+mod builder;
+mod model;
+mod state;
+mod task;

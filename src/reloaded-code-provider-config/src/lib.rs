@@ -5,11 +5,11 @@
 //!
 //! [`ModelCatalog::build()`]: reloaded_code_core::models::ModelCatalog::build
 
+pub use config::{ModelConfig, ProviderConfig};
+pub use error::ProviderConfigError;
+pub use loader::{default_config_paths, LoadedProviderConfig, ProviderConfigLoader};
+
 mod api_type;
 mod config;
 mod error;
 mod loader;
-
-pub use config::{ModelConfig, ProviderConfig};
-pub use error::ProviderConfigError;
-pub use loader::{default_config_paths, LoadedProviderConfig, ProviderConfigLoader};

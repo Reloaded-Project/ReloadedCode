@@ -126,17 +126,26 @@ pub(super) fn build_runtime_task_caches(
     (allowed_tools_by_caller, callable_target_summaries_by_caller)
 }
 
-fn summarize_targets(callable: Vec<&AgentConfig>) -> Vec<TaskTargetSummary> {
-    let mut summaries = Vec::with_capacity(callable.len());
+fn collect_allowed_tools(
+    tools: &[ToolCatalogEntry],
+    task_rules: &Ruleset,
+    task_is_callable: bool,
+) -> Vec<ToolCatalogEntry> {
+    let mut allowed = Vec::with_capacity(tools.len());
 
-    for target in callable {
-        summaries.push(TaskTargetSummary {
-            name: target.name.clone(),
-            description: target.description.clone(),
-        });
+    for entry in tools {
+        let is_allowed = match entry.kind {
+            // Task is target-scoped, so wildcard tool filtering alone is not enough.
+            ToolCatalogKind::Task => task_is_callable,
+            _ => task_rules.is_allowed(entry.name, "*"),
+        };
+
+        if is_allowed {
+            allowed.push(*entry);
+        }
     }
 
-    summaries
+    allowed
 }
 
 fn filter_callable_targets<'a>(
@@ -158,6 +167,19 @@ fn sorted_agents(catalog: &AgentCatalog) -> Vec<&AgentConfig> {
     agents
 }
 
+fn summarize_targets(callable: Vec<&AgentConfig>) -> Vec<TaskTargetSummary> {
+    let mut summaries = Vec::with_capacity(callable.len());
+
+    for target in callable {
+        summaries.push(TaskTargetSummary {
+            name: target.name.clone(),
+            description: target.description.clone(),
+        });
+    }
+
+    summaries
+}
+
 fn target_is_callable(
     target: &AgentConfig,
     task_rules: &Ruleset,
@@ -166,28 +188,6 @@ fn target_is_callable(
     matches!(target.mode, AgentMode::All | AgentMode::Subagent)
         && (!has_explicit_task_permission
             || task_rules.is_allowed(task_meta::NAME, target.name.as_ref()))
-}
-
-fn collect_allowed_tools(
-    tools: &[ToolCatalogEntry],
-    task_rules: &Ruleset,
-    task_is_callable: bool,
-) -> Vec<ToolCatalogEntry> {
-    let mut allowed = Vec::with_capacity(tools.len());
-
-    for entry in tools {
-        let is_allowed = match entry.kind {
-            // Task is target-scoped, so wildcard tool filtering alone is not enough.
-            ToolCatalogKind::Task => task_is_callable,
-            _ => task_rules.is_allowed(entry.name, "*"),
-        };
-
-        if is_allowed {
-            allowed.push(*entry);
-        }
-    }
-
-    allowed
 }
 
 #[cfg(test)]

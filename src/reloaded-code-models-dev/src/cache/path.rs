@@ -3,11 +3,10 @@
 use crate::{error::CatalogResult, CatalogError};
 use std::path::PathBuf;
 
+const CACHE_FILENAME: &str = "models.dev.catalog.v1.cache";
 /// Environment variable name for overriding the default cache path.
 pub const CACHE_PATH_ENV_VAR: &str = "RELOADED_CODE_MODELS_DEV_CACHE_PATH";
-
 const CACHE_SUBDIR: &str = "reloaded-code";
-const CACHE_FILENAME: &str = "models.dev.catalog.v1.cache";
 
 /// Returns the shared cache path for the models.dev catalog.
 ///

@@ -19,8 +19,6 @@ use codex_protocol::protocol::EventMsg;
 use std::collections::BTreeMap;
 use std::sync::LazyLock;
 
-pub struct PlanHandler;
-
 pub static PLAN_TOOL: LazyLock<ToolSpec> = LazyLock::new(|| {
     let mut plan_item_props = BTreeMap::new();
     plan_item_props.insert("step".to_string(), JsonSchema::String { description: None });
@@ -62,6 +60,8 @@ At most one step can be in_progress at a time.
         },
     })
 });
+
+pub struct PlanHandler;
 
 #[async_trait]
 impl ToolHandler for PlanHandler {

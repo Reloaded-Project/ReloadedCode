@@ -9,10 +9,10 @@
 //! external callers use the adapter's public API instead of constructing Task
 //! tools by hand.
 
-mod definition;
-mod handle;
-mod tool;
-
 pub(crate) use definition::task_tool_definition;
 pub(crate) use handle::TaskHandle;
 pub(crate) use tool::TaskTool;
+
+mod definition;
+mod handle;
+mod tool;

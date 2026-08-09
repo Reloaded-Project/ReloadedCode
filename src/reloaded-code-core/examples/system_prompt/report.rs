@@ -38,13 +38,6 @@ pub fn print_ranked_sizes(title: &str, sizes: &[(String, usize)]) {
     }
 }
 
-/// Returns rendered tool-guideline section sizes sorted from largest to smallest.
-pub fn section_sizes(artifacts: &PromptArtifacts) -> Vec<(String, usize)> {
-    let mut sections = artifacts.guideline_sections.clone();
-    sort_sizes_desc(&mut sections);
-    sections
-}
-
 pub fn print_tool_definitions(artifacts: &super::PromptArtifacts) {
     println!("\n{}", "=".repeat(60));
     println!("Tool Definitions:");
@@ -53,6 +46,13 @@ pub fn print_tool_definitions(artifacts: &super::PromptArtifacts) {
         println!("\n--- {name} ---");
         println!("{}", serde_json::to_string_pretty(tool).unwrap());
     }
+}
+
+/// Returns rendered tool-guideline section sizes sorted from largest to smallest.
+pub fn section_sizes(artifacts: &PromptArtifacts) -> Vec<(String, usize)> {
+    let mut sections = artifacts.guideline_sections.clone();
+    sort_sizes_desc(&mut sections);
+    sections
 }
 
 pub(super) fn collect_guideline_sections(prompt: &str) -> Vec<(String, usize)> {

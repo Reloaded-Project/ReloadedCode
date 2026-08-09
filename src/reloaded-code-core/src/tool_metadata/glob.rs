@@ -2,12 +2,6 @@
 
 use super::ParamMetadata;
 
-/// Canonical tool name.
-pub const NAME: &str = "glob";
-
-/// Maximum number of results returned.
-pub const MAX_RESULTS: usize = 1000;
-
 /// Tool descriptions.
 pub mod description {
     /// Absolute-path variant.
@@ -18,7 +12,6 @@ pub mod description {
     pub const ALLOWED: &str =
         "Find files by glob pattern in allowed directories. Respects .gitignore and sorts newest first.";
 }
-
 /// Parameter metadata.
 pub mod param {
     use super::ParamMetadata;
@@ -41,3 +34,8 @@ pub mod param {
         true,
     );
 }
+
+/// Maximum number of results returned.
+pub const MAX_RESULTS: usize = 1000;
+/// Canonical tool name.
+pub const NAME: &str = "glob";

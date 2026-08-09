@@ -43,6 +43,12 @@ pub struct EditRequest {
     pub replace_all: bool,
 }
 
+/// Runtime settings for edit requests.
+///
+/// Reserved for future use.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct EditSettings {}
+
 impl EditRequest {
     /// Parses a raw JSON tool payload into an edit request.
     ///
@@ -52,6 +58,14 @@ impl EditRequest {
     ///   or `new_string` fields, or invalid field types).
     pub fn parse(args: Value) -> ToolResult<Self> {
         serde_json::from_value(args).map_err(ToolError::from)
+    }
+}
+
+impl EditSettings {
+    /// Creates default edit settings.
+    #[must_use]
+    pub fn new() -> Self {
+        Self {}
     }
 }
 
@@ -79,20 +93,6 @@ impl From<EditError> for ToolError {
             }
             EditError::Tool(tool_err) => tool_err,
         }
-    }
-}
-
-/// Runtime settings for edit requests.
-///
-/// Reserved for future use.
-#[derive(Debug, Clone, Default, PartialEq, Eq)]
-pub struct EditSettings {}
-
-impl EditSettings {
-    /// Creates default edit settings.
-    #[must_use]
-    pub fn new() -> Self {
-        Self {}
     }
 }
 

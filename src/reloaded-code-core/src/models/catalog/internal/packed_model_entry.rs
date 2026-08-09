@@ -8,19 +8,17 @@
 use crate::models::catalog::{Modality, ModelInfo};
 use bitfields::bitfield;
 
-/// Number of bits allocated to modality flags.
-pub const MODALITY_BITS: u32 = 8;
-/// Number of bits allocated to max output tokens.
-pub const MAX_OUTPUT_BITS: u32 = 27;
-/// Number of bits allocated to max input tokens.
-pub const MAX_INPUT_BITS: u32 = 29;
-
-/// Maximum output token value representable by 27 bits (`134_217_727`).
-pub const MAX_OUTPUT_TOKENS: u32 = (1u32 << MAX_OUTPUT_BITS) - 1;
 /// Maximum input token value representable by 29 bits (`536_870_911`).
 pub const MAX_INPUT_TOKENS: u32 = (1u32 << MAX_INPUT_BITS) - 1;
-
+/// Maximum output token value representable by 27 bits (`134_217_727`).
+pub const MAX_OUTPUT_TOKENS: u32 = (1u32 << MAX_OUTPUT_BITS) - 1;
+/// Number of bits allocated to modality flags.
+pub const MODALITY_BITS: u32 = 8;
 const _: () = assert!(MODALITY_BITS + MAX_OUTPUT_BITS + MAX_INPUT_BITS == 64);
+/// Number of bits allocated to max input tokens.
+pub const MAX_INPUT_BITS: u32 = 29;
+/// Number of bits allocated to max output tokens.
+pub const MAX_OUTPUT_BITS: u32 = 27;
 
 /// Packed model metadata row.
 #[bitfield(u64)]

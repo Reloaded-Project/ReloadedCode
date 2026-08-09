@@ -8,12 +8,6 @@ use crate::context::{
 };
 use crate::path::AllowedPathResolver;
 
-/// Entry storing a tool name and prompt renderer.
-struct ContextEntry {
-    name: &'static str,
-    prompt: ToolPrompt,
-}
-
 /// Builder that tracks tools and generates formatted system prompts.
 ///
 /// The environment section is always included and appears before tool listings.
@@ -70,6 +64,12 @@ pub struct SystemPromptBuilder {
     allowed_paths: Option<Vec<String>>,
     supplemental: Vec<(&'static str, &'static str)>,
     system_prompt: Option<String>,
+}
+
+/// Entry storing a tool name and prompt renderer.
+struct ContextEntry {
+    name: &'static str,
+    prompt: ToolPrompt,
 }
 
 impl SystemPromptBuilder {

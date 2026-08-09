@@ -1,5 +1,3 @@
-use bitflags::bitflags;
-
 bitflags! {
     /// Content modalities supported by a model.
     ///
@@ -35,6 +33,8 @@ bitflags! {
         const VIDEO = Self::VIDEO_INPUT.bits() | Self::VIDEO_OUTPUT.bits();
     }
 }
+
+use bitflags::bitflags;
 
 impl Modality {
     /// Parse a combined modality label.

@@ -1,5 +1,9 @@
 //! Index into provider tables.
 
+impl_string_index!(ProviderIdx: u16);
+
+use lite_strtab::impl_string_index;
+
 /// A 16-bit index into provider metadata tables.
 ///
 /// Used to reference a specific provider in the catalog's
@@ -41,6 +45,3 @@ impl From<ProviderIdx> for u16 {
         idx.0
     }
 }
-
-use lite_strtab::impl_string_index;
-impl_string_index!(ProviderIdx: u16);

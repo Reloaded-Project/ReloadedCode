@@ -28,18 +28,17 @@
 //! If no tier succeeds or policy denies the path, reject with
 //! "not within allowed directories".
 
-pub mod normalize;
-mod policy;
-
 use super::{path_analysis, resolve_new_file_fast, PathResolver};
 use crate::context::PathMode;
 use crate::error::{ToolError, ToolResult};
 use normalize::{expand_shell, normalize_path};
+pub use policy::{GlobPolicy, GlobPolicyBuilder, RuleAction};
 use soft_canonicalize::soft_canonicalize;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
-pub use policy::{GlobPolicy, GlobPolicyBuilder, RuleAction};
+pub mod normalize;
+mod policy;
 
 /// Path resolver that restricts access to a workspace root with glob pattern filtering.
 ///
@@ -241,11 +240,6 @@ fn resolve_candidate(
     Err(reject(path))
 }
 
-#[inline]
-fn reject(path: &str) -> ToolError {
-    ToolError::InvalidPath(format!("path '{}' is not within allowed directories", path))
-}
-
 /// Validates a resolved path against workspace containment and policy.
 ///
 /// Delegates to [`AllowedGlobResolver::is_path_allowed`] for a single source
@@ -261,6 +255,11 @@ fn validate_resolved(
     } else {
         Err(reject(path))
     }
+}
+
+#[inline]
+fn reject(path: &str) -> ToolError {
+    ToolError::InvalidPath(format!("path '{}' is not within allowed directories", path))
 }
 
 #[cfg(test)]

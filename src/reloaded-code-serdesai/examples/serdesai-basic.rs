@@ -22,12 +22,8 @@ use std::fmt::Write;
 // Set your OpenAI API key here or via OPENAI_API_KEY environment variable.
 /// Fallback API key if env var is not set. Leave empty to require env var.
 const OPENAI_API_KEY: &str = "";
-const OPENAI_MODEL: &str = "hf:zai-org/GLM-4.7-Flash";
 const OPENAI_BASE_URL: &str = "https://api.synthetic.new/openai/v1";
-
-fn get_openai_api_key() -> String {
-    std::env::var("OPENAI_API_KEY").unwrap_or_else(|_| OPENAI_API_KEY.to_string())
-}
+const OPENAI_MODEL: &str = "hf:zai-org/GLM-4.7-Flash";
 
 #[tokio::main]
 async fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
@@ -94,4 +90,8 @@ async fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
     }
 
     Ok(())
+}
+
+fn get_openai_api_key() -> String {
+    std::env::var("OPENAI_API_KEY").unwrap_or_else(|_| OPENAI_API_KEY.to_string())
 }

@@ -5,17 +5,38 @@ use std::collections::HashMap;
 use std::ops::Deref;
 use std::sync::Arc;
 
+/// Shared wrapper around a [`CustomToolRegistry`], cheaply cloneable via [`Arc`].
+///
+/// Cloning shares the same underlying map, making it cheap to pass through
+/// runtime builders and framework adapters.
+#[derive(Debug, Clone)]
+pub struct SharedToolRegistry {
+    inner: Arc<CustomToolRegistry>,
+}
+
 /// Registry of custom tool factories, keyed by tool name.
 #[derive(Default)]
 pub struct CustomToolRegistry {
     factories: HashMap<&'static str, Box<dyn ToolFactory>>,
 }
 
-impl std::fmt::Debug for CustomToolRegistry {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("CustomToolRegistry")
-            .field("factories", &self.factories.keys().collect::<Vec<_>>())
-            .finish()
+impl SharedToolRegistry {
+    /// Creates an empty registry.
+    #[inline]
+    #[must_use]
+    pub fn new() -> Self {
+        Self {
+            inner: Arc::new(CustomToolRegistry::new()),
+        }
+    }
+
+    /// Creates a shared registry from a populated [`CustomToolRegistry`].
+    #[inline]
+    #[must_use]
+    pub fn from_registry(registry: CustomToolRegistry) -> Self {
+        Self {
+            inner: Arc::new(registry),
+        }
     }
 }
 
@@ -57,35 +78,6 @@ impl CustomToolRegistry {
     }
 }
 
-/// Shared wrapper around a [`CustomToolRegistry`], cheaply cloneable via [`Arc`].
-///
-/// Cloning shares the same underlying map, making it cheap to pass through
-/// runtime builders and framework adapters.
-#[derive(Debug, Clone)]
-pub struct SharedToolRegistry {
-    inner: Arc<CustomToolRegistry>,
-}
-
-impl SharedToolRegistry {
-    /// Creates an empty registry.
-    #[inline]
-    #[must_use]
-    pub fn new() -> Self {
-        Self {
-            inner: Arc::new(CustomToolRegistry::new()),
-        }
-    }
-
-    /// Creates a shared registry from a populated [`CustomToolRegistry`].
-    #[inline]
-    #[must_use]
-    pub fn from_registry(registry: CustomToolRegistry) -> Self {
-        Self {
-            inner: Arc::new(registry),
-        }
-    }
-}
-
 impl Deref for SharedToolRegistry {
     type Target = CustomToolRegistry;
 
@@ -99,5 +91,13 @@ impl Default for SharedToolRegistry {
     #[inline]
     fn default() -> Self {
         Self::new()
+    }
+}
+
+impl std::fmt::Debug for CustomToolRegistry {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("CustomToolRegistry")
+            .field("factories", &self.factories.keys().collect::<Vec<_>>())
+            .finish()
     }
 }

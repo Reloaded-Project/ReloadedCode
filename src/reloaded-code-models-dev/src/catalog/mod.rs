@@ -5,18 +5,14 @@
 //! - Reuse cache on `304 Not Modified`
 //! - Fall back to cached data if the network path fails
 
+use crate::cache::shared_cache_path;
+use crate::error::CatalogError;
+pub use load_result::{CatalogLoadResult, CatalogLoadSource};
+use std::path::Path;
+
 mod load_cache;
 mod load_result;
 mod sync;
-
-#[cfg(test)]
-mod test_utils;
-
-pub use load_result::{CatalogLoadResult, CatalogLoadSource};
-
-use crate::cache::shared_cache_path;
-use crate::error::CatalogError;
-use std::path::Path;
 
 /// Entry point for loading models.dev catalogs.
 ///
@@ -154,6 +150,8 @@ impl ModelsDevCatalog {
     }
 }
 
+#[cfg(test)]
+mod test_utils;
 #[cfg(test)]
 mod tests {
     use super::*;

@@ -50,12 +50,12 @@ Each provider must include at least one model under `models`.
 
 ### Provider fields
 
-| Field        | Type        | Default             | Notes                                 |
-| ------------ | ----------- | ------------------- | ------------------------------------- |
-| `api_url`    | string      | required            | Base URL for the API endpoint         |
-| `api_type`   | string      | `openai-compatible` | Maps to provider behaviour profile    |
-| `env`        | string list | `[]`                | Env var names checked for credentials |
-| `models`     | map         | required            | Models offered by this provider       |
+| Field      | Type        | Default             | Notes                                 |
+| ---------- | ----------- | ------------------- | ------------------------------------- |
+| `api_url`  | string      | required            | Base URL for the API endpoint         |
+| `api_type` | string      | `openai-compatible` | Maps to provider behaviour profile    |
+| `env`      | string list | `[]`                | Env var names checked for credentials |
+| `models`   | map         | required            | Models offered by this provider       |
 
 ### api_type values
 

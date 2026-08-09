@@ -7,41 +7,6 @@ use reloaded_code_core::{
 };
 use std::sync::Arc;
 
-/// A minimal portable custom tool that returns a configurable text response.
-struct SerdesTestTool {
-    name: &'static str,
-    prompt: &'static str,
-    response: &'static str,
-}
-
-impl ToolContext for SerdesTestTool {
-    #[inline]
-    fn name(&self) -> &'static str {
-        self.name
-    }
-
-    #[inline]
-    fn context(&self) -> ToolPrompt {
-        ToolPrompt::Static(self.prompt)
-    }
-}
-
-impl CustomTool for SerdesTestTool {
-    #[inline]
-    fn definition(&self) -> CustomToolDefinition {
-        CustomToolDefinition::new(self.name, self.name)
-    }
-
-    #[inline]
-    fn call<'a>(
-        &'a self,
-        _ctx: ToolRunContext<'a>,
-        _args: serde_json::Value,
-    ) -> CustomToolFuture<'a> {
-        Box::pin(async move { Ok(ToolOutput::new(self.response)) })
-    }
-}
-
 /// A `ToolFactory` that creates a portable [`SerdesTestTool`].
 ///
 /// `name` and `prompt` are surfaced via `ToolContext` for system-prompt
@@ -54,6 +19,13 @@ pub struct SerdesTestFactory {
     pub prompt: &'static str,
     /// Text returned by `SerdesTestTool::call()`.
     pub response: &'static str,
+}
+
+/// A minimal portable custom tool that returns a configurable text response.
+struct SerdesTestTool {
+    name: &'static str,
+    prompt: &'static str,
+    response: &'static str,
 }
 
 impl SerdesTestFactory {
@@ -89,5 +61,33 @@ impl ToolFactory for SerdesTestFactory {
             prompt: self.prompt,
             response: self.response,
         }))
+    }
+}
+
+impl ToolContext for SerdesTestTool {
+    #[inline]
+    fn name(&self) -> &'static str {
+        self.name
+    }
+
+    #[inline]
+    fn context(&self) -> ToolPrompt {
+        ToolPrompt::Static(self.prompt)
+    }
+}
+
+impl CustomTool for SerdesTestTool {
+    #[inline]
+    fn definition(&self) -> CustomToolDefinition {
+        CustomToolDefinition::new(self.name, self.name)
+    }
+
+    #[inline]
+    fn call<'a>(
+        &'a self,
+        _ctx: ToolRunContext<'a>,
+        _args: serde_json::Value,
+    ) -> CustomToolFuture<'a> {
+        Box::pin(async move { Ok(ToolOutput::new(self.response)) })
     }
 }

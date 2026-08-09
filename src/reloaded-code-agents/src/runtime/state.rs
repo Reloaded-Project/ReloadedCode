@@ -13,29 +13,6 @@ use reloaded_code_core::HookSet;
 use reloaded_code_core::{SharedToolRegistry, TaskSettings, ToolCatalogEntry};
 use std::sync::Arc;
 
-/// Default settings used when an agent doesn't specify them.
-#[derive(Debug, Clone, Default, PartialEq)]
-pub struct AgentDefaults {
-    /// Default model in `provider/model-id` format.
-    pub model: Option<Box<str>>,
-    /// Default sampling temperature.
-    pub temperature: Option<f32>,
-    /// Default nucleus sampling top-p.
-    pub top_p: Option<f32>,
-}
-
-impl AgentDefaults {
-    /// Creates defaults with only a model specified; temperature and top_p inherit provider defaults.
-    #[inline]
-    pub fn with_model(model: impl Into<Box<str>>) -> Self {
-        Self {
-            model: Some(model.into()),
-            temperature: None,
-            top_p: None,
-        }
-    }
-}
-
 /// Your loaded agents plus their default settings, Task settings, and available tools.
 #[derive(Debug, Clone)]
 pub struct AgentRuntime {
@@ -48,6 +25,17 @@ pub struct AgentRuntime {
     permission_rulesets: AHashMap<String, Arc<Ruleset>>,
     allowed_tools_by_caller: AHashMap<String, Vec<ToolCatalogEntry>>,
     callable_target_summaries_by_caller: AHashMap<String, Vec<TaskTargetSummary>>,
+}
+
+/// Default settings used when an agent doesn't specify them.
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct AgentDefaults {
+    /// Default model in `provider/model-id` format.
+    pub model: Option<Box<str>>,
+    /// Default sampling temperature.
+    pub temperature: Option<f32>,
+    /// Default nucleus sampling top-p.
+    pub top_p: Option<f32>,
 }
 
 impl AgentRuntime {
@@ -190,5 +178,17 @@ impl AgentRuntime {
                     .binary_search_by(|summary| summary.name.as_ref().cmp(target_name))
                     .is_ok()
             })
+    }
+}
+
+impl AgentDefaults {
+    /// Creates defaults with only a model specified; temperature and top_p inherit provider defaults.
+    #[inline]
+    pub fn with_model(model: impl Into<Box<str>>) -> Self {
+        Self {
+            model: Some(model.into()),
+            temperature: None,
+            top_p: None,
+        }
     }
 }

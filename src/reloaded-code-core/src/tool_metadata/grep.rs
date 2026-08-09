@@ -2,15 +2,6 @@
 
 use super::ParamMetadata;
 
-/// Canonical tool name.
-pub const NAME: &str = "grep";
-
-/// Default maximum matches to return.
-pub const DEFAULT_LIMIT: usize = 100;
-
-/// Maximum allowed matches to return.
-pub const MAX_LIMIT: usize = 2000;
-
 /// Tool descriptions.
 pub mod description {
     /// Absolute-path variant.
@@ -33,7 +24,6 @@ pub mod description {
         }
     }
 }
-
 /// Parameter metadata.
 pub mod param {
     use super::{ParamMetadata, DEFAULT_LIMIT, MAX_LIMIT};
@@ -71,3 +61,10 @@ pub mod param {
         false,
     );
 }
+
+/// Default maximum matches to return.
+pub const DEFAULT_LIMIT: usize = 100;
+/// Maximum allowed matches to return.
+pub const MAX_LIMIT: usize = 2000;
+/// Canonical tool name.
+pub const NAME: &str = "grep";

@@ -13,6 +13,12 @@ pub struct WriteRequest {
     pub content: String,
 }
 
+/// Runtime settings for write requests.
+///
+/// Reserved for future use.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct WriteSettings {}
+
 impl WriteRequest {
     /// Parses a raw JSON tool payload into a write request.
     ///
@@ -24,12 +30,6 @@ impl WriteRequest {
         serde_json::from_value(args).map_err(ToolError::from)
     }
 }
-
-/// Runtime settings for write requests.
-///
-/// Reserved for future use.
-#[derive(Debug, Clone, Default, PartialEq, Eq)]
-pub struct WriteSettings {}
 
 impl WriteSettings {
     /// Creates default write settings.

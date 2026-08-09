@@ -65,16 +65,15 @@ use std::borrow::Cow;
 /// (e.g., `$HOME` is unset).
 pub type ExpandError = shellexpand::LookupError<std::env::VarError>;
 
-/// Permission level for tool access.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
-#[serde(rename_all = "lowercase")]
-#[repr(u8)]
-pub enum PermissionAction {
-    /// Tool is denied.
-    #[default]
-    Deny = 0,
-    /// Tool is allowed.
-    Allow = 1,
+/// Ordered ruleset for permission evaluation. Last matching rule wins.
+///
+/// # Default Behavior
+///
+/// When no rule matches, the default action is [`PermissionAction::Deny`].
+/// To allow a permission, you must explicitly add an allow rule.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct Ruleset {
+    rules: Vec<Rule>,
 }
 
 /// A single permission rule with pattern-based matching.
@@ -111,99 +110,16 @@ pub struct Rule {
     action: PermissionAction,
 }
 
-impl Rule {
-    /// Creates a new rule with the provided permission and pattern.
-    ///
-    /// Permission keys with `*` or `?` are treated as patterns.
-    /// `*` matches any number of characters (including none), and `?`
-    /// matches exactly one.
-    ///
-    /// # Examples
-    ///
-    /// ```
-    /// use reloaded_code_core::permissions::{Rule, PermissionAction};
-    ///
-    /// // Exact match on permission key
-    /// let exact = Rule::new("bash", "*", PermissionAction::Allow).unwrap();
-    ///
-    /// // Wildcard permission key matches any tool
-    /// let wildcard = Rule::new("*", "*", PermissionAction::Allow).unwrap();
-    /// ```
-    pub fn new(
-        permission: impl Into<Box<str>>,
-        pattern: impl Into<Box<str>>,
-        action: PermissionAction,
-    ) -> Result<Self, ExpandError> {
-        let permission = permission.into();
-        let pattern_box: Box<str> = pattern.into();
-        let pattern: Box<str> = match expand_pattern(&pattern_box) {
-            Ok(Cow::Borrowed(_)) => pattern_box,
-            Ok(Cow::Owned(s)) => s.into_boxed_str(),
-            Err(e) => return Err(e),
-        };
-        Ok(Self {
-            permission_hash: hash_u64(&permission),
-            pattern_hash: hash_u64(&pattern),
-            permission_is_wildcard: permission.contains('*') || permission.contains('?'),
-            pattern_is_wildcard: pattern.contains('*') || pattern.contains('?'),
-            permission,
-            pattern,
-            action,
-        })
-    }
-
-    /// Returns the permission key pattern.
-    #[inline]
-    pub fn permission(&self) -> &str {
-        &self.permission
-    }
-
-    /// Returns the stored pattern.
-    #[inline]
-    pub fn pattern(&self) -> &str {
-        &self.pattern
-    }
-
-    /// Returns the action for this rule.
-    #[inline]
-    pub fn action(&self) -> PermissionAction {
-        self.action
-    }
-
-    /// Returns the stored 64-bit permission hash.
-    #[inline]
-    pub fn permission_hash(&self) -> u64 {
-        self.permission_hash.as_u64()
-    }
-
-    /// Returns the stored 64-bit pattern hash.
-    #[inline]
-    pub fn pattern_hash(&self) -> u64 {
-        self.pattern_hash.as_u64()
-    }
-
-    /// Returns true if the permission key contains wildcards.
-    #[inline]
-    pub fn permission_is_wildcard(&self) -> bool {
-        self.permission_is_wildcard
-    }
-
-    /// Returns true if the pattern contains wildcards.
-    #[inline]
-    pub fn pattern_is_wildcard(&self) -> bool {
-        self.pattern_is_wildcard
-    }
-}
-
-/// Ordered ruleset for permission evaluation. Last matching rule wins.
-///
-/// # Default Behavior
-///
-/// When no rule matches, the default action is [`PermissionAction::Deny`].
-/// To allow a permission, you must explicitly add an allow rule.
-#[derive(Debug, Clone, Default, PartialEq, Eq)]
-pub struct Ruleset {
-    rules: Vec<Rule>,
+/// Permission level for tool access.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+#[repr(u8)]
+pub enum PermissionAction {
+    /// Tool is denied.
+    #[default]
+    Deny = 0,
+    /// Tool is allowed.
+    Allow = 1,
 }
 
 impl Ruleset {
@@ -329,6 +245,90 @@ impl Ruleset {
     }
 }
 
+impl Rule {
+    /// Creates a new rule with the provided permission and pattern.
+    ///
+    /// Permission keys with `*` or `?` are treated as patterns.
+    /// `*` matches any number of characters (including none), and `?`
+    /// matches exactly one.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use reloaded_code_core::permissions::{Rule, PermissionAction};
+    ///
+    /// // Exact match on permission key
+    /// let exact = Rule::new("bash", "*", PermissionAction::Allow).unwrap();
+    ///
+    /// // Wildcard permission key matches any tool
+    /// let wildcard = Rule::new("*", "*", PermissionAction::Allow).unwrap();
+    /// ```
+    pub fn new(
+        permission: impl Into<Box<str>>,
+        pattern: impl Into<Box<str>>,
+        action: PermissionAction,
+    ) -> Result<Self, ExpandError> {
+        let permission = permission.into();
+        let pattern_box: Box<str> = pattern.into();
+        let pattern: Box<str> = match expand_pattern(&pattern_box) {
+            Ok(Cow::Borrowed(_)) => pattern_box,
+            Ok(Cow::Owned(s)) => s.into_boxed_str(),
+            Err(e) => return Err(e),
+        };
+        Ok(Self {
+            permission_hash: hash_u64(&permission),
+            pattern_hash: hash_u64(&pattern),
+            permission_is_wildcard: permission.contains('*') || permission.contains('?'),
+            pattern_is_wildcard: pattern.contains('*') || pattern.contains('?'),
+            permission,
+            pattern,
+            action,
+        })
+    }
+
+    /// Returns the permission key pattern.
+    #[inline]
+    pub fn permission(&self) -> &str {
+        &self.permission
+    }
+
+    /// Returns the stored pattern.
+    #[inline]
+    pub fn pattern(&self) -> &str {
+        &self.pattern
+    }
+
+    /// Returns the action for this rule.
+    #[inline]
+    pub fn action(&self) -> PermissionAction {
+        self.action
+    }
+
+    /// Returns the stored 64-bit permission hash.
+    #[inline]
+    pub fn permission_hash(&self) -> u64 {
+        self.permission_hash.as_u64()
+    }
+
+    /// Returns the stored 64-bit pattern hash.
+    #[inline]
+    pub fn pattern_hash(&self) -> u64 {
+        self.pattern_hash.as_u64()
+    }
+
+    /// Returns true if the permission key contains wildcards.
+    #[inline]
+    pub fn permission_is_wildcard(&self) -> bool {
+        self.permission_is_wildcard
+    }
+
+    /// Returns true if the pattern contains wildcards.
+    #[inline]
+    pub fn pattern_is_wildcard(&self) -> bool {
+        self.pattern_is_wildcard
+    }
+}
+
 /// Matches a string against a wildcard pattern.
 ///
 /// `*` matches any number of characters (including none), and `?`
@@ -354,6 +354,32 @@ pub(crate) fn wildcard_match(input: &str, pattern: &str) -> bool {
     // Convert pattern to regex-like matching using a simple state machine
     // This avoids regex overhead for simple patterns
     wildcard_match_impl(input.as_bytes(), pattern.as_bytes())
+}
+
+#[inline(always)]
+fn evaluate_single_rule(rule: &Rule, permission: &str, subject: &str) -> PermissionAction {
+    let permission_hash = hash_u64(permission);
+    if !rule_matches(
+        permission,
+        permission_hash,
+        &rule.permission,
+        rule.permission_hash,
+        rule.permission_is_wildcard,
+    ) {
+        return PermissionAction::Deny;
+    }
+
+    let pattern_matches = if rule.pattern_is_wildcard {
+        wildcard_match(subject, &rule.pattern)
+    } else {
+        rule.pattern_hash == hash_u64(subject) && &*rule.pattern == subject
+    };
+
+    if pattern_matches {
+        rule.action
+    } else {
+        PermissionAction::Deny
+    }
 }
 
 /// Recursive wildcard matching implementation.
@@ -412,32 +438,6 @@ fn rule_matches(
         wildcard_match(input, rule_value)
     } else {
         rule_hash == input_hash && rule_value == input
-    }
-}
-
-#[inline(always)]
-fn evaluate_single_rule(rule: &Rule, permission: &str, subject: &str) -> PermissionAction {
-    let permission_hash = hash_u64(permission);
-    if !rule_matches(
-        permission,
-        permission_hash,
-        &rule.permission,
-        rule.permission_hash,
-        rule.permission_is_wildcard,
-    ) {
-        return PermissionAction::Deny;
-    }
-
-    let pattern_matches = if rule.pattern_is_wildcard {
-        wildcard_match(subject, &rule.pattern)
-    } else {
-        rule.pattern_hash == hash_u64(subject) && &*rule.pattern == subject
-    };
-
-    if pattern_matches {
-        rule.action
-    } else {
-        PermissionAction::Deny
     }
 }
 

@@ -3,10 +3,9 @@
 //! These helpers add rules that apply to more than one tool. Each rule is only
 //! included when the matching tools are present.
 
-use const_format::formatcp;
-
 use super::{push_line, write_tool_list, ToolPromptFacts};
 use crate::tool_metadata::{bash, edit, glob, grep, read, write};
+use const_format::formatcp;
 
 /// Writes the shared rules for the current built-in tools.
 pub(super) fn write_common_rules(facts: ToolPromptFacts, output: &mut String) {
@@ -67,48 +66,6 @@ fn append_bash_rule(facts: ToolPromptFacts, output: &mut String) {
     );
 }
 
-/// Adds the rule that separates file search, content search, and full reads.
-fn append_search_rule(facts: ToolPromptFacts, output: &mut String) {
-    match (facts.has_glob, facts.has_grep, facts.has_read) {
-        (true, true, true) => push_line(
-            output,
-            formatcp!(
-                "- Use `{}` for file-name search, `{}` for content search, and `{}` for file content.",
-                glob::NAME,
-                grep::NAME,
-                read::NAME,
-            ),
-        ),
-        (true, true, false) => push_line(
-            output,
-            formatcp!("- Use `{}` for file-name search and `{}` for content search.", glob::NAME, grep::NAME),
-        ),
-        (true, false, true) => push_line(
-            output,
-            formatcp!("- Use `{}` to find files and `{}` for file content.", glob::NAME, read::NAME),
-        ),
-        (false, true, true) => push_line(
-            output,
-            formatcp!("- Use `{}` for content search and `{}` for file content.", grep::NAME, read::NAME),
-        ),
-        _ => {}
-    }
-}
-
-/// Adds the rule that points small changes to `edit` and rewrites to `write`.
-fn append_write_rule(facts: ToolPromptFacts, output: &mut String) {
-    if facts.has_edit && facts.has_write {
-        push_line(
-            output,
-            formatcp!(
-                "- Prefer `{}` for targeted changes and `{}` for new files or full rewrites.",
-                edit::NAME,
-                write::NAME
-            ),
-        );
-    }
-}
-
 /// Adds the rule to read a file before editing or overwriting it.
 fn append_read_before_edit_rule(facts: ToolPromptFacts, output: &mut String) {
     match (facts.has_read, facts.has_edit, facts.has_write, facts.read_line_numbers) {
@@ -154,6 +111,48 @@ fn append_read_before_edit_rule(facts: ToolPromptFacts, output: &mut String) {
             push_line(output, formatcp!("- Read before overwriting with `{}`.", write::NAME))
         }
         _ => {}
+    }
+}
+
+/// Adds the rule that separates file search, content search, and full reads.
+fn append_search_rule(facts: ToolPromptFacts, output: &mut String) {
+    match (facts.has_glob, facts.has_grep, facts.has_read) {
+        (true, true, true) => push_line(
+            output,
+            formatcp!(
+                "- Use `{}` for file-name search, `{}` for content search, and `{}` for file content.",
+                glob::NAME,
+                grep::NAME,
+                read::NAME,
+            ),
+        ),
+        (true, true, false) => push_line(
+            output,
+            formatcp!("- Use `{}` for file-name search and `{}` for content search.", glob::NAME, grep::NAME),
+        ),
+        (true, false, true) => push_line(
+            output,
+            formatcp!("- Use `{}` to find files and `{}` for file content.", glob::NAME, read::NAME),
+        ),
+        (false, true, true) => push_line(
+            output,
+            formatcp!("- Use `{}` for content search and `{}` for file content.", grep::NAME, read::NAME),
+        ),
+        _ => {}
+    }
+}
+
+/// Adds the rule that points small changes to `edit` and rewrites to `write`.
+fn append_write_rule(facts: ToolPromptFacts, output: &mut String) {
+    if facts.has_edit && facts.has_write {
+        push_line(
+            output,
+            formatcp!(
+                "- Prefer `{}` for targeted changes and `{}` for new files or full rewrites.",
+                edit::NAME,
+                write::NAME
+            ),
+        );
     }
 }
 

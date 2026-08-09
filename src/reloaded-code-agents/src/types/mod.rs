@@ -8,10 +8,7 @@
 //! - Tool settings: [`AgentToolSettings`], [`ReadToolSettings`], [`GrepToolSettings`],
 //!   [`GlobToolSettings`], [`BashToolSettings`], [`WebFetchToolSettings`]
 
-mod config;
-mod error;
-mod tool_settings;
-
+pub(crate) use config::RawFrontmatter;
 pub use config::{parse_model_parts, AgentConfig, AgentMode, PermissionRule};
 pub use error::{AgentLoadError, AgentLoadResult};
 pub use tool_settings::{
@@ -19,4 +16,6 @@ pub use tool_settings::{
     WebFetchToolSettings,
 };
 
-pub(crate) use config::RawFrontmatter;
+mod config;
+mod error;
+mod tool_settings;

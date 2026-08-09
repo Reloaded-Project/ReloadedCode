@@ -10,6 +10,7 @@
 //!
 //! [`Tool`]: serdes_ai::tools::Tool
 
+use crate::convert::{core_error_to_serdes, to_serdes_result};
 use async_trait::async_trait;
 use reloaded_code_core::ToolContext;
 use reloaded_code_core::context::{PathMode, ToolPrompt};
@@ -21,7 +22,7 @@ use reloaded_code_core::tools::{
 use serde_json::json;
 use serdes_ai::tools::{RunContext, SchemaBuilder, Tool, ToolDefinition, ToolResult, ToolReturn};
 
-use crate::convert::{core_error_to_serdes, to_serdes_result};
+const NO_MATCHES_FOUND: &str = "No matches found.";
 
 /// Tool for searching file contents using regex patterns.
 ///
@@ -96,27 +97,6 @@ impl<R: PathResolver + Clone + Send + Sync, Deps: Send + Sync> Tool<Deps> for Gr
     }
 }
 
-const NO_MATCHES_FOUND: &str = "No matches found.";
-
-fn grep_output_to_return(output: GrepOutput, formatting: GrepFormattingSettings) -> ToolReturn {
-    if output.partial {
-        let content = output.format(formatting);
-        return ToolReturn::json(json!({
-            "content": content,
-            "partial": true,
-            "errors": output.errors,
-            "match_count": output.match_count,
-            "truncated": output.truncated,
-        }));
-    }
-
-    if output.files.is_empty() {
-        return ToolReturn::text(NO_MATCHES_FOUND);
-    }
-
-    ToolReturn::text(output.format(formatting))
-}
-
 impl<R: PathResolver + Clone> ToolContext for GrepTool<R> {
     fn name(&self) -> &'static str {
         grep_meta::NAME
@@ -171,6 +151,25 @@ fn build_definition(path_mode: PathMode, line_numbers: bool) -> ToolDefinition {
         strict: None,
         outer_typed_dict_key: None,
     }
+}
+
+fn grep_output_to_return(output: GrepOutput, formatting: GrepFormattingSettings) -> ToolReturn {
+    if output.partial {
+        let content = output.format(formatting);
+        return ToolReturn::json(json!({
+            "content": content,
+            "partial": true,
+            "errors": output.errors,
+            "match_count": output.match_count,
+            "truncated": output.truncated,
+        }));
+    }
+
+    if output.files.is_empty() {
+        return ToolReturn::text(NO_MATCHES_FOUND);
+    }
+
+    ToolReturn::text(output.format(formatting))
 }
 
 #[cfg(test)]

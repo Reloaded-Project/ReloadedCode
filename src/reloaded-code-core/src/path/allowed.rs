@@ -152,6 +152,49 @@ impl PathResolver for AllowedPathResolver {
     }
 }
 
+/// For absolute paths, `base.join(input) == input` regardless of base.
+/// Canonicalize once, then check all bases - avoids redundant FS calls.
+///
+/// Resolution strategy (same as `resolve_relative` but without per-base join):
+///
+/// 1. Try `canonicalize()` for existing files - handles symlinks and normalizes.
+/// 2. Try `resolve_new_file_fast()` for new files in existing directories.
+/// 3. Fall back to `soft_canonicalize()` for paths with missing parent dirs.
+///
+/// If the resolved path lands inside any allowed base, accept it.
+/// Otherwise, reject with "not within allowed directories".
+fn resolve_absolute(
+    allowed_paths: &[PathBuf],
+    path: &str,
+    input_path: &Path,
+) -> ToolResult<PathBuf> {
+    // Step 1: canonicalize for existing files - handles symlinks and normalizes.
+    if let Ok(canonical) = input_path.canonicalize() {
+        if allowed_paths.iter().any(|base| canonical.starts_with(base)) {
+            return Ok(canonical);
+        }
+        return not_allowed(path);
+    }
+
+    // Step 2: fast path for new files in existing directories.
+    if let Some(resolved) = resolve_new_file_fast(input_path) {
+        if allowed_paths.iter().any(|base| resolved.starts_with(base)) {
+            return Ok(resolved);
+        }
+        return not_allowed(path);
+    }
+
+    // Step 3: fallback for paths with missing parent dirs.
+    if let Ok(resolved) = soft_canonicalize(input_path) {
+        if allowed_paths.iter().any(|base| resolved.starts_with(base)) {
+            return Ok(resolved);
+        }
+        return not_allowed(path);
+    }
+
+    not_allowed(path)
+}
+
 /// For each configured base directory, try to resolve the relative input.
 ///
 /// Three resolution tiers, cheapest first:
@@ -191,49 +234,6 @@ fn resolve_relative(
                 return Ok(resolved);
             }
         }
-    }
-
-    not_allowed(path)
-}
-
-/// For absolute paths, `base.join(input) == input` regardless of base.
-/// Canonicalize once, then check all bases - avoids redundant FS calls.
-///
-/// Resolution strategy (same as `resolve_relative` but without per-base join):
-///
-/// 1. Try `canonicalize()` for existing files - handles symlinks and normalizes.
-/// 2. Try `resolve_new_file_fast()` for new files in existing directories.
-/// 3. Fall back to `soft_canonicalize()` for paths with missing parent dirs.
-///
-/// If the resolved path lands inside any allowed base, accept it.
-/// Otherwise, reject with "not within allowed directories".
-fn resolve_absolute(
-    allowed_paths: &[PathBuf],
-    path: &str,
-    input_path: &Path,
-) -> ToolResult<PathBuf> {
-    // Step 1: canonicalize for existing files - handles symlinks and normalizes.
-    if let Ok(canonical) = input_path.canonicalize() {
-        if allowed_paths.iter().any(|base| canonical.starts_with(base)) {
-            return Ok(canonical);
-        }
-        return not_allowed(path);
-    }
-
-    // Step 2: fast path for new files in existing directories.
-    if let Some(resolved) = resolve_new_file_fast(input_path) {
-        if allowed_paths.iter().any(|base| resolved.starts_with(base)) {
-            return Ok(resolved);
-        }
-        return not_allowed(path);
-    }
-
-    // Step 3: fallback for paths with missing parent dirs.
-    if let Ok(resolved) = soft_canonicalize(input_path) {
-        if allowed_paths.iter().any(|base| resolved.starts_with(base)) {
-            return Ok(resolved);
-        }
-        return not_allowed(path);
     }
 
     not_allowed(path)

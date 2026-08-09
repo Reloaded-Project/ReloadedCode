@@ -119,9 +119,9 @@ Description of issue
 Detailed explanation of the problem and why it matters
 **Impact:** What could go wrong
 **Fix:**
-```lang
+~~~lang
 // replacement code if applicable
-```
+~~~
 
 ## Test Issues
 [basic|no] - [PASS|FAIL|FORBIDDEN_TESTS_FOUND]

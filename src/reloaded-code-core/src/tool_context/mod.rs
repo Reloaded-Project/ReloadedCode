@@ -4,10 +4,9 @@
 //! when constructing tools. Create one instance before the tool construction
 //! loop and pass it to each tool resolver.
 
-use std::path::{Path, PathBuf};
-
 use crate::permissions::Ruleset;
 use soft_canonicalize::soft_canonicalize;
+use std::path::{Path, PathBuf};
 
 /// Context passed when building any tool.
 ///

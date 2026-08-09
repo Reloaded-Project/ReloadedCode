@@ -18,89 +18,6 @@ struct Case {
     expected_system: &'static str,
 }
 
-fn config_with_model(name: &str, model: Option<&str>) -> AgentConfig {
-    AgentConfig {
-        name: name.into(),
-        mode: AgentMode::All,
-        description: Default::default(),
-        model: model.map(Into::into),
-        hidden: false,
-        temperature: None,
-        top_p: None,
-        permission: IndexMap::new(),
-        options: AHashMap::new(),
-        tool_settings: AgentToolSettings::default(),
-        prompt: Default::default(),
-    }
-}
-
-fn provider(api_url: &str, env_vars: &[&str], api_type: ProviderType) -> ProviderInfo {
-    ProviderInfo {
-        api_url: api_url.to_string(),
-        env_vars: env_vars
-            .iter()
-            .map(|env_var| (*env_var).to_string())
-            .collect(),
-        api_type,
-    }
-}
-
-fn model_info(max_input: u32, max_output: u32) -> ModelInfo {
-    ModelInfo {
-        modalities: Modality::TEXT,
-        max_input,
-        max_output,
-        temperature: Some(1.0),
-        top_p: Some(0.95),
-    }
-}
-
-fn build_catalog(
-    providers: Vec<(&str, ProviderInfo)>,
-    provider_models: Vec<(&str, &str, ModelInfo)>,
-) -> ModelCatalog {
-    let provider_sources: Vec<ProviderSource> = providers
-        .into_iter()
-        .map(|(key, info)| ProviderSource::new(key, info))
-        .collect();
-    let provider_model_sources: Vec<ProviderModelSource<'_>> = provider_models
-        .into_iter()
-        .map(|(provider_key, model_key, info)| {
-            let provider_idx = ProviderIdx::new(
-                provider_sources
-                    .iter()
-                    .position(|provider| provider.provider_key == provider_key)
-                    .expect("provider key should exist") as u16,
-            );
-            ProviderModelSource::new(provider_idx, model_key, info)
-        })
-        .collect();
-    ModelCatalog::build(&provider_sources, &provider_model_sources)
-        .expect("catalog fixture should build")
-}
-
-fn resolve_case(case: &Case) -> ResolvedSerdesModel {
-    let catalog = build_catalog(
-        vec![(case.provider_key, case.provider.clone())],
-        vec![(
-            case.provider_key,
-            case.model_name,
-            model_info(128_000, 16_384),
-        )],
-    );
-    let model = format!("{}/{}", case.provider_key, case.model_name);
-    let defaults = AgentDefaults::with_model(&*model);
-    let agent = config_with_model("planner", None);
-    let mut credentials = CredentialResolver::without_env();
-    for (name, value) in case.credential_updates {
-        if let Some(value) = value {
-            credentials.set_override(*name, *value);
-        }
-    }
-    let resolved = resolve_model(&catalog, &defaults, &agent).expect("model should resolve");
-    build_serdes_model(&catalog, &resolved, &credentials).expect("model should build")
-}
-
 #[cfg(feature = "bedrock")]
 #[test]
 fn build_bedrock_ignores_process_env_when_resolver_disables_env_fallback() {
@@ -131,6 +48,90 @@ fn build_bedrock_ignores_process_env_when_resolver_disables_env_fallback() {
             assert!(err.to_string().contains("AWS_ACCESS_KEY_ID"));
         },
     );
+}
+
+#[test]
+fn build_openai_chat_still_requires_credential_when_env_vars_present() {
+    // Existing behavior: when env vars list credentials, they must be set.
+    // This is a regression test to ensure the optional-key change doesn't
+    // break providers that do require credentials.
+    let catalog = build_catalog(
+        vec![(
+            "remote-compat",
+            provider(
+                "https://api.example.com/v1",
+                &["EXAMPLE_API_KEY"], // Credential env var listed
+                ProviderType::OpenAiCompletions,
+            ),
+        )],
+        vec![("remote-compat", "my-model", model_info(128_000, 8_192))],
+    );
+    let defaults = AgentDefaults::with_model("remote-compat/my-model");
+    let agent = config_with_model("planner", None);
+    let credentials = CredentialResolver::without_env();
+
+    let resolved = resolve_model(&catalog, &defaults, &agent).expect("model should resolve");
+    let err = build_serdes_model(&catalog, &resolved, &credentials)
+        .err()
+        .expect("should fail without credentials");
+    assert!(
+        err.to_string()
+            .contains("provider `remote-compat` mapped to serdes `openai` requires a credential"),
+        "error was: {err}"
+    );
+}
+
+#[test]
+fn build_openai_chat_succeeds_with_non_credential_env_vars() {
+    // Env vars that don't match credential patterns (no _API_KEY/_TOKEN/_ACCESS_TOKEN suffix)
+    // should behave like no-credential - empty key is used.
+    let catalog = build_catalog(
+        vec![(
+            "compat-noncred",
+            provider(
+                "http://localhost:11434/v1",
+                &["MY_BASE_URL"], // Not a credential env var
+                ProviderType::OpenAiCompletions,
+            ),
+        )],
+        vec![("compat-noncred", "llama3", model_info(8_192, 4_096))],
+    );
+    let defaults = AgentDefaults::with_model("compat-noncred/llama3");
+    let agent = config_with_model("planner", None);
+    let credentials = CredentialResolver::without_env();
+
+    let resolved = resolve_model(&catalog, &defaults, &agent).expect("model should resolve");
+    let result = build_serdes_model(&catalog, &resolved, &credentials);
+    assert!(
+        result.is_ok(),
+        "should succeed with non-credential env vars"
+    );
+}
+
+#[test]
+fn build_openai_chat_succeeds_without_credential_when_no_env_vars() {
+    // A provider with no credential env vars should build successfully
+    // even without any API key set (e.g., local OpenAI-compatible endpoints).
+    let catalog = build_catalog(
+        vec![(
+            "local-compat",
+            provider(
+                "http://localhost:11434/v1",
+                &[], // No env vars listed - no credential required
+                ProviderType::OpenAiCompletions,
+            ),
+        )],
+        vec![("local-compat", "llama3", model_info(8_192, 4_096))],
+    );
+    let defaults = AgentDefaults::with_model("local-compat/llama3");
+    let agent = config_with_model("planner", None);
+    let credentials = CredentialResolver::without_env();
+
+    let resolved = resolve_model(&catalog, &defaults, &agent).expect("model should resolve");
+    let result = build_serdes_model(&catalog, &resolved, &credentials);
+    assert!(result.is_ok(), "should succeed with no credential env vars");
+    let model = result.expect("should build");
+    assert_eq!(model.spec.as_ref(), "openai:llama3");
 }
 
 #[test]
@@ -349,32 +350,23 @@ fn build_serdes_model_covers_every_provider_mapping() {
 }
 
 #[test]
-fn build_serdes_model_skips_empty_credential_env_vars() {
+fn build_serdes_model_rejects_unknown_provider_type() {
     let catalog = build_catalog(
-        vec![(
-            "synthetic",
-            provider(
-                "https://api.synthetic.new/v1",
-                &["PRIMARY_API_KEY", "SECONDARY_API_KEY"],
-                ProviderType::OpenAiCompletions,
-            ),
-        )],
-        vec![(
-            "synthetic",
-            "hf:zai-org/GLM-4.7",
-            model_info(128_000, 16_384),
-        )],
+        vec![("mystery", provider("", &[], ProviderType::Unknown))],
+        vec![("mystery", "m1", model_info(1, 1))],
     );
-    let defaults = AgentDefaults::with_model("synthetic/hf:zai-org/GLM-4.7");
+    let defaults = AgentDefaults::with_model("mystery/m1");
     let agent = config_with_model("planner", None);
-    let mut credentials = CredentialResolver::without_env();
-    credentials.set_override("PRIMARY_API_KEY", "");
-    credentials.set_override("SECONDARY_API_KEY", "fallback-key");
+    let credentials = CredentialResolver::without_env();
 
     let resolved = resolve_model(&catalog, &defaults, &agent).expect("model should resolve");
-    let serdes_model =
-        build_serdes_model(&catalog, &resolved, &credentials).expect("model should build");
-    assert_eq!(serdes_model.spec.as_ref(), "openai:hf:zai-org/GLM-4.7");
+    let err = build_serdes_model(&catalog, &resolved, &credentials)
+        .err()
+        .expect("model should fail");
+    assert!(
+        err.to_string()
+            .contains("provider `mystery` has no SerdesAI mapping")
+    );
 }
 
 #[test]
@@ -410,105 +402,113 @@ fn build_serdes_model_returns_clear_error_when_required_credential_missing() {
 }
 
 #[test]
-fn build_serdes_model_rejects_unknown_provider_type() {
-    let catalog = build_catalog(
-        vec![("mystery", provider("", &[], ProviderType::Unknown))],
-        vec![("mystery", "m1", model_info(1, 1))],
-    );
-    let defaults = AgentDefaults::with_model("mystery/m1");
-    let agent = config_with_model("planner", None);
-    let credentials = CredentialResolver::without_env();
-
-    let resolved = resolve_model(&catalog, &defaults, &agent).expect("model should resolve");
-    let err = build_serdes_model(&catalog, &resolved, &credentials)
-        .err()
-        .expect("model should fail");
-    assert!(
-        err.to_string()
-            .contains("provider `mystery` has no SerdesAI mapping")
-    );
-}
-
-#[test]
-fn build_openai_chat_succeeds_without_credential_when_no_env_vars() {
-    // A provider with no credential env vars should build successfully
-    // even without any API key set (e.g., local OpenAI-compatible endpoints).
+fn build_serdes_model_skips_empty_credential_env_vars() {
     let catalog = build_catalog(
         vec![(
-            "local-compat",
+            "synthetic",
             provider(
-                "http://localhost:11434/v1",
-                &[], // No env vars listed - no credential required
+                "https://api.synthetic.new/v1",
+                &["PRIMARY_API_KEY", "SECONDARY_API_KEY"],
                 ProviderType::OpenAiCompletions,
             ),
         )],
-        vec![("local-compat", "llama3", model_info(8_192, 4_096))],
+        vec![(
+            "synthetic",
+            "hf:zai-org/GLM-4.7",
+            model_info(128_000, 16_384),
+        )],
     );
-    let defaults = AgentDefaults::with_model("local-compat/llama3");
+    let defaults = AgentDefaults::with_model("synthetic/hf:zai-org/GLM-4.7");
     let agent = config_with_model("planner", None);
-    let credentials = CredentialResolver::without_env();
+    let mut credentials = CredentialResolver::without_env();
+    credentials.set_override("PRIMARY_API_KEY", "");
+    credentials.set_override("SECONDARY_API_KEY", "fallback-key");
 
     let resolved = resolve_model(&catalog, &defaults, &agent).expect("model should resolve");
-    let result = build_serdes_model(&catalog, &resolved, &credentials);
-    assert!(result.is_ok(), "should succeed with no credential env vars");
-    let model = result.expect("should build");
-    assert_eq!(model.spec.as_ref(), "openai:llama3");
+    let serdes_model =
+        build_serdes_model(&catalog, &resolved, &credentials).expect("model should build");
+    assert_eq!(serdes_model.spec.as_ref(), "openai:hf:zai-org/GLM-4.7");
 }
 
-#[test]
-fn build_openai_chat_still_requires_credential_when_env_vars_present() {
-    // Existing behavior: when env vars list credentials, they must be set.
-    // This is a regression test to ensure the optional-key change doesn't
-    // break providers that do require credentials.
-    let catalog = build_catalog(
-        vec![(
-            "remote-compat",
-            provider(
-                "https://api.example.com/v1",
-                &["EXAMPLE_API_KEY"], // Credential env var listed
-                ProviderType::OpenAiCompletions,
-            ),
-        )],
-        vec![("remote-compat", "my-model", model_info(128_000, 8_192))],
-    );
-    let defaults = AgentDefaults::with_model("remote-compat/my-model");
-    let agent = config_with_model("planner", None);
-    let credentials = CredentialResolver::without_env();
-
-    let resolved = resolve_model(&catalog, &defaults, &agent).expect("model should resolve");
-    let err = build_serdes_model(&catalog, &resolved, &credentials)
-        .err()
-        .expect("should fail without credentials");
-    assert!(
-        err.to_string()
-            .contains("provider `remote-compat` mapped to serdes `openai` requires a credential"),
-        "error was: {err}"
-    );
+fn model_info(max_input: u32, max_output: u32) -> ModelInfo {
+    ModelInfo {
+        modalities: Modality::TEXT,
+        max_input,
+        max_output,
+        temperature: Some(1.0),
+        top_p: Some(0.95),
+    }
 }
 
-#[test]
-fn build_openai_chat_succeeds_with_non_credential_env_vars() {
-    // Env vars that don't match credential patterns (no _API_KEY/_TOKEN/_ACCESS_TOKEN suffix)
-    // should behave like no-credential - empty key is used.
+fn resolve_case(case: &Case) -> ResolvedSerdesModel {
     let catalog = build_catalog(
+        vec![(case.provider_key, case.provider.clone())],
         vec![(
-            "compat-noncred",
-            provider(
-                "http://localhost:11434/v1",
-                &["MY_BASE_URL"], // Not a credential env var
-                ProviderType::OpenAiCompletions,
-            ),
+            case.provider_key,
+            case.model_name,
+            model_info(128_000, 16_384),
         )],
-        vec![("compat-noncred", "llama3", model_info(8_192, 4_096))],
     );
-    let defaults = AgentDefaults::with_model("compat-noncred/llama3");
+    let model = format!("{}/{}", case.provider_key, case.model_name);
+    let defaults = AgentDefaults::with_model(&*model);
     let agent = config_with_model("planner", None);
-    let credentials = CredentialResolver::without_env();
-
+    let mut credentials = CredentialResolver::without_env();
+    for (name, value) in case.credential_updates {
+        if let Some(value) = value {
+            credentials.set_override(*name, *value);
+        }
+    }
     let resolved = resolve_model(&catalog, &defaults, &agent).expect("model should resolve");
-    let result = build_serdes_model(&catalog, &resolved, &credentials);
-    assert!(
-        result.is_ok(),
-        "should succeed with non-credential env vars"
-    );
+    build_serdes_model(&catalog, &resolved, &credentials).expect("model should build")
+}
+
+fn build_catalog(
+    providers: Vec<(&str, ProviderInfo)>,
+    provider_models: Vec<(&str, &str, ModelInfo)>,
+) -> ModelCatalog {
+    let provider_sources: Vec<ProviderSource> = providers
+        .into_iter()
+        .map(|(key, info)| ProviderSource::new(key, info))
+        .collect();
+    let provider_model_sources: Vec<ProviderModelSource<'_>> = provider_models
+        .into_iter()
+        .map(|(provider_key, model_key, info)| {
+            let provider_idx = ProviderIdx::new(
+                provider_sources
+                    .iter()
+                    .position(|provider| provider.provider_key == provider_key)
+                    .expect("provider key should exist") as u16,
+            );
+            ProviderModelSource::new(provider_idx, model_key, info)
+        })
+        .collect();
+    ModelCatalog::build(&provider_sources, &provider_model_sources)
+        .expect("catalog fixture should build")
+}
+
+fn config_with_model(name: &str, model: Option<&str>) -> AgentConfig {
+    AgentConfig {
+        name: name.into(),
+        mode: AgentMode::All,
+        description: Default::default(),
+        model: model.map(Into::into),
+        hidden: false,
+        temperature: None,
+        top_p: None,
+        permission: IndexMap::new(),
+        options: AHashMap::new(),
+        tool_settings: AgentToolSettings::default(),
+        prompt: Default::default(),
+    }
+}
+
+fn provider(api_url: &str, env_vars: &[&str], api_type: ProviderType) -> ProviderInfo {
+    ProviderInfo {
+        api_url: api_url.to_string(),
+        env_vars: env_vars
+            .iter()
+            .map(|env_var| (*env_var).to_string())
+            .collect(),
+        api_type,
+    }
 }

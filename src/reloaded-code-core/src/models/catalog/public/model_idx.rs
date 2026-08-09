@@ -1,5 +1,9 @@
 //! Index into model configuration tables.
 
+impl_string_index!(ModelIdx: u16);
+
+use lite_strtab::impl_string_index;
+
 /// A 16-bit index into model metadata tables.
 ///
 /// Used to reference a specific model configuration in the catalog's
@@ -41,6 +45,3 @@ impl From<ModelIdx> for u16 {
         idx.0
     }
 }
-
-use lite_strtab::impl_string_index;
-impl_string_index!(ModelIdx: u16);

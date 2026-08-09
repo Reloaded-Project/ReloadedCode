@@ -21,14 +21,6 @@ use std::collections::hash_map::Entry as MapEntry;
 /// Using u8::MAX allows for 256 different hash seeds (0-255).
 pub const MAX_SEED: u8 = u8::MAX;
 
-#[derive(Debug, Clone, Copy)]
-struct ProviderSourceStats {
-    provider_count: usize,
-    total_api_url_bytes: usize,
-    total_env_keys: usize,
-    total_env_key_bytes: usize,
-}
-
 #[derive(Debug, Clone)]
 struct BuildState {
     seed: u8,
@@ -43,23 +35,12 @@ struct BuildState {
     has_any_model_config: bool,
 }
 
-#[inline]
-fn build_state_with_capacity(
-    provider_capacity: usize,
-    provider_model_capacity: usize,
-) -> BuildState {
-    BuildState {
-        seed: 0,
-        hash_state: hash_state_for_seed(0),
-        provider_table: HashTable::with_capacity(provider_capacity),
-        provider_model_table: HashTable::with_capacity(provider_model_capacity),
-        provider_env_ranges: Vec::with_capacity(provider_capacity),
-        provider_entries: Vec::with_capacity(provider_capacity),
-        model_entries: Vec::with_capacity(provider_model_capacity),
-        model_config_entries: Vec::with_capacity(provider_model_capacity),
-        model_entry_intern: AHashMap::with_capacity(provider_model_capacity),
-        has_any_model_config: false,
-    }
+#[derive(Debug, Clone, Copy)]
+struct ProviderSourceStats {
+    provider_count: usize,
+    total_api_url_bytes: usize,
+    total_env_keys: usize,
+    total_env_key_bytes: usize,
 }
 
 /// Builds a catalog from provider and provider-model sources.
@@ -84,6 +65,126 @@ pub(crate) fn build_from_source(
     }
 
     finish_with_source(state, providers, provider_stats)
+}
+
+#[inline]
+fn advance_seed_and_clear(state: &mut BuildState) -> Result<(), ModelCatalogBuildError> {
+    if state.seed == MAX_SEED {
+        return Err(ModelCatalogBuildError::HashCollisionExhausted {
+            attempts: MAX_SEED.into(),
+        });
+    }
+
+    state.seed += 1;
+    state.hash_state = hash_state_for_seed(state.seed);
+    clear_entries(state);
+    Ok(())
+}
+
+#[inline]
+fn analyze_provider_sources(
+    providers: &[ProviderSource],
+) -> Result<ProviderSourceStats, ModelCatalogBuildError> {
+    let provider_count = providers.len();
+    if provider_count > MAX_PROVIDER_COUNT {
+        return Err(ModelCatalogBuildError::TooManyProviders {
+            count: provider_count,
+            max: MAX_PROVIDER_COUNT,
+        });
+    }
+
+    let mut total_api_url_bytes = 0usize;
+    let mut total_env_keys = 0usize;
+    let mut total_env_key_bytes = 0usize;
+    let max_env_start = usize::from(MAX_ENV_START);
+    let max_env_count = usize::from(MAX_ENV_RANGE_COUNT);
+
+    for provider in providers {
+        // SAFETY: total_env_keys is the start index for this provider.
+        // It must fit the 13-bit PackedEnvRange start field.
+        if total_env_keys > max_env_start {
+            return Err(ModelCatalogBuildError::TooManyEnvVarKeys {
+                count: total_env_keys,
+                max: max_env_start,
+            });
+        }
+
+        let provider_info = &provider.provider;
+        let env_count = provider_info.env_vars.len();
+        // SAFETY: per-provider count must fit the 3-bit count field.
+        if env_count > max_env_count {
+            return Err(
+                ModelCatalogBuildError::TooManyProviderEnvVarsForOneProvider {
+                    count: env_count,
+                    max: max_env_count,
+                },
+            );
+        }
+
+        total_api_url_bytes += provider_info.api_url.len();
+        total_env_keys += env_count;
+        for env_key in &provider_info.env_vars {
+            total_env_key_bytes += env_key.len();
+        }
+    }
+
+    Ok(ProviderSourceStats {
+        provider_count,
+        total_api_url_bytes,
+        total_env_keys,
+        total_env_key_bytes,
+    })
+}
+
+#[inline]
+fn build_state_with_capacity(
+    provider_capacity: usize,
+    provider_model_capacity: usize,
+) -> BuildState {
+    BuildState {
+        seed: 0,
+        hash_state: hash_state_for_seed(0),
+        provider_table: HashTable::with_capacity(provider_capacity),
+        provider_model_table: HashTable::with_capacity(provider_model_capacity),
+        provider_env_ranges: Vec::with_capacity(provider_capacity),
+        provider_entries: Vec::with_capacity(provider_capacity),
+        model_entries: Vec::with_capacity(provider_model_capacity),
+        model_config_entries: Vec::with_capacity(provider_model_capacity),
+        model_entry_intern: AHashMap::with_capacity(provider_model_capacity),
+        has_any_model_config: false,
+    }
+}
+
+#[inline]
+fn finish_with_source(
+    mut state: BuildState,
+    providers: &[ProviderSource],
+    provider_stats: ProviderSourceStats,
+) -> Result<ModelCatalog, ModelCatalogBuildError> {
+    state
+        .provider_table
+        .shrink_to_fit(provider_table_entry_hash);
+    state
+        .provider_model_table
+        .shrink_to_fit(provider_model_table_entry_hash);
+
+    let model_config_entries = if state.has_any_model_config {
+        Some(state.model_config_entries.into_boxed_slice())
+    } else {
+        None
+    };
+
+    Ok(ModelCatalog::new(
+        state.hash_state,
+        state.provider_table,
+        state.provider_model_table,
+        build_provider_api_url_table(providers, provider_stats)?,
+        build_provider_env_key_table(providers, provider_stats)?,
+        state.provider_env_ranges.into_boxed_slice(),
+        state.provider_entries.into_boxed_slice(),
+        state.model_entries.into_boxed_slice(),
+        model_config_entries,
+    ))
 }
 
 #[inline]
@@ -140,6 +241,60 @@ fn populate_tables_once(
     }
 
     Ok(())
+}
+
+#[inline]
+fn build_provider_api_url_table(
+    providers: &[ProviderSource],
+    stats: ProviderSourceStats,
+) -> Result<StringTable<u32, ProviderIdx>, ModelCatalogBuildError> {
+    let mut builder = StringTableBuilder::<u32, ProviderIdx>::with_capacity_in(
+        stats.provider_count,
+        stats.total_api_url_bytes,
+        Global,
+    );
+
+    for provider in providers {
+        builder
+            .try_push(&provider.provider.api_url)
+            .map_err(|e| ModelCatalogBuildError::StringTableCapacityExceeded(e.to_string()))?;
+    }
+
+    Ok(builder.build())
+}
+
+#[inline]
+fn build_provider_env_key_table(
+    providers: &[ProviderSource],
+    stats: ProviderSourceStats,
+) -> Result<StringTable<u32, ProviderIdx>, ModelCatalogBuildError> {
+    let mut builder = StringTableBuilder::<u32, ProviderIdx>::with_capacity_in(
+        stats.total_env_keys,
+        stats.total_env_key_bytes,
+        Global,
+    );
+
+    for provider in providers {
+        for env_key in &provider.provider.env_vars {
+            builder
+                .try_push(env_key)
+                .map_err(|e| ModelCatalogBuildError::StringTableCapacityExceeded(e.to_string()))?;
+        }
+    }
+
+    Ok(builder.build())
+}
+
+#[inline]
+fn clear_entries(state: &mut BuildState) {
+    state.provider_table.clear();
+    state.provider_model_table.clear();
+    state.provider_env_ranges.clear();
+    state.provider_entries.clear();
+    state.model_entries.clear();
+    state.model_config_entries.clear();
+    state.model_entry_intern.clear();
+    state.has_any_model_config = false;
 }
 
 #[inline]
@@ -251,161 +406,6 @@ fn insert_provider_model(
     }
 
     Ok(())
-}
-
-#[inline]
-fn advance_seed_and_clear(state: &mut BuildState) -> Result<(), ModelCatalogBuildError> {
-    if state.seed == MAX_SEED {
-        return Err(ModelCatalogBuildError::HashCollisionExhausted {
-            attempts: MAX_SEED.into(),
-        });
-    }
-
-    state.seed += 1;
-    state.hash_state = hash_state_for_seed(state.seed);
-    clear_entries(state);
-    Ok(())
-}
-
-#[inline]
-fn clear_entries(state: &mut BuildState) {
-    state.provider_table.clear();
-    state.provider_model_table.clear();
-    state.provider_env_ranges.clear();
-    state.provider_entries.clear();
-    state.model_entries.clear();
-    state.model_config_entries.clear();
-    state.model_entry_intern.clear();
-    state.has_any_model_config = false;
-}
-
-#[inline]
-fn finish_with_source(
-    mut state: BuildState,
-    providers: &[ProviderSource],
-    provider_stats: ProviderSourceStats,
-) -> Result<ModelCatalog, ModelCatalogBuildError> {
-    state
-        .provider_table
-        .shrink_to_fit(provider_table_entry_hash);
-    state
-        .provider_model_table
-        .shrink_to_fit(provider_model_table_entry_hash);
-
-    let model_config_entries = if state.has_any_model_config {
-        Some(state.model_config_entries.into_boxed_slice())
-    } else {
-        None
-    };
-
-    Ok(ModelCatalog::new(
-        state.hash_state,
-        state.provider_table,
-        state.provider_model_table,
-        build_provider_api_url_table(providers, provider_stats)?,
-        build_provider_env_key_table(providers, provider_stats)?,
-        state.provider_env_ranges.into_boxed_slice(),
-        state.provider_entries.into_boxed_slice(),
-        state.model_entries.into_boxed_slice(),
-        model_config_entries,
-    ))
-}
-
-#[inline]
-fn analyze_provider_sources(
-    providers: &[ProviderSource],
-) -> Result<ProviderSourceStats, ModelCatalogBuildError> {
-    let provider_count = providers.len();
-    if provider_count > MAX_PROVIDER_COUNT {
-        return Err(ModelCatalogBuildError::TooManyProviders {
-            count: provider_count,
-            max: MAX_PROVIDER_COUNT,
-        });
-    }
-
-    let mut total_api_url_bytes = 0usize;
-    let mut total_env_keys = 0usize;
-    let mut total_env_key_bytes = 0usize;
-    let max_env_start = usize::from(MAX_ENV_START);
-    let max_env_count = usize::from(MAX_ENV_RANGE_COUNT);
-
-    for provider in providers {
-        // SAFETY: total_env_keys is the start index for this provider.
-        // It must fit the 13-bit PackedEnvRange start field.
-        if total_env_keys > max_env_start {
-            return Err(ModelCatalogBuildError::TooManyEnvVarKeys {
-                count: total_env_keys,
-                max: max_env_start,
-            });
-        }
-
-        let provider_info = &provider.provider;
-        let env_count = provider_info.env_vars.len();
-        // SAFETY: per-provider count must fit the 3-bit count field.
-        if env_count > max_env_count {
-            return Err(
-                ModelCatalogBuildError::TooManyProviderEnvVarsForOneProvider {
-                    count: env_count,
-                    max: max_env_count,
-                },
-            );
-        }
-
-        total_api_url_bytes += provider_info.api_url.len();
-        total_env_keys += env_count;
-        for env_key in &provider_info.env_vars {
-            total_env_key_bytes += env_key.len();
-        }
-    }
-
-    Ok(ProviderSourceStats {
-        provider_count,
-        total_api_url_bytes,
-        total_env_keys,
-        total_env_key_bytes,
-    })
-}
-
-#[inline]
-fn build_provider_api_url_table(
-    providers: &[ProviderSource],
-    stats: ProviderSourceStats,
-) -> Result<StringTable<u32, ProviderIdx>, ModelCatalogBuildError> {
-    let mut builder = StringTableBuilder::<u32, ProviderIdx>::with_capacity_in(
-        stats.provider_count,
-        stats.total_api_url_bytes,
-        Global,
-    );
-
-    for provider in providers {
-        builder
-            .try_push(&provider.provider.api_url)
-            .map_err(|e| ModelCatalogBuildError::StringTableCapacityExceeded(e.to_string()))?;
-    }
-
-    Ok(builder.build())
-}
-
-#[inline]
-fn build_provider_env_key_table(
-    providers: &[ProviderSource],
-    stats: ProviderSourceStats,
-) -> Result<StringTable<u32, ProviderIdx>, ModelCatalogBuildError> {
-    let mut builder = StringTableBuilder::<u32, ProviderIdx>::with_capacity_in(
-        stats.total_env_keys,
-        stats.total_env_key_bytes,
-        Global,
-    );
-
-    for provider in providers {
-        for env_key in &provider.provider.env_vars {
-            builder
-                .try_push(env_key)
-                .map_err(|e| ModelCatalogBuildError::StringTableCapacityExceeded(e.to_string()))?;
-        }
-    }
-
-    Ok(builder.build())
 }
 
 #[cfg(test)]

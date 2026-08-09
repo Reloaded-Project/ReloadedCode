@@ -17,7 +17,7 @@
 ReloadedCode started as "an OpenCode for servers." Headless,
 sandboxed, and cheap to host for non-commercial use.
 
-[OpenCode](https://opencode.ai) is a great interactive coding agent, but it's a
+[OpenCode] is a great interactive coding agent, but it's a
 <abbr title="opencode v1.14.21&#10;serve: 305 MiB RSS&#10;TUI: 525 MiB RSS&#10;&#10;v1.4.2&#10;serve: 392 MiB RSS&#10;TUI: 679 MiB RSS">~305 MiB</abbr> TypeScript application that runs as a separate process.
 What if you need those same tools for a **server**? A **Discord bot**?
 A **CI pipeline**? A **custom product**?
@@ -36,7 +36,7 @@ Shell sandboxing. Default-deny permissions. ~10 MiB footprint.
 ## Features
 
 - **10 Built-in tools** - read, write, edit, glob, grep, bash, webfetch, todoread, todowrite, task
-- **Agents similar to [OpenCode](https://opencode.ai)** - load agent markdown files with YAML frontmatter
+- **Agents similar to [OpenCode]** - load agent markdown files with YAML frontmatter
 - **Multi-agent delegation** - orchestrator pattern with depth-limited task chains
 - **Linux sandboxing** - bubblewrap profiles for shell isolation (Public Bot + Trusted Maintenance)
 - **Path security** - restrict file access with allowed directories and glob-based rules
@@ -55,7 +55,7 @@ Shell sandboxing. Default-deny permissions. ~10 MiB footprint.
 reloaded-code-serdesai = "0.2"
 ```
 
-**1.** Create an agent file (markdown + YAML frontmatter similar to [OpenCode](https://opencode.ai)):
+**1.** Create an agent file (markdown + YAML frontmatter similar to [OpenCode]):
 
 ```markdown
 ---
@@ -117,7 +117,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 | Crate                                                                     | Version | Description                                                                                      |
 | ------------------------------------------------------------------------- | ------- | ------------------------------------------------------------------------------------------------ |
 | [**reloaded-code-core**](./src/reloaded-code-core/)                       | 0.2     | Framework-agnostic tool implementations, path resolvers, permissions, custom tool registry       |
-| [**reloaded-code-agents**](./src/reloaded-code-agents/)                   | 0.1     | agent markdown loader similar to [OpenCode](https://opencode.ai), typed catalog, runtime builder |
+| [**reloaded-code-agents**](./src/reloaded-code-agents/)                   | 0.1     | agent markdown loader similar to [OpenCode], typed catalog, runtime builder |
 | [**reloaded-code-serdesai**](./src/reloaded-code-serdesai/)               | 0.2     | SerdesAI framework integration, tool adapters, 15 provider bridges, task delegation              |
 | [**reloaded-code-bubblewrap**](./src/reloaded-code-bubblewrap/)           | 0.1     | Linux bubblewrap sandbox profiles (Public Bot + Trusted Maintenance)                             |
 | [**reloaded-code-models-dev**](./src/reloaded-code-models-dev/)           | 0.1     | models.dev catalog sync with ETag caching and offline fallback                                   |
@@ -161,3 +161,4 @@ our guidelines.
 ## License
 
 Licensed under [Apache 2.0](./LICENSE).
+[OpenCode]: https://opencode.ai

@@ -1,7 +1,6 @@
+use super::{definitions, mock_tools, report, PromptArtifacts, PromptCase};
 use reloaded_code_core::context;
 use reloaded_code_core::{AllowedPathResolver, SystemPromptBuilder};
-
-use super::{definitions, mock_tools, report, PromptArtifacts, PromptCase};
 
 /// Renders one example case and its matching tool-definition payload.
 pub fn build_case(case: PromptCase) -> PromptArtifacts {

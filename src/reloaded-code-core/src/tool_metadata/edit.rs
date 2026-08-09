@@ -2,18 +2,6 @@
 
 use super::ParamMetadata;
 
-/// Canonical tool name.
-pub const NAME: &str = "edit";
-
-/// Default value for `replace_all`.
-pub const DEFAULT_REPLACE_ALL: bool = false;
-
-/// Serde-friendly default helper for `replace_all`.
-#[must_use]
-pub const fn default_replace_all() -> bool {
-    DEFAULT_REPLACE_ALL
-}
-
 /// Tool descriptions.
 pub mod description {
     /// Absolute-path variant.
@@ -24,7 +12,6 @@ pub mod description {
     pub const ALLOWED: &str =
         "Replace exact text in a file in allowed directories. Without replace_all, old_string must match exactly once.";
 }
-
 /// Parameter metadata.
 pub mod param {
     use super::ParamMetadata;
@@ -54,4 +41,15 @@ pub mod param {
         "Replace every occurrence. Default false.",
         false,
     );
+}
+
+/// Default value for `replace_all`.
+pub const DEFAULT_REPLACE_ALL: bool = false;
+/// Canonical tool name.
+pub const NAME: &str = "edit";
+
+/// Serde-friendly default helper for `replace_all`.
+#[must_use]
+pub const fn default_replace_all() -> bool {
+    DEFAULT_REPLACE_ALL
 }

@@ -15,6 +15,9 @@ use crate::parser::AgentParseError;
 use std::fmt;
 use std::path::PathBuf;
 
+/// Result type alias for agent configuration operations.
+pub type AgentLoadResult<T> = Result<T, AgentLoadError>;
+
 /// Error type for agent configuration operations.
 #[derive(Debug)]
 pub enum AgentLoadError {
@@ -41,6 +44,26 @@ pub enum AgentLoadError {
         /// Validation error message.
         message: String,
     },
+}
+
+impl AgentLoadError {
+    /// Creates a new Io error.
+    pub fn io(path: Option<PathBuf>, source: std::io::Error) -> Self {
+        Self::Io { path, source }
+    }
+
+    /// Creates a new Parse error.
+    pub fn parse(path: Option<PathBuf>, source: AgentParseError) -> Self {
+        Self::Parse { path, source }
+    }
+
+    /// Creates a new SchemaValidation error.
+    pub fn schema_validation(path: Option<PathBuf>, message: impl Into<String>) -> Self {
+        Self::SchemaValidation {
+            path,
+            message: message.into(),
+        }
+    }
 }
 
 impl fmt::Display for AgentLoadError {
@@ -77,26 +100,3 @@ impl std::error::Error for AgentLoadError {
         }
     }
 }
-
-impl AgentLoadError {
-    /// Creates a new Io error.
-    pub fn io(path: Option<PathBuf>, source: std::io::Error) -> Self {
-        Self::Io { path, source }
-    }
-
-    /// Creates a new Parse error.
-    pub fn parse(path: Option<PathBuf>, source: AgentParseError) -> Self {
-        Self::Parse { path, source }
-    }
-
-    /// Creates a new SchemaValidation error.
-    pub fn schema_validation(path: Option<PathBuf>, message: impl Into<String>) -> Self {
-        Self::SchemaValidation {
-            path,
-            message: message.into(),
-        }
-    }
-}
-
-/// Result type alias for agent configuration operations.
-pub type AgentLoadResult<T> = Result<T, AgentLoadError>;

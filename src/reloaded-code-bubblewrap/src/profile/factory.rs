@@ -18,6 +18,20 @@ use crate::LinuxBwrapError;
 use std::path::Path;
 use std::sync::Arc;
 
+/// Errors that can occur while creating a sandbox profile.
+#[derive(Debug, thiserror::Error)]
+pub enum CreateSandboxError {
+    /// Failed to create the sandbox directory layout.
+    #[error("failed to create sandbox directories: {0}")]
+    Dirs(#[source] std::io::Error),
+    /// Bubblewrap is not available on the host.
+    #[error("bubblewrap is not available: {0}")]
+    Unavailable(String),
+    /// Profile validation or assembly failed.
+    #[error("profile validation failed: {0}")]
+    Profile(#[from] LinuxBwrapError),
+}
+
 /// Borrowed directory paths for sandbox construction.
 ///
 /// Lightweight view over three host directories that a sandbox profile
@@ -50,6 +64,21 @@ pub struct SandboxDirs<'a> {
     host_tmp: &'a Path,
 }
 
+/// Auto-managed temp directory layout for sandbox construction.
+///
+/// Creates a temp directory with `home`, `cache`, and `host-tmp`
+/// subdirectories. The `cache` subdirectory also gets `xdg-cache` and
+/// `xdg-state` sub-subdirectories created by [`Builder::build`].
+///
+/// Wrapped in [`Arc`] when returned from [`create_temp_sandbox`] so it can
+/// be stored alongside the profile in shared state.
+pub struct TempSandboxDirs {
+    tmpdir: tempfile::TempDir,
+    home: Box<Path>,
+    cache: Box<Path>,
+    host_tmp: Box<Path>,
+}
+
 impl<'a> SandboxDirs<'a> {
     /// Creates a new directory spec from borrowed host paths.
     ///
@@ -79,21 +108,6 @@ impl<'a> SandboxDirs<'a> {
     pub fn host_tmp(&self) -> &'a Path {
         self.host_tmp
     }
-}
-
-/// Auto-managed temp directory layout for sandbox construction.
-///
-/// Creates a temp directory with `home`, `cache`, and `host-tmp`
-/// subdirectories. The `cache` subdirectory also gets `xdg-cache` and
-/// `xdg-state` sub-subdirectories created by [`Builder::build`].
-///
-/// Wrapped in [`Arc`] when returned from [`create_temp_sandbox`] so it can
-/// be stored alongside the profile in shared state.
-pub struct TempSandboxDirs {
-    tmpdir: tempfile::TempDir,
-    home: Box<Path>,
-    cache: Box<Path>,
-    host_tmp: Box<Path>,
 }
 
 impl TempSandboxDirs {
@@ -157,20 +171,6 @@ impl TempSandboxDirs {
     pub fn temp_dir(&self) -> &tempfile::TempDir {
         &self.tmpdir
     }
-}
-
-/// Errors that can occur while creating a sandbox profile.
-#[derive(Debug, thiserror::Error)]
-pub enum CreateSandboxError {
-    /// Failed to create the sandbox directory layout.
-    #[error("failed to create sandbox directories: {0}")]
-    Dirs(#[source] std::io::Error),
-    /// Bubblewrap is not available on the host.
-    #[error("bubblewrap is not available: {0}")]
-    Unavailable(String),
-    /// Profile validation or assembly failed.
-    #[error("profile validation failed: {0}")]
-    Profile(#[from] LinuxBwrapError),
 }
 
 /// Creates a sandbox from a preset and a directory spec.
@@ -280,6 +280,17 @@ pub fn create_temp_sandbox(
     Ok((profile, Arc::new(dirs)))
 }
 
+fn create_sandbox_inner(
+    builder: Builder,
+    availability: Availability,
+) -> Result<Arc<Profile>, CreateSandboxError> {
+    let profile = builder
+        .with_availability(availability)
+        .build()
+        .map_err(CreateSandboxError::Profile)?;
+    Ok(Arc::new(profile))
+}
+
 // Check if bwrap is available on the host.
 fn detect_availability() -> Result<Availability, CreateSandboxError> {
     let availability = Availability::detect();
@@ -292,17 +303,6 @@ fn detect_availability() -> Result<Availability, CreateSandboxError> {
         ));
     }
     Ok(availability)
-}
-
-fn create_sandbox_inner(
-    builder: Builder,
-    availability: Availability,
-) -> Result<Arc<Profile>, CreateSandboxError> {
-    let profile = builder
-        .with_availability(availability)
-        .build()
-        .map_err(CreateSandboxError::Profile)?;
-    Ok(Arc::new(profile))
 }
 
 #[cfg(test)]

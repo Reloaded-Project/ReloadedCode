@@ -218,7 +218,7 @@ Reads a file, optionally with line numbers and a windowed range.
 **Output:** Line-numbered file content. Lines beyond `max_line_length` are
 truncated with `...`.
 
-**Configurable via [tool settings](#tool-settings):** `line_numbers`, `limit`,
+**Configurable via [tool settings]:** `line_numbers`, `limit`,
 `max_line_length`
 
 ### write
@@ -269,7 +269,7 @@ crate for fast traversal.
 
 **Output:** List of matching file paths.
 
-**Configurable via [tool settings](#tool-settings):** `limit`
+**Configurable via [tool settings]:** `limit`
 
 ### grep
 
@@ -285,7 +285,7 @@ Searches file contents by regex pattern. Returns matching lines with metadata.
 
 **Output:** Matching lines with line numbers and file paths.
 
-**Configurable via [tool settings](#tool-settings):** `line_numbers`, `limit`,
+**Configurable via [tool settings]:** `line_numbers`, `limit`,
 `max_line_length`
 
 ### bash
@@ -303,10 +303,10 @@ Executes a shell command with timeout and captured output.
 **Output:** Combined stdout and stderr. Non-zero exit codes are included in
 the output.
 
-**Configurable via [tool settings](#tool-settings):** `timeout_ms`, `max_timeout_ms`
+**Configurable via [tool settings]:** `timeout_ms`, `max_timeout_ms`
 
 **Sandboxing:** On Linux, you can enable the `linux-bubblewrap` feature to run
-commands inside a [bubblewrap] sandbox. See [Sandboxing](sandboxing.md) for details.
+commands inside a [bubblewrap] sandbox. See [Sandboxing] for details.
 
 ### webfetch
 
@@ -322,7 +322,7 @@ to markdown.
 
 **Output:** Page content as text or markdown.
 
-**Configurable via [tool settings](#tool-settings):** `timeout_ms`,
+**Configurable via [tool settings]:** `timeout_ms`,
 `max_timeout_ms`, `max_response_size`
 
 ### todoread / todowrite
@@ -501,9 +501,11 @@ This controls which paths the tools can access:
 Agents use `AllowedGlobResolver` by default. If you don't need glob-based rules,
 `AllowedPathResolver` or `AbsolutePathResolver` are slightly faster.
 
-For a deeper dive into path security, see [Sandboxing](sandboxing.md).
+For a deeper dive into path security, see [Sandboxing].
 
 [bubblewrap]: https://github.com/containers/bubblewrap
 [create_todo_tools]: https://docs.rs/reloaded-code-serdesai/latest/reloaded_code_serdesai/tools/todo/fn.create_todo_tools.html
 [reloaded-code-core]: https://docs.rs/reloaded-code-core
 [reloaded-code-serdesai]: https://docs.rs/reloaded-code-serdesai
+[tool settings]: #tool-settings
+[Sandboxing]: sandboxing.md

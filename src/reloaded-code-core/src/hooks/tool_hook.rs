@@ -7,9 +7,6 @@ use std::future::Future;
 use std::pin::Pin;
 use std::sync::Arc;
 
-/// Boxed future returned by [`ToolHook::hook`] and [`ToolExecutor::execute`].
-pub type ToolHookFuture<'a> = Pin<Box<dyn Future<Output = ToolResult<ToolOutput>> + Send + 'a>>;
-
 /// Context passed to each tool hook.
 #[derive(Debug)]
 pub struct ToolCallContext<'a> {
@@ -21,6 +18,20 @@ pub struct ToolCallContext<'a> {
     pub run_id: &'a str,
 }
 
+/// Boxed future returned by [`ToolHook::hook`] and [`ToolExecutor::execute`].
+pub type ToolHookFuture<'a> = Pin<Box<dyn Future<Output = ToolResult<ToolOutput>> + Send + 'a>>;
+
+/// Managed trampoline to the next hook or real tool.
+///
+/// `ToolOriginal` is consumed by [`call`](Self::call), so normal hooks call
+/// the continuation once. Hooks that intentionally retry can clone the
+/// request before calling and perform retries around one continuation call.
+pub struct ToolOriginal<'a> {
+    chain: &'a [Arc<dyn ToolHook>],
+    index: usize,
+    real_tool: &'a dyn ToolExecutor,
+}
+
 /// Request passed through the tool hook chain.
 #[derive(Debug, Clone, PartialEq)]
 pub struct ToolRequest {
@@ -28,36 +39,10 @@ pub struct ToolRequest {
     pub args: Value,
 }
 
-impl ToolRequest {
-    /// Creates a request from JSON arguments.
-    #[inline]
-    #[must_use]
-    pub fn new(args: Value) -> Self {
-        Self { args }
-    }
-}
-
-impl From<Value> for ToolRequest {
-    #[inline]
-    fn from(args: Value) -> Self {
-        Self::new(args)
-    }
-}
-
 /// Final callable used when the hook chain reaches the real tool.
 pub trait ToolExecutor: Send + Sync {
     /// Executes the real tool.
     fn execute<'a>(&'a self, ctx: &'a ToolCallContext<'a>, req: ToolRequest) -> ToolHookFuture<'a>;
-}
-
-impl<F> ToolExecutor for F
-where
-    F: for<'a> Fn(&'a ToolCallContext<'a>, ToolRequest) -> ToolHookFuture<'a> + Send + Sync,
-{
-    #[inline]
-    fn execute<'a>(&'a self, ctx: &'a ToolCallContext<'a>, req: ToolRequest) -> ToolHookFuture<'a> {
-        self(ctx, req)
-    }
 }
 
 /// Game-style tool hook.
@@ -73,35 +58,6 @@ pub trait ToolHook: Send + Sync + 'static {
         req: ToolRequest,
         original: ToolOriginal<'a>,
     ) -> ToolHookFuture<'a>;
-}
-
-impl<F> ToolHook for F
-where
-    F: for<'a> Fn(&'a ToolCallContext<'a>, ToolRequest, ToolOriginal<'a>) -> ToolHookFuture<'a>
-        + Send
-        + Sync
-        + 'static,
-{
-    #[inline]
-    fn hook<'a>(
-        &'a self,
-        ctx: &'a ToolCallContext<'a>,
-        req: ToolRequest,
-        original: ToolOriginal<'a>,
-    ) -> ToolHookFuture<'a> {
-        self(ctx, req, original)
-    }
-}
-
-/// Managed trampoline to the next hook or real tool.
-///
-/// `ToolOriginal` is consumed by [`call`](Self::call), so normal hooks call
-/// the continuation once. Hooks that intentionally retry can clone the
-/// request before calling and perform retries around one continuation call.
-pub struct ToolOriginal<'a> {
-    chain: &'a [Arc<dyn ToolHook>],
-    index: usize,
-    real_tool: &'a dyn ToolExecutor,
 }
 
 impl<'a> ToolOriginal<'a> {
@@ -135,12 +91,56 @@ impl<'a> ToolOriginal<'a> {
     }
 }
 
+impl ToolRequest {
+    /// Creates a request from JSON arguments.
+    #[inline]
+    #[must_use]
+    pub fn new(args: Value) -> Self {
+        Self { args }
+    }
+}
+
 impl fmt::Debug for ToolOriginal<'_> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("ToolOriginal")
             .field("chain_len", &self.chain.len())
             .field("index", &self.index)
             .finish_non_exhaustive()
+    }
+}
+
+impl From<Value> for ToolRequest {
+    #[inline]
+    fn from(args: Value) -> Self {
+        Self::new(args)
+    }
+}
+
+impl<F> ToolExecutor for F
+where
+    F: for<'a> Fn(&'a ToolCallContext<'a>, ToolRequest) -> ToolHookFuture<'a> + Send + Sync,
+{
+    #[inline]
+    fn execute<'a>(&'a self, ctx: &'a ToolCallContext<'a>, req: ToolRequest) -> ToolHookFuture<'a> {
+        self(ctx, req)
+    }
+}
+
+impl<F> ToolHook for F
+where
+    F: for<'a> Fn(&'a ToolCallContext<'a>, ToolRequest, ToolOriginal<'a>) -> ToolHookFuture<'a>
+        + Send
+        + Sync
+        + 'static,
+{
+    #[inline]
+    fn hook<'a>(
+        &'a self,
+        ctx: &'a ToolCallContext<'a>,
+        req: ToolRequest,
+        original: ToolOriginal<'a>,
+    ) -> ToolHookFuture<'a> {
+        self(ctx, req, original)
     }
 }
 

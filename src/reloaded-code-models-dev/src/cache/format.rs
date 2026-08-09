@@ -44,6 +44,25 @@ use std::mem::size_of;
 use std::path::Path;
 use std::ptr::copy_nonoverlapping;
 
+/// Fixed prelude size for v1.
+const CACHE_HEADER_LEN: usize = <CachePreludeV1 as HasSize>::SIZE;
+// SAFETY: All modern platforms have usize >= 32 bits.
+// This lets us safely cast u32 lengths to usize without checked arithmetic.
+const _: () = assert!(size_of::<usize>() >= size_of::<u32>());
+
+/// Raw cache blocks extracted from disk.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct CacheFileData {
+    /// Prefix length of ETag bytes after the fixed prelude.
+    etag_len: u32,
+    /// Length in bytes of compressed payload from prelude.
+    payload_len_compressed: u32,
+    /// Size hint for the eventual decompressed payload allocation.
+    payload_len_decompressed: u32,
+    /// Full file bytes laid out as `prelude || etag || payload_compressed`.
+    file_bytes: Box<[u8]>,
+}
+
 /// Fixed v1 prelude, encoded little-endian.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, EndianWritable)]
 #[repr(C)]
@@ -65,26 +84,6 @@ pub(crate) struct CacheWriteInput<'a> {
     pub(crate) payload_compressed: &'a [u8],
     /// Expected decompressed payload length in bytes.
     pub(crate) payload_len_decompressed: usize,
-}
-
-/// Fixed prelude size for v1.
-const CACHE_HEADER_LEN: usize = <CachePreludeV1 as HasSize>::SIZE;
-
-// SAFETY: All modern platforms have usize >= 32 bits.
-// This lets us safely cast u32 lengths to usize without checked arithmetic.
-const _: () = assert!(size_of::<usize>() >= size_of::<u32>());
-
-/// Raw cache blocks extracted from disk.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) struct CacheFileData {
-    /// Prefix length of ETag bytes after the fixed prelude.
-    etag_len: u32,
-    /// Length in bytes of compressed payload from prelude.
-    payload_len_compressed: u32,
-    /// Size hint for the eventual decompressed payload allocation.
-    payload_len_decompressed: u32,
-    /// Full file bytes laid out as `prelude || etag || payload_compressed`.
-    file_bytes: Box<[u8]>,
 }
 
 impl CacheFileData {
@@ -258,9 +257,14 @@ pub(crate) async fn write_cache_file(
     Ok(())
 }
 
+/// Decodes prelude from little-endian bytes.
 #[inline]
-fn to_u32_limit(value: usize, msg: &'static str) -> CatalogResult<u32> {
-    u32::try_from(value).map_err(|_| CatalogError::CacheFormat(msg))
+fn decode_prelude(bytes: &[u8]) -> CachePreludeV1 {
+    // SAFETY: Caller guarantees `bytes` is at least `CACHE_HEADER_LEN`.
+    unsafe {
+        let mut reader = LittleEndianReader::new(bytes.as_ptr());
+        reader.read()
+    }
 }
 
 /// Encodes prelude into little-endian bytes.
@@ -275,14 +279,9 @@ fn encode_prelude(prelude: CachePreludeV1) -> [u8; CACHE_HEADER_LEN] {
     bytes
 }
 
-/// Decodes prelude from little-endian bytes.
 #[inline]
-fn decode_prelude(bytes: &[u8]) -> CachePreludeV1 {
-    // SAFETY: Caller guarantees `bytes` is at least `CACHE_HEADER_LEN`.
-    unsafe {
-        let mut reader = LittleEndianReader::new(bytes.as_ptr());
-        reader.read()
-    }
+fn to_u32_limit(value: usize, msg: &'static str) -> CatalogResult<u32> {
+    u32::try_from(value).map_err(|_| CatalogError::CacheFormat(msg))
 }
 
 #[cfg(test)]

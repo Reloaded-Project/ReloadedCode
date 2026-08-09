@@ -65,14 +65,6 @@ pub(crate) struct ApiModelEntry {
 }
 
 #[derive(Debug, Deserialize)]
-pub(crate) struct ApiModelModalities {
-    #[serde(default)]
-    pub(crate) input: Vec<String>,
-    #[serde(default)]
-    pub(crate) output: Vec<String>,
-}
-
-#[derive(Debug, Deserialize)]
 pub(crate) struct ApiModelLimit {
     #[serde(default)]
     pub(crate) context: u32,
@@ -80,6 +72,14 @@ pub(crate) struct ApiModelLimit {
     pub(crate) input: u32,
     #[serde(default)]
     pub(crate) output: u32,
+}
+
+#[derive(Debug, Deserialize)]
+pub(crate) struct ApiModelModalities {
+    #[serde(default)]
+    pub(crate) input: Vec<String>,
+    #[serde(default)]
+    pub(crate) output: Vec<String>,
 }
 
 /// Parses upstream `api.json` bytes into a provider map.

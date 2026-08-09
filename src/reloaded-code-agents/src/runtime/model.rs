@@ -33,36 +33,6 @@
 use crate::AgentConfig;
 use reloaded_code_core::models::ModelCatalog;
 
-/// A model identifier that's been validated against your catalog.
-///
-/// Use [`provider()`][`Self::provider()`] and [`model()`][`Self::model()`] to get the
-/// parts, or [`slash_spec()`][`Self::slash_spec()`] for the combined `provider/model-id` string.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct ResolvedModel {
-    provider: Box<str>,
-    model: Box<str>,
-}
-
-impl ResolvedModel {
-    /// Returns the provider (e.g., `openai`).
-    #[inline]
-    pub fn provider(&self) -> &str {
-        &self.provider
-    }
-
-    /// Returns the model name within the provider.
-    #[inline]
-    pub fn model(&self) -> &str {
-        &self.model
-    }
-
-    /// Returns `provider/model-id` format.
-    #[inline]
-    pub fn slash_spec(&self) -> String {
-        format!("{}/{}", self.provider, self.model)
-    }
-}
-
 /// Errors when picking or validating a model.
 #[derive(Debug)]
 #[non_exhaustive]
@@ -101,6 +71,36 @@ pub enum ModelResolutionError {
         /// Model name within the provider.
         model: Box<str>,
     },
+}
+
+/// A model identifier that's been validated against your catalog.
+///
+/// Use [`provider()`][`Self::provider()`] and [`model()`][`Self::model()`] to get the
+/// parts, or [`slash_spec()`][`Self::slash_spec()`] for the combined `provider/model-id` string.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ResolvedModel {
+    provider: Box<str>,
+    model: Box<str>,
+}
+
+impl ResolvedModel {
+    /// Returns the provider (e.g., `openai`).
+    #[inline]
+    pub fn provider(&self) -> &str {
+        &self.provider
+    }
+
+    /// Returns the model name within the provider.
+    #[inline]
+    pub fn model(&self) -> &str {
+        &self.model
+    }
+
+    /// Returns `provider/model-id` format.
+    #[inline]
+    pub fn slash_spec(&self) -> String {
+        format!("{}/{}", self.provider, self.model)
+    }
 }
 
 impl core::fmt::Display for ModelResolutionError {

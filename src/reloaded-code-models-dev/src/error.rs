@@ -3,6 +3,9 @@
 use reloaded_code_core::models::ModelCatalogBuildError;
 use thiserror::Error;
 
+/// Convenience type alias for catalog operations.
+pub type CatalogResult<T> = Result<T, CatalogError>;
+
 /// Errors that can occur during catalog loading and synchronization.
 #[derive(Debug, Error)]
 pub enum CatalogError {
@@ -47,6 +50,3 @@ pub enum CatalogError {
     #[error("blocking task failed: {0}")]
     JoinHandle(#[from] tokio::task::JoinError),
 }
-
-/// Convenience type alias for catalog operations.
-pub type CatalogResult<T> = Result<T, CatalogError>;

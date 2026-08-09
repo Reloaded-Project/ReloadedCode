@@ -57,19 +57,6 @@ impl<'a> LinuxBwrapWrappedCommand<'a> {
     }
 }
 
-#[inline]
-fn resolve_sandbox_cwd<'a>(
-    profile: &'a Profile,
-    workdir: Option<&'a Path>,
-) -> Result<Cow<'a, Path>, LinuxBwrapError> {
-    if let Some(dir) = workdir {
-        if !profile.is_prevalidated_workdir(dir) {
-            validate_workdir(Some(dir))?;
-        }
-    }
-    profile.map_workdir_to_sandbox(workdir)
-}
-
 /// Builds a `bwrap` command line that runs `command` inside the sandbox
 /// described by `profile`.
 ///
@@ -91,6 +78,19 @@ pub fn wrap_command<'a>(
         shell: profile.shell(),
         command,
     })
+}
+
+#[inline]
+fn resolve_sandbox_cwd<'a>(
+    profile: &'a Profile,
+    workdir: Option<&'a Path>,
+) -> Result<Cow<'a, Path>, LinuxBwrapError> {
+    if let Some(dir) = workdir {
+        if !profile.is_prevalidated_workdir(dir) {
+            validate_workdir(Some(dir))?;
+        }
+    }
+    profile.map_workdir_to_sandbox(workdir)
 }
 
 /// Rejects non-absolute or non-existent working directories.

@@ -12,6 +12,35 @@ use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
+const DEFAULT_SANDBOX_PATH: &str = "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/run/current-system/sw/bin:/nix/var/nix/profiles/default/bin";
+const PUBLIC_BOT_PREFIXES: &[&str] = &[
+    "/usr/bin",
+    "/usr/sbin",
+    "/usr/lib",
+    "/usr/local/bin",
+    "/usr/local/sbin",
+    "/usr/local/lib",
+    "/bin",
+    "/sbin",
+    "/lib",
+    "/lib64",
+    "/run/current-system/sw",
+    "/nix/store",
+    "/nix/var/nix/profiles/default",
+];
+const SYNTHETIC_HOME_CONFIG: &str = "/home/sandbox/.config";
+const SYNTHETIC_HOME_DEST: &str = "/home/sandbox";
+const TRUSTED_DENY_PREFIXES: &[&str] = &[
+    "/home",
+    "/root",
+    "/tmp",
+    "/var/tmp",
+    "/run/user",
+    "/run/wrappers/bin",
+    "/etc/profiles/per-user",
+];
+const WORKSPACE_DEST: &str = "/workspace";
+
 impl Builder {
     /// Creates the public-bot preset builder.
     ///
@@ -116,36 +145,6 @@ impl Builder {
     }
 }
 
-const SYNTHETIC_HOME_DEST: &str = "/home/sandbox";
-const SYNTHETIC_HOME_CONFIG: &str = "/home/sandbox/.config";
-const WORKSPACE_DEST: &str = "/workspace";
-
-const DEFAULT_SANDBOX_PATH: &str = "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/run/current-system/sw/bin:/nix/var/nix/profiles/default/bin";
-const PUBLIC_BOT_PREFIXES: &[&str] = &[
-    "/usr/bin",
-    "/usr/sbin",
-    "/usr/lib",
-    "/usr/local/bin",
-    "/usr/local/sbin",
-    "/usr/local/lib",
-    "/bin",
-    "/sbin",
-    "/lib",
-    "/lib64",
-    "/run/current-system/sw",
-    "/nix/store",
-    "/nix/var/nix/profiles/default",
-];
-const TRUSTED_DENY_PREFIXES: &[&str] = &[
-    "/home",
-    "/root",
-    "/tmp",
-    "/var/tmp",
-    "/run/user",
-    "/run/wrappers/bin",
-    "/etc/profiles/per-user",
-];
-
 /// Builds a filtered `PATH` string from the host environment for the given [`Preset`].
 ///
 /// Each host entry is checked with [`path_entry_allowed`]; entries that fail the
@@ -185,41 +184,6 @@ fn inherited_path(preset: Preset) -> String {
     }
 }
 
-/// Checks whether a `PATH` entry is safe to include for the given [`Preset`].
-///
-/// The caller must pass an absolute, normalized path. For [`Preset::PublicBot`]
-/// only entries under [`PUBLIC_BOT_PREFIXES`] are allowed. For
-/// [`Preset::TrustedMaintenance`] everything is allowed except entries under
-/// [`TRUSTED_DENY_PREFIXES`].
-fn path_entry_allowed(preset: Preset, entry: &Path) -> bool {
-    match preset {
-        Preset::PublicBot => PUBLIC_BOT_PREFIXES
-            .iter()
-            .any(|prefix| entry.starts_with(prefix)),
-        Preset::TrustedMaintenance => {
-            entry.is_absolute()
-                && !TRUSTED_DENY_PREFIXES
-                    .iter()
-                    .any(|prefix| entry.starts_with(prefix))
-        }
-    }
-}
-
-/// Collects host directories to mount read-only for [`Preset::PublicBot`].
-///
-/// Checks each prefix in [`PUBLIC_BOT_PREFIXES`] against the host filesystem
-/// and includes only those that exist.
-fn public_bot_read_only_mounts() -> Arc<[Box<Path>]> {
-    let mut mounts = Vec::with_capacity(PUBLIC_BOT_PREFIXES.len());
-    for path in PUBLIC_BOT_PREFIXES {
-        let path = PathBuf::from(path);
-        if path.exists() {
-            mounts.push(path.into_boxed_path());
-        }
-    }
-    mounts.into()
-}
-
 /// Collects compatibility symlinks for [`Preset::PublicBot`].
 ///
 /// On systems without a merged `/usr` layout, `/bin`, `/lib`, and `/sbin` may
@@ -238,6 +202,41 @@ fn public_bot_compat_symlinks() -> Arc<[Symlink]> {
         }
     }
     symlinks.into()
+}
+
+/// Collects host directories to mount read-only for [`Preset::PublicBot`].
+///
+/// Checks each prefix in [`PUBLIC_BOT_PREFIXES`] against the host filesystem
+/// and includes only those that exist.
+fn public_bot_read_only_mounts() -> Arc<[Box<Path>]> {
+    let mut mounts = Vec::with_capacity(PUBLIC_BOT_PREFIXES.len());
+    for path in PUBLIC_BOT_PREFIXES {
+        let path = PathBuf::from(path);
+        if path.exists() {
+            mounts.push(path.into_boxed_path());
+        }
+    }
+    mounts.into()
+}
+
+/// Checks whether a `PATH` entry is safe to include for the given [`Preset`].
+///
+/// The caller must pass an absolute, normalized path. For [`Preset::PublicBot`]
+/// only entries under [`PUBLIC_BOT_PREFIXES`] are allowed. For
+/// [`Preset::TrustedMaintenance`] everything is allowed except entries under
+/// [`TRUSTED_DENY_PREFIXES`].
+fn path_entry_allowed(preset: Preset, entry: &Path) -> bool {
+    match preset {
+        Preset::PublicBot => PUBLIC_BOT_PREFIXES
+            .iter()
+            .any(|prefix| entry.starts_with(prefix)),
+        Preset::TrustedMaintenance => {
+            entry.is_absolute()
+                && !TRUSTED_DENY_PREFIXES
+                    .iter()
+                    .any(|prefix| entry.starts_with(prefix))
+        }
+    }
 }
 
 #[cfg(test)]

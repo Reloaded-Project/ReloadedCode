@@ -2,12 +2,6 @@
 
 use super::ParamMetadata;
 
-/// Canonical tool name.
-pub const NAME: &str = "task";
-
-/// Static description prefix before rendering available targets.
-pub const DESCRIPTION_PREFIX: &str = "Delegate work to one of the listed subagents.";
-
 /// Parameter metadata.
 pub mod param {
     use super::ParamMetadata;
@@ -28,3 +22,8 @@ pub mod param {
     pub const COMMAND: ParamMetadata =
         ParamMetadata::new("command", "Source command or slash-command context.", false);
 }
+
+/// Static description prefix before rendering available targets.
+pub const DESCRIPTION_PREFIX: &str = "Delegate work to one of the listed subagents.";
+/// Canonical tool name.
+pub const NAME: &str = "task";

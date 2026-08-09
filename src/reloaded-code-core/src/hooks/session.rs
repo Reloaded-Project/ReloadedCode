@@ -1,5 +1,14 @@
 //! Session lifecycle event types.
 
+/// Session-compact event callback.
+pub type SessionCompactFn = for<'a> fn(&'a SessionContext<'a>);
+
+/// Session-end event callback.
+pub type SessionEndFn = for<'a> fn(&'a SessionContext<'a>, EndReason);
+
+/// Session-start event callback.
+pub type SessionStartFn = for<'a> fn(&'a SessionContext<'a>);
+
 /// Why a session ended.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum EndReason {
@@ -17,15 +26,6 @@ pub struct SessionContext<'a> {
     /// Unique identifier for the current run.
     pub run_id: &'a str,
 }
-
-/// Session-start event callback.
-pub type SessionStartFn = for<'a> fn(&'a SessionContext<'a>);
-
-/// Session-end event callback.
-pub type SessionEndFn = for<'a> fn(&'a SessionContext<'a>, EndReason);
-
-/// Session-compact event callback.
-pub type SessionCompactFn = for<'a> fn(&'a SessionContext<'a>);
 
 #[cfg(test)]
 mod tests {

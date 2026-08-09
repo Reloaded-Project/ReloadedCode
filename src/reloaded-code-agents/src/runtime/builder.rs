@@ -20,13 +20,6 @@ pub struct AgentRuntimeBuilder {
     hooks: HookSet,
 }
 
-impl Default for AgentRuntimeBuilder {
-    #[inline]
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
 impl AgentRuntimeBuilder {
     /// Creates a builder with empty catalog, empty defaults, default Task settings, and the standard tool set.
     #[inline]
@@ -107,6 +100,13 @@ impl AgentRuntimeBuilder {
             SharedToolRegistry::from_registry(self.custom_tool_registry),
             self.hooks,
         )
+    }
+}
+
+impl Default for AgentRuntimeBuilder {
+    #[inline]
+    fn default() -> Self {
+        Self::new()
     }
 }
 

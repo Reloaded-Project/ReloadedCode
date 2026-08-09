@@ -20,53 +20,10 @@ use std::path::Path;
 
 /// Default production endpoint for the models.dev catalog snapshot.
 const MODELS_DEV_API_URL: &str = "https://models.dev/api.json";
-
 /// Timeout for HTTP connections and requests in seconds.
 const REQUEST_TIMEOUT_SECS: u64 = 30;
-
 #[cfg(test)]
 static TEST_MODELS_DEV_API_URL: std::sync::Mutex<Option<String>> = std::sync::Mutex::new(None);
-
-#[cfg(test)]
-/// Overrides the remote catalog URL for sync tests.
-pub(crate) fn set_test_models_dev_api_url(url: Option<String>) {
-    *TEST_MODELS_DEV_API_URL.lock().unwrap() = url;
-}
-
-/// Returns the active catalog endpoint, including the test override when set.
-fn models_dev_api_url() -> Cow<'static, str> {
-    #[cfg(test)]
-    if let Some(url) = TEST_MODELS_DEV_API_URL.lock().unwrap().clone() {
-        return Cow::Owned(url);
-    }
-
-    Cow::Borrowed(MODELS_DEV_API_URL)
-}
-
-/// Resolves the result to return after a transient request failure.
-///
-/// Cached data takes precedence over surfacing the request error so callers can
-/// continue with the last known-good catalog when possible.
-fn load_after_request_failure(
-    request_error: reqwest::Error,
-    cache_file: Option<&CacheFileData>,
-    cache_error: Option<CatalogError>,
-) -> CatalogResult<CatalogLoadResult> {
-    if let Some(cache_file) = cache_file {
-        return load_catalog_from_cache_file_data(cache_file, CatalogLoadSource::FallbackCache);
-    }
-
-    if let Some(cache_error) = cache_error {
-        return Err(cache_error);
-    }
-
-    Err(CatalogError::Reqwest(request_error))
-}
-
-#[inline]
-fn is_transient_status(status: StatusCode) -> bool {
-    status == StatusCode::TOO_MANY_REQUESTS || status.is_server_error()
-}
 
 #[maybe_async::maybe_async]
 /// Loads the catalog at `path` using the default models.dev endpoint.
@@ -86,6 +43,12 @@ fn is_transient_status(status: StatusCode) -> bool {
 pub(crate) async fn load_catalog_at_path(path: &Path) -> CatalogResult<CatalogLoadResult> {
     let url = models_dev_api_url();
     load_catalog_from_url(path, url.as_ref()).await
+}
+
+#[cfg(test)]
+/// Overrides the remote catalog URL for sync tests.
+pub(crate) fn set_test_models_dev_api_url(url: Option<String>) {
+    *TEST_MODELS_DEV_API_URL.lock().unwrap() = url;
 }
 
 #[maybe_async::maybe_async]
@@ -216,6 +179,41 @@ pub(crate) async fn load_catalog_from_url(
             "unexpected catalog sync status: {status}",
         ))),
     }
+}
+
+#[inline]
+fn is_transient_status(status: StatusCode) -> bool {
+    status == StatusCode::TOO_MANY_REQUESTS || status.is_server_error()
+}
+
+/// Resolves the result to return after a transient request failure.
+///
+/// Cached data takes precedence over surfacing the request error so callers can
+/// continue with the last known-good catalog when possible.
+fn load_after_request_failure(
+    request_error: reqwest::Error,
+    cache_file: Option<&CacheFileData>,
+    cache_error: Option<CatalogError>,
+) -> CatalogResult<CatalogLoadResult> {
+    if let Some(cache_file) = cache_file {
+        return load_catalog_from_cache_file_data(cache_file, CatalogLoadSource::FallbackCache);
+    }
+
+    if let Some(cache_error) = cache_error {
+        return Err(cache_error);
+    }
+
+    Err(CatalogError::Reqwest(request_error))
+}
+
+/// Returns the active catalog endpoint, including the test override when set.
+fn models_dev_api_url() -> Cow<'static, str> {
+    #[cfg(test)]
+    if let Some(url) = TEST_MODELS_DEV_API_URL.lock().unwrap().clone() {
+        return Cow::Owned(url);
+    }
+
+    Cow::Borrowed(MODELS_DEV_API_URL)
 }
 
 #[cfg(test)]

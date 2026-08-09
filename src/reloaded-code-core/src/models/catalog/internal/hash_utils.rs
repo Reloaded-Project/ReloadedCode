@@ -5,16 +5,6 @@ use ahash::RandomState;
 use core::hash::{BuildHasher, Hasher};
 
 #[inline(always)]
-pub fn provider_table_entry_hash(entry: &super::PackedProviderTableEntry) -> u64 {
-    entry.hash48()
-}
-
-#[inline(always)]
-pub fn provider_model_table_entry_hash(entry: &super::PackedProviderModelTableEntry) -> u64 {
-    entry.hash48()
-}
-
-#[inline(always)]
 pub fn hash_provider_key(hash_state: &RandomState, provider_key: &str) -> Hash64 {
     Hash64::from_u64(hash_state.hash_one(provider_key.as_bytes()))
 }
@@ -38,4 +28,14 @@ pub fn hash_state_for_seed(seed: u8) -> RandomState {
     // by mixing the seed with internal entropy. Each call produces a
     // different RandomState even with the same seed value.
     RandomState::generate_with(u64::from(seed), 0, 0, 0)
+}
+
+#[inline(always)]
+pub fn provider_model_table_entry_hash(entry: &super::PackedProviderModelTableEntry) -> u64 {
+    entry.hash48()
+}
+
+#[inline(always)]
+pub fn provider_table_entry_hash(entry: &super::PackedProviderTableEntry) -> u64 {
+    entry.hash48()
 }

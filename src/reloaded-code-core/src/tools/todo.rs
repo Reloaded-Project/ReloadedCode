@@ -8,43 +8,21 @@ use serde_json::Value;
 use std::fmt::Write;
 use std::sync::Arc;
 
-/// Task status.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
-#[serde(rename_all = "snake_case")]
-pub enum TodoStatus {
-    /// Not yet started.
-    Pending,
-    /// Currently being worked on.
-    InProgress,
-    /// Successfully finished.
-    Completed,
-    /// Abandoned or no longer relevant.
-    Cancelled,
+/// Serde-friendly todo-read request owned by the core crate.
+#[derive(Debug, Clone, Deserialize)]
+pub struct TodoReadRequest {}
+
+/// Thread-safe shared state for todo list.
+#[derive(Debug, Clone, Default)]
+pub struct TodoState {
+    todos: Arc<RwLock<Vec<Todo>>>,
 }
 
-impl TodoStatus {
-    /// Returns the status indicator icon.
-    #[inline]
-    pub const fn icon(self) -> &'static str {
-        match self {
-            Self::Pending => "[ ]",
-            Self::InProgress => "[>]",
-            Self::Completed => "[x]",
-            Self::Cancelled => "[-]",
-        }
-    }
-}
-
-/// Task priority level.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
-#[serde(rename_all = "snake_case")]
-pub enum TodoPriority {
-    /// Urgent, should be addressed first.
-    High,
-    /// Normal priority.
-    Medium,
-    /// Can be deferred.
-    Low,
+/// Serde-friendly todo-write request owned by the core crate.
+#[derive(Debug, Clone, Deserialize)]
+pub struct TodoWriteRequest {
+    /// The complete list of todos to set.
+    pub todos: Vec<Todo>,
 }
 
 /// A single task item.
@@ -60,34 +38,31 @@ pub struct Todo {
     pub priority: TodoPriority,
 }
 
-/// Thread-safe shared state for todo list.
-#[derive(Debug, Clone, Default)]
-pub struct TodoState {
-    todos: Arc<RwLock<Vec<Todo>>>,
+/// Task priority level.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum TodoPriority {
+    /// Urgent, should be addressed first.
+    High,
+    /// Normal priority.
+    Medium,
+    /// Can be deferred.
+    Low,
 }
 
-/// Serde-friendly todo-write request owned by the core crate.
-#[derive(Debug, Clone, Deserialize)]
-pub struct TodoWriteRequest {
-    /// The complete list of todos to set.
-    pub todos: Vec<Todo>,
+/// Task status.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum TodoStatus {
+    /// Not yet started.
+    Pending,
+    /// Currently being worked on.
+    InProgress,
+    /// Successfully finished.
+    Completed,
+    /// Abandoned or no longer relevant.
+    Cancelled,
 }
-
-impl TodoWriteRequest {
-    /// Parses a raw JSON tool payload into a todo-write request.
-    ///
-    /// # Errors
-    /// - Returns [`ToolError::Json`] when the JSON payload cannot be deserialized
-    ///   into a [`TodoWriteRequest`] (e.g., missing `todos` field or invalid todo
-    ///   structure).
-    pub fn parse(args: Value) -> ToolResult<Self> {
-        serde_json::from_value(args).map_err(ToolError::from)
-    }
-}
-
-/// Serde-friendly todo-read request owned by the core crate.
-#[derive(Debug, Clone, Deserialize)]
-pub struct TodoReadRequest {}
 
 impl TodoReadRequest {
     /// Parses a raw JSON tool payload into a todo-read request.
@@ -106,6 +81,55 @@ impl TodoState {
     pub fn new() -> Self {
         Self::default()
     }
+}
+
+impl TodoWriteRequest {
+    /// Parses a raw JSON tool payload into a todo-write request.
+    ///
+    /// # Errors
+    /// - Returns [`ToolError::Json`] when the JSON payload cannot be deserialized
+    ///   into a [`TodoWriteRequest`] (e.g., missing `todos` field or invalid todo
+    ///   structure).
+    pub fn parse(args: Value) -> ToolResult<Self> {
+        serde_json::from_value(args).map_err(ToolError::from)
+    }
+}
+
+impl TodoStatus {
+    /// Returns the status indicator icon.
+    #[inline]
+    pub const fn icon(self) -> &'static str {
+        match self {
+            Self::Pending => "[ ]",
+            Self::InProgress => "[>]",
+            Self::Completed => "[x]",
+            Self::Cancelled => "[-]",
+        }
+    }
+}
+
+/// Reads and formats the current todo list.
+pub fn read_todos(state: &TodoState, _request: TodoReadRequest) -> String {
+    let todos = state.todos.read();
+
+    if todos.is_empty() {
+        return "No tasks.".to_string();
+    }
+
+    let mut output = format!("Tasks ({} total):\n", todos.len());
+    for todo in todos.iter() {
+        let _ = writeln!(
+            output,
+            "{} ({:?}) {}: {}",
+            todo.status.icon(),
+            todo.priority,
+            todo.id,
+            todo.content
+        );
+    }
+
+    output.truncate(output.trim_end().len());
+    output
 }
 
 /// Writes/replaces the todo list with new items.
@@ -134,30 +158,6 @@ pub fn write_todos(state: &TodoState, request: TodoWriteRequest) -> ToolResult<S
     let count = request.todos.len();
     *state.todos.write() = request.todos;
     Ok(format!("Updated todo list with {count} task(s)."))
-}
-
-/// Reads and formats the current todo list.
-pub fn read_todos(state: &TodoState, _request: TodoReadRequest) -> String {
-    let todos = state.todos.read();
-
-    if todos.is_empty() {
-        return "No tasks.".to_string();
-    }
-
-    let mut output = format!("Tasks ({} total):\n", todos.len());
-    for todo in todos.iter() {
-        let _ = writeln!(
-            output,
-            "{} ({:?}) {}: {}",
-            todo.status.icon(),
-            todo.priority,
-            todo.id,
-            todo.content
-        );
-    }
-
-    output.truncate(output.trim_end().len());
-    output
 }
 
 #[cfg(test)]

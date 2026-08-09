@@ -5,18 +5,23 @@
 //! - [`AllowedPathResolver`] - Restricts to allowed directories
 //! - [`AllowedGlobResolver`] - Restricts to allowed directories with glob pattern filtering
 
-mod absolute;
-mod allowed;
-pub mod allowed_glob;
-
+use crate::context::PathMode;
+use crate::error::ToolResult;
 pub use absolute::AbsolutePathResolver;
 pub use allowed::AllowedPathResolver;
 pub use allowed_glob::normalize::expand_shell;
 pub use allowed_glob::{AllowedGlobResolver, GlobPolicy, GlobPolicyBuilder, RuleAction};
-
-use crate::context::PathMode;
-use crate::error::ToolResult;
 use std::path::{Component, Path, PathBuf};
+
+mod absolute;
+mod allowed;
+pub mod allowed_glob;
+
+/// Result of analyzing a path for traversal attacks.
+pub(crate) struct PathAnalysis {
+    /// Whether the path would escape its base directory.
+    pub(crate) escapes: bool,
+}
 
 /// Strategy for resolving and validating file paths.
 ///
@@ -32,11 +37,13 @@ pub trait PathResolver: Send + Sync {
     /// Fast per-entry check: is this absolute path allowed?
     ///
     /// WalkBuilder yields real absolute paths. No canonicalization needed.
-    /// Used by glob/grep to filter walked entries without [`resolve()`](Self::resolve)
+    /// Used by glob/grep to filter walked entries without [`resolve()`]
     /// overhead.
     ///
-    /// Implementations must ensure paths where [`resolve()`](Self::resolve) succeeds
+    /// Implementations must ensure paths where [`resolve()`] succeeds
     /// also satisfy `is_path_allowed()` - the two must be consistent.
+    ///
+    /// [`resolve()`]: Self::resolve
     fn is_path_allowed(&self, path: &Path) -> bool;
 
     /// Returns the path mode for this resolver instance.
@@ -58,43 +65,6 @@ pub trait PathResolver: Send + Sync {
 #[inline]
 pub(crate) fn relative_path_escapes_base(path: &Path) -> bool {
     path_analysis(path).escapes
-}
-
-/// Result of analyzing a path for traversal attacks.
-pub(crate) struct PathAnalysis {
-    /// Whether the path would escape its base directory.
-    pub(crate) escapes: bool,
-}
-
-/// Analyzes a path for traversal attacks.
-///
-/// This is a single-pass analysis that checks whether the path escapes
-/// its base directory (for security).
-#[inline]
-pub(crate) fn path_analysis(path: &Path) -> PathAnalysis {
-    if path.is_absolute() {
-        return PathAnalysis { escapes: false };
-    }
-
-    let mut depth = 0usize;
-
-    for component in path.components() {
-        match component {
-            Component::Normal(_) => depth += 1,
-            Component::CurDir => {}
-            Component::ParentDir => {
-                if depth == 0 {
-                    return PathAnalysis { escapes: true };
-                }
-                depth -= 1;
-            }
-            Component::RootDir | Component::Prefix(_) => {
-                return PathAnalysis { escapes: false };
-            }
-        }
-    }
-
-    PathAnalysis { escapes: false }
 }
 
 /// Resolves a path for a new file when the parent directory exists.
@@ -134,4 +104,35 @@ pub(crate) fn resolve_new_file_fast(candidate: &Path) -> Option<PathBuf> {
         }
         None
     }
+}
+
+/// Analyzes a path for traversal attacks.
+///
+/// This is a single-pass analysis that checks whether the path escapes
+/// its base directory (for security).
+#[inline]
+pub(crate) fn path_analysis(path: &Path) -> PathAnalysis {
+    if path.is_absolute() {
+        return PathAnalysis { escapes: false };
+    }
+
+    let mut depth = 0usize;
+
+    for component in path.components() {
+        match component {
+            Component::Normal(_) => depth += 1,
+            Component::CurDir => {}
+            Component::ParentDir => {
+                if depth == 0 {
+                    return PathAnalysis { escapes: true };
+                }
+                depth -= 1;
+            }
+            Component::RootDir | Component::Prefix(_) => {
+                return PathAnalysis { escapes: false };
+            }
+        }
+    }
+
+    PathAnalysis { escapes: false }
 }

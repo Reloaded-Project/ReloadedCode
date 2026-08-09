@@ -35,26 +35,46 @@
 use crate::error::{ToolError, ToolResult};
 use crate::permissions::Ruleset;
 use crate::ToolOutput;
+#[cfg(all(feature = "blocking", not(feature = "tokio")))]
+pub use blocking_impl::{execute_command, execute_command_with_mode};
 use core::fmt::Write;
+#[cfg(all(feature = "linux-bubblewrap", target_os = "linux"))]
+pub use reloaded_code_bubblewrap::profile as linux_bwrap_profile;
+#[cfg(all(feature = "linux-bubblewrap", target_os = "linux"))]
+use reloaded_code_bubblewrap::profile::Profile;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::borrow::Cow;
 use std::path::Path;
 use std::time::Duration;
 #[cfg(feature = "tokio")]
-mod tokio_impl;
-#[cfg(feature = "tokio")]
 pub use tokio_impl::{execute_command, execute_command_with_mode};
 
 #[cfg(all(feature = "blocking", not(feature = "tokio")))]
 mod blocking_impl;
-#[cfg(all(feature = "blocking", not(feature = "tokio")))]
-pub use blocking_impl::{execute_command, execute_command_with_mode};
+#[cfg(feature = "tokio")]
+mod tokio_impl;
+#[cfg(all(test, feature = "linux-bubblewrap", target_os = "linux"))]
+mod tests {
+    use super::*;
 
-#[cfg(all(feature = "linux-bubblewrap", target_os = "linux"))]
-pub use reloaded_code_bubblewrap::profile as linux_bwrap_profile;
-#[cfg(all(feature = "linux-bubblewrap", target_os = "linux"))]
-use reloaded_code_bubblewrap::profile::Profile;
+    #[test]
+    fn bwrap_error_mapping_preserves_variants() {
+        let mapped = map_linux_bwrap_error(reloaded_code_bubblewrap::LinuxBwrapError::Execution(
+            "bwrap missing".to_string(),
+        ));
+        assert!(matches!(mapped, ToolError::Execution(m) if m.contains("bwrap")));
+
+        let mapped = map_linux_bwrap_error(reloaded_code_bubblewrap::LinuxBwrapError::InvalidPath(
+            "bad path".to_string(),
+        ));
+        assert!(matches!(mapped, ToolError::InvalidPath(m) if m.contains("bad")));
+    }
+}
+
+/// Default buffer capacity for stdout/stderr pipe reads.
+/// 32KB covers typical command output without reallocations.
+const PIPE_BUFFER_CAPACITY: usize = 32 * 1024;
 
 /// Execution mode for bash commands.
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
@@ -63,6 +83,17 @@ pub enum BashExecutionMode {
     Host,
     #[cfg(all(feature = "linux-bubblewrap", target_os = "linux"))]
     LinuxBwrap(std::sync::Arc<Profile>),
+}
+
+/// Result of shell command execution.
+#[derive(Debug, Clone, Serialize)]
+pub struct BashOutput {
+    /// Exit code from the command (None if killed by timeout).
+    pub exit_code: Option<i32>,
+    /// Standard output from the command.
+    pub stdout: String,
+    /// Standard error output from the command.
+    pub stderr: String,
 }
 
 /// Serde-friendly bash request owned by the core crate.
@@ -74,17 +105,6 @@ pub struct BashRequest {
     pub workdir: Option<String>,
     /// Timeout in milliseconds. If omitted, uses the tool's default timeout.
     pub timeout_ms: Option<u32>,
-}
-
-impl BashRequest {
-    /// Parses a raw JSON tool payload into a bash request.
-    ///
-    /// # Errors
-    /// - Returns [`ToolError::Json`] when the JSON payload cannot be deserialized
-    ///   into a [`BashRequest`] (e.g., missing `command` field or invalid field types).
-    pub fn parse(args: Value) -> ToolResult<Self> {
-        serde_json::from_value(args).map_err(ToolError::from)
-    }
 }
 
 /// Runtime settings applied to bash requests.
@@ -103,92 +123,6 @@ pub struct BashSettings<'a> {
     ///
     /// When set, blocked commands return [`ToolError::PermissionDenied`].
     pub permission: Option<&'a Ruleset>,
-}
-
-/// Default buffer capacity for stdout/stderr pipe reads.
-/// 32KB covers typical command output without reallocations.
-const PIPE_BUFFER_CAPACITY: usize = 32 * 1024;
-
-#[inline]
-fn string_from_utf8_or_lossy(bytes: Vec<u8>) -> String {
-    match String::from_utf8(bytes) {
-        Ok(text) => text,
-        Err(error) => match String::from_utf8_lossy(&error.into_bytes()) {
-            Cow::Borrowed(text) => text.to_owned(),
-            Cow::Owned(text) => text,
-        },
-    }
-}
-
-#[inline]
-fn timeout_message_with_buffered_output(
-    timeout: Duration,
-    stdout_data: &[u8],
-    stderr_data: &[u8],
-) -> String {
-    let stdout = String::from_utf8_lossy(stdout_data);
-    let stderr = String::from_utf8_lossy(stderr_data);
-
-    let mut message = String::with_capacity(stdout.len() + stderr.len() + 64);
-    let _ = write!(message, "command timed out after {}ms", timeout.as_millis());
-
-    if !stdout.is_empty() {
-        message.push('\n');
-        message.push_str(&stdout);
-    }
-
-    if !stderr.is_empty() {
-        if stdout.is_empty() || !stdout.ends_with('\n') {
-            message.push('\n');
-        }
-        message.push_str("[stderr]\n");
-        message.push_str(&stderr);
-    }
-
-    message
-}
-
-#[inline]
-fn timeout_error_with_kill_failure(message: String, kill_error: Option<String>) -> ToolError {
-    match kill_error {
-        Some(kill_error) => ToolError::TimeoutWithKillFailure {
-            message,
-            kill_error,
-        },
-        None => ToolError::Timeout(message),
-    }
-}
-
-#[inline]
-fn validate_workdir(workdir: Option<&Path>) -> ToolResult<()> {
-    if let Some(dir) = workdir {
-        if !dir.is_absolute() {
-            return Err(ToolError::InvalidPath(format!(
-                "working directory must be an absolute path: {}",
-                dir.display()
-            )));
-        }
-        if !dir.is_dir() {
-            let msg = if dir.exists() {
-                format!("working directory is not a directory: {}", dir.display())
-            } else {
-                format!("working directory does not exist: {}", dir.display())
-            };
-            return Err(ToolError::InvalidPath(msg));
-        }
-    }
-    Ok(())
-}
-
-/// Result of shell command execution.
-#[derive(Debug, Clone, Serialize)]
-pub struct BashOutput {
-    /// Exit code from the command (None if killed by timeout).
-    pub exit_code: Option<i32>,
-    /// Standard output from the command.
-    pub stdout: String,
-    /// Standard error output from the command.
-    pub stderr: String,
 }
 
 impl BashOutput {
@@ -228,6 +162,17 @@ impl BashOutput {
     }
 }
 
+impl BashRequest {
+    /// Parses a raw JSON tool payload into a bash request.
+    ///
+    /// # Errors
+    /// - Returns [`ToolError::Json`] when the JSON payload cannot be deserialized
+    ///   into a [`BashRequest`] (e.g., missing `command` field or invalid field types).
+    pub fn parse(args: Value) -> ToolResult<Self> {
+        serde_json::from_value(args).map_err(ToolError::from)
+    }
+}
+
 #[cfg(all(feature = "linux-bubblewrap", target_os = "linux"))]
 #[inline]
 fn map_linux_bwrap_error(error: reloaded_code_bubblewrap::LinuxBwrapError) -> ToolError {
@@ -238,20 +183,73 @@ fn map_linux_bwrap_error(error: reloaded_code_bubblewrap::LinuxBwrapError) -> To
     }
 }
 
-#[cfg(all(test, feature = "linux-bubblewrap", target_os = "linux"))]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn bwrap_error_mapping_preserves_variants() {
-        let mapped = map_linux_bwrap_error(reloaded_code_bubblewrap::LinuxBwrapError::Execution(
-            "bwrap missing".to_string(),
-        ));
-        assert!(matches!(mapped, ToolError::Execution(m) if m.contains("bwrap")));
-
-        let mapped = map_linux_bwrap_error(reloaded_code_bubblewrap::LinuxBwrapError::InvalidPath(
-            "bad path".to_string(),
-        ));
-        assert!(matches!(mapped, ToolError::InvalidPath(m) if m.contains("bad")));
+#[inline]
+fn string_from_utf8_or_lossy(bytes: Vec<u8>) -> String {
+    match String::from_utf8(bytes) {
+        Ok(text) => text,
+        Err(error) => match String::from_utf8_lossy(&error.into_bytes()) {
+            Cow::Borrowed(text) => text.to_owned(),
+            Cow::Owned(text) => text,
+        },
     }
+}
+
+#[inline]
+fn timeout_error_with_kill_failure(message: String, kill_error: Option<String>) -> ToolError {
+    match kill_error {
+        Some(kill_error) => ToolError::TimeoutWithKillFailure {
+            message,
+            kill_error,
+        },
+        None => ToolError::Timeout(message),
+    }
+}
+
+#[inline]
+fn timeout_message_with_buffered_output(
+    timeout: Duration,
+    stdout_data: &[u8],
+    stderr_data: &[u8],
+) -> String {
+    let stdout = String::from_utf8_lossy(stdout_data);
+    let stderr = String::from_utf8_lossy(stderr_data);
+
+    let mut message = String::with_capacity(stdout.len() + stderr.len() + 64);
+    let _ = write!(message, "command timed out after {}ms", timeout.as_millis());
+
+    if !stdout.is_empty() {
+        message.push('\n');
+        message.push_str(&stdout);
+    }
+
+    if !stderr.is_empty() {
+        if stdout.is_empty() || !stdout.ends_with('\n') {
+            message.push('\n');
+        }
+        message.push_str("[stderr]\n");
+        message.push_str(&stderr);
+    }
+
+    message
+}
+
+#[inline]
+fn validate_workdir(workdir: Option<&Path>) -> ToolResult<()> {
+    if let Some(dir) = workdir {
+        if !dir.is_absolute() {
+            return Err(ToolError::InvalidPath(format!(
+                "working directory must be an absolute path: {}",
+                dir.display()
+            )));
+        }
+        if !dir.is_dir() {
+            let msg = if dir.exists() {
+                format!("working directory is not a directory: {}", dir.display())
+            } else {
+                format!("working directory does not exist: {}", dir.display())
+            };
+            return Err(ToolError::InvalidPath(msg));
+        }
+    }
+    Ok(())
 }

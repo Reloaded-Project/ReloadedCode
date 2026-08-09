@@ -7,155 +7,6 @@ use super::ProviderIdx;
 use crate::models::ProviderType;
 use thiserror::Error;
 
-/// Distilled per-model metadata used when inserting models during catalog construction.
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub struct ModelInfo {
-    /// Content modalities this model can handle as input and/or output.
-    pub modalities: Modality,
-    /// Max input tokens.
-    pub max_input: u32,
-    /// Max output tokens.
-    pub max_output: u32,
-    /// Default sampling temperature, or `None` if unspecified.
-    pub temperature: Option<f32>,
-    /// Default sampling `top_p`, or `None` if unspecified.
-    pub top_p: Option<f32>,
-}
-
-/// Distilled provider metadata used when inserting providers during catalog construction.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct ProviderInfo {
-    /// Base URL for this provider. Empty when unspecified.
-    pub api_url: String,
-    /// Candidate environment variables used to resolve API keys.
-    ///
-    /// Order matters: callers may check these in order and use the first match.
-    pub env_vars: Vec<String>,
-    /// Type of API used by the provider.
-    pub api_type: ProviderType,
-}
-
-/// Source that maps a provider key to provider metadata.
-///
-/// This wrapper keeps builder input self-documenting and avoids tuple-position
-/// ambiguity at call sites.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct ProviderSource {
-    /// Provider identifier used by lookups (for example, `"openai"`).
-    pub provider_key: String,
-    /// Provider metadata associated with [`Self::provider_key`].
-    pub provider: ProviderInfo,
-}
-
-impl ProviderSource {
-    /// Creates a provider source.
-    ///
-    /// # Parameters
-    ///
-    /// * `provider_key` - Provider identifier used during provider lookup.
-    /// * `provider` - Provider metadata for this key.
-    ///
-    /// # Returns
-    ///
-    /// A new [`ProviderSource`].
-    #[inline]
-    pub fn new(provider_key: impl Into<String>, provider: ProviderInfo) -> Self {
-        Self {
-            provider_key: provider_key.into(),
-            provider,
-        }
-    }
-}
-
-impl From<(String, ProviderInfo)> for ProviderSource {
-    #[inline]
-    fn from((provider_key, provider): (String, ProviderInfo)) -> Self {
-        Self {
-            provider_key,
-            provider,
-        }
-    }
-}
-
-/// Source that maps a model under a specific provider to model metadata.
-///
-/// This wrapper keeps builder input self-documenting and avoids tuple-position
-/// ambiguity at call sites.
-///
-/// The `model_key` is borrowed because the catalog builder hashes it during
-/// construction and does not retain it afterward. Callers must therefore keep
-/// the referenced string alive until [`crate::models::catalog::ModelCatalog::build`]
-/// returns.
-///
-/// The `provider_idx` must correspond to an entry in the `providers` slice passed
-/// to [`ModelCatalog::build`].
-///
-/// [`ModelCatalog::build`]: crate::models::catalog::ModelCatalog::build
-#[derive(Debug, Clone, PartialEq)]
-pub struct ProviderModelSource<'a> {
-    /// Index into the `providers` slice passed to [`ModelCatalog::build`].
-    ///
-    /// [`ModelCatalog::build`]: crate::models::catalog::ModelCatalog::build
-    pub provider_idx: ProviderIdx,
-    /// Borrowed model identifier used by lookups (for example, `"gpt-4"`).
-    pub model_key: &'a str,
-    /// Model metadata associated with [`Self::model_key`].
-    pub model: ModelInfo,
-}
-
-impl<'a> ProviderModelSource<'a> {
-    /// Creates a provider model source.
-    ///
-    /// # Parameters
-    ///
-    /// * `provider_idx` - Index into the `providers` slice passed to [`ModelCatalog::build`].
-    /// * `model_key` - Model identifier used during model lookup for this provider.
-    /// * `model` - Model metadata for this provider model.
-    ///
-    /// # Returns
-    ///
-    /// A new [`ProviderModelSource`].
-    ///
-    /// [`ModelCatalog::build`]: crate::models::catalog::ModelCatalog::build
-    #[inline]
-    pub fn new(provider_idx: ProviderIdx, model_key: &'a str, model: ModelInfo) -> Self {
-        Self {
-            provider_idx,
-            model_key,
-            model,
-        }
-    }
-}
-
-impl<'a> From<(ProviderIdx, &'a str, ModelInfo)> for ProviderModelSource<'a> {
-    #[inline]
-    fn from((provider_idx, model_key, model): (ProviderIdx, &'a str, ModelInfo)) -> Self {
-        Self {
-            provider_idx,
-            model_key,
-            model,
-        }
-    }
-}
-
-/// Hash-table kind used in collision/build errors.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum LookupTableKind {
-    /// Provider-key lookup table.
-    Provider,
-    /// Provider model lookup table.
-    ProviderModel,
-}
-
-impl core::fmt::Display for LookupTableKind {
-    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
-        match self {
-            Self::Provider => f.write_str("provider"),
-            Self::ProviderModel => f.write_str("provider model"),
-        }
-    }
-}
-
 /// Errors returned when building a [`crate::models::ModelCatalog`].
 #[derive(Debug, Error, Clone, PartialEq)]
 pub enum ModelCatalogBuildError {
@@ -250,4 +101,153 @@ pub enum ModelCatalogBuildError {
         /// Invalid value provided.
         value: f32,
     },
+}
+
+/// Source that maps a model under a specific provider to model metadata.
+///
+/// This wrapper keeps builder input self-documenting and avoids tuple-position
+/// ambiguity at call sites.
+///
+/// The `model_key` is borrowed because the catalog builder hashes it during
+/// construction and does not retain it afterward. Callers must therefore keep
+/// the referenced string alive until [`crate::models::catalog::ModelCatalog::build`]
+/// returns.
+///
+/// The `provider_idx` must correspond to an entry in the `providers` slice passed
+/// to [`ModelCatalog::build`].
+///
+/// [`ModelCatalog::build`]: crate::models::catalog::ModelCatalog::build
+#[derive(Debug, Clone, PartialEq)]
+pub struct ProviderModelSource<'a> {
+    /// Index into the `providers` slice passed to [`ModelCatalog::build`].
+    ///
+    /// [`ModelCatalog::build`]: crate::models::catalog::ModelCatalog::build
+    pub provider_idx: ProviderIdx,
+    /// Borrowed model identifier used by lookups (for example, `"gpt-4"`).
+    pub model_key: &'a str,
+    /// Model metadata associated with [`Self::model_key`].
+    pub model: ModelInfo,
+}
+
+/// Source that maps a provider key to provider metadata.
+///
+/// This wrapper keeps builder input self-documenting and avoids tuple-position
+/// ambiguity at call sites.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ProviderSource {
+    /// Provider identifier used by lookups (for example, `"openai"`).
+    pub provider_key: String,
+    /// Provider metadata associated with [`Self::provider_key`].
+    pub provider: ProviderInfo,
+}
+
+/// Hash-table kind used in collision/build errors.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum LookupTableKind {
+    /// Provider-key lookup table.
+    Provider,
+    /// Provider model lookup table.
+    ProviderModel,
+}
+
+/// Distilled per-model metadata used when inserting models during catalog construction.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct ModelInfo {
+    /// Content modalities this model can handle as input and/or output.
+    pub modalities: Modality,
+    /// Max input tokens.
+    pub max_input: u32,
+    /// Max output tokens.
+    pub max_output: u32,
+    /// Default sampling temperature, or `None` if unspecified.
+    pub temperature: Option<f32>,
+    /// Default sampling `top_p`, or `None` if unspecified.
+    pub top_p: Option<f32>,
+}
+
+/// Distilled provider metadata used when inserting providers during catalog construction.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ProviderInfo {
+    /// Base URL for this provider. Empty when unspecified.
+    pub api_url: String,
+    /// Candidate environment variables used to resolve API keys.
+    ///
+    /// Order matters: callers may check these in order and use the first match.
+    pub env_vars: Vec<String>,
+    /// Type of API used by the provider.
+    pub api_type: ProviderType,
+}
+
+impl<'a> ProviderModelSource<'a> {
+    /// Creates a provider model source.
+    ///
+    /// # Parameters
+    ///
+    /// * `provider_idx` - Index into the `providers` slice passed to [`ModelCatalog::build`].
+    /// * `model_key` - Model identifier used during model lookup for this provider.
+    /// * `model` - Model metadata for this provider model.
+    ///
+    /// # Returns
+    ///
+    /// A new [`ProviderModelSource`].
+    ///
+    /// [`ModelCatalog::build`]: crate::models::catalog::ModelCatalog::build
+    #[inline]
+    pub fn new(provider_idx: ProviderIdx, model_key: &'a str, model: ModelInfo) -> Self {
+        Self {
+            provider_idx,
+            model_key,
+            model,
+        }
+    }
+}
+
+impl ProviderSource {
+    /// Creates a provider source.
+    ///
+    /// # Parameters
+    ///
+    /// * `provider_key` - Provider identifier used during provider lookup.
+    /// * `provider` - Provider metadata for this key.
+    ///
+    /// # Returns
+    ///
+    /// A new [`ProviderSource`].
+    #[inline]
+    pub fn new(provider_key: impl Into<String>, provider: ProviderInfo) -> Self {
+        Self {
+            provider_key: provider_key.into(),
+            provider,
+        }
+    }
+}
+
+impl<'a> From<(ProviderIdx, &'a str, ModelInfo)> for ProviderModelSource<'a> {
+    #[inline]
+    fn from((provider_idx, model_key, model): (ProviderIdx, &'a str, ModelInfo)) -> Self {
+        Self {
+            provider_idx,
+            model_key,
+            model,
+        }
+    }
+}
+
+impl From<(String, ProviderInfo)> for ProviderSource {
+    #[inline]
+    fn from((provider_key, provider): (String, ProviderInfo)) -> Self {
+        Self {
+            provider_key,
+            provider,
+        }
+    }
+}
+
+impl core::fmt::Display for LookupTableKind {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        match self {
+            Self::Provider => f.write_str("provider"),
+            Self::ProviderModel => f.write_str("provider model"),
+        }
+    }
 }

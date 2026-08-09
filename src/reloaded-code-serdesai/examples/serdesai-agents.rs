@@ -16,9 +16,9 @@ use reloaded_code_serdesai::{AgentBuildContext, AgentDefaults};
 use std::{path::PathBuf, sync::Arc};
 
 const AGENT_NAME: &str = "basic/file-reader";
-const MODEL_ID: &str = "synthetic/hf:zai-org/GLM-4.7-Flash";
 const API_KEY_NAME: &str = "SYNTHETIC_API_KEY";
 const API_KEY_VALUE: &str = ""; // <-- Set your API key here
+const MODEL_ID: &str = "synthetic/hf:zai-org/GLM-4.7-Flash";
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {

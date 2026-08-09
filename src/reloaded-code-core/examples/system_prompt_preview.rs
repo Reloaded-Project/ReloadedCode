@@ -2,13 +2,25 @@
 //!
 //! Run: cargo run --example system_prompt_preview -p reloaded-code-core
 
-mod system_prompt;
-
 use reloaded_code_core::context::PathMode;
 use system_prompt::{
     build_case, print_footprint, print_ranked_sizes, print_tool_definitions, section_sizes,
     GrepConfig, PromptCase, ReadConfig, TaskTarget,
 };
+
+mod system_prompt;
+
+const SYSTEM_PROMPT: &str = "# System Instructions\n\nYou are a helpful coding assistant. Follow best practices and write clean, maintainable code.";
+const TASK_TARGETS: &[TaskTarget] = &[
+    TaskTarget {
+        name: "research",
+        description: "Investigate implementation details and report back.",
+    },
+    TaskTarget {
+        name: "review",
+        description: "Review code and suggest focused fixes.",
+    },
+];
 
 fn main() {
     let full = build_case(full_case());
@@ -28,19 +40,6 @@ fn main() {
     println!("\nWithout supplemental workflow:");
     print_footprint("  Static request footprint", &without_supplemental);
 }
-
-const SYSTEM_PROMPT: &str = "# System Instructions\n\nYou are a helpful coding assistant. Follow best practices and write clean, maintainable code.";
-
-const TASK_TARGETS: &[TaskTarget] = &[
-    TaskTarget {
-        name: "research",
-        description: "Investigate implementation details and report back.",
-    },
-    TaskTarget {
-        name: "review",
-        description: "Review code and suggest focused fixes.",
-    },
-];
 
 fn full_case() -> PromptCase {
     PromptCase {

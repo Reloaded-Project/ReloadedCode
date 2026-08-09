@@ -2,13 +2,26 @@
 //!
 //! Run: cargo run --example system_prompt_preview_compare -p reloaded-code-core
 
-mod system_prompt;
-
 use reloaded_code_core::context::PathMode;
 use system_prompt::{
     build_case, estimate_tokens, print_footprint, GrepConfig, PromptArtifacts, PromptCase,
     ReadConfig, TaskTarget,
 };
+
+mod system_prompt;
+
+const FULL_SYSTEM_PROMPT: &str = "# System Instructions\n\nYou are a helpful coding assistant. Follow best practices and write clean, maintainable code.";
+const READONLY_SYSTEM_PROMPT: &str = "# System Instructions\n\nYou are a helpful coding assistant. Gather relevant information and report concise findings.";
+const TASK_TARGETS: &[TaskTarget] = &[
+    TaskTarget {
+        name: "research",
+        description: "Investigate implementation details and report back.",
+    },
+    TaskTarget {
+        name: "review",
+        description: "Review code and suggest focused fixes.",
+    },
+];
 
 fn main() {
     let full = build_case(full_case());
@@ -25,21 +38,6 @@ fn main() {
     print_delta("  No supplemental workflow", &full, &no_supplemental);
     print_delta("  Readonly", &full, &readonly);
 }
-
-const FULL_SYSTEM_PROMPT: &str = "# System Instructions\n\nYou are a helpful coding assistant. Follow best practices and write clean, maintainable code.";
-
-const READONLY_SYSTEM_PROMPT: &str = "# System Instructions\n\nYou are a helpful coding assistant. Gather relevant information and report concise findings.";
-
-const TASK_TARGETS: &[TaskTarget] = &[
-    TaskTarget {
-        name: "research",
-        description: "Investigate implementation details and report back.",
-    },
-    TaskTarget {
-        name: "review",
-        description: "Review code and suggest focused fixes.",
-    },
-];
 
 fn full_case() -> PromptCase {
     PromptCase {
@@ -67,6 +65,26 @@ fn full_case() -> PromptCase {
     }
 }
 
+fn print_delta(label: &str, full: &PromptArtifacts, other: &PromptArtifacts) {
+    let prompt_saved = full
+        .system_prompt
+        .len()
+        .saturating_sub(other.system_prompt.len());
+    let definitions_saved = full
+        .tool_definition_payload
+        .len()
+        .saturating_sub(other.tool_definition_payload.len());
+    let total_saved = full.total_chars().saturating_sub(other.total_chars());
+
+    println!(
+        "{label}: -{} prompt chars, -{} definition chars, -{} total chars (~{} tokens)",
+        prompt_saved,
+        definitions_saved,
+        total_saved,
+        estimate_tokens(total_saved)
+    );
+}
+
 fn readonly_case() -> PromptCase {
     PromptCase {
         system_prompt: READONLY_SYSTEM_PROMPT,
@@ -91,24 +109,4 @@ fn readonly_case() -> PromptCase {
         todo_read: false,
         task_targets: &[],
     }
-}
-
-fn print_delta(label: &str, full: &PromptArtifacts, other: &PromptArtifacts) {
-    let prompt_saved = full
-        .system_prompt
-        .len()
-        .saturating_sub(other.system_prompt.len());
-    let definitions_saved = full
-        .tool_definition_payload
-        .len()
-        .saturating_sub(other.tool_definition_payload.len());
-    let total_saved = full.total_chars().saturating_sub(other.total_chars());
-
-    println!(
-        "{label}: -{} prompt chars, -{} definition chars, -{} total chars (~{} tokens)",
-        prompt_saved,
-        definitions_saved,
-        total_saved,
-        estimate_tokens(total_saved)
-    );
 }

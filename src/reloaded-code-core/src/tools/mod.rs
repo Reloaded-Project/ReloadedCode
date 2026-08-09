@@ -5,15 +5,6 @@
 //! - Web fetching (fetch_url) - requires `async` or `blocking` feature
 
 // Always available (sync or async based on runtime feature)
-pub mod bash;
-pub mod edit;
-pub mod glob;
-pub mod grep;
-pub mod read;
-pub mod task;
-pub mod todo;
-pub mod write;
-
 #[cfg(all(feature = "linux-bubblewrap", target_os = "linux"))]
 pub use bash::linux_bwrap_profile;
 pub use bash::{
@@ -32,13 +23,20 @@ pub use todo::{
     read_todos, write_todos, Todo, TodoPriority, TodoReadRequest, TodoState, TodoStatus,
     TodoWriteRequest,
 };
-pub use write::{write_file, WriteRequest, WriteSettings};
-
-// Webfetch available in both tokio and blocking modes
-#[cfg(any(feature = "tokio", feature = "blocking"))]
-pub mod webfetch;
-
 #[cfg(any(feature = "tokio", feature = "blocking"))]
 pub use webfetch::{
     fetch_url, format_json, html_to_markdown, WebFetchOutput, WebFetchRequest, WebFetchSettings,
 };
+pub use write::{write_file, WriteRequest, WriteSettings};
+
+pub mod bash;
+pub mod edit;
+pub mod glob;
+pub mod grep;
+pub mod read;
+pub mod task;
+pub mod todo;
+pub mod write;
+// Webfetch available in both tokio and blocking modes
+#[cfg(any(feature = "tokio", feature = "blocking"))]
+pub mod webfetch;
