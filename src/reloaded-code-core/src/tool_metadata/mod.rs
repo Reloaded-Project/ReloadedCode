@@ -15,6 +15,24 @@ pub mod todo_read;
 pub mod todo_write;
 pub mod webfetch;
 pub mod write;
+/// Backward-compatible flat description exports.
+pub mod descriptions {
+    pub use super::bash::DESCRIPTION as BASH;
+    pub use super::edit::description::ABSOLUTE as EDIT_ABSOLUTE;
+    pub use super::edit::description::ALLOWED as EDIT_ALLOWED;
+    pub use super::glob::description::ABSOLUTE as GLOB_ABSOLUTE;
+    pub use super::glob::description::ALLOWED as GLOB_ALLOWED;
+    pub use super::grep::description::absolute as grep_absolute;
+    pub use super::grep::description::allowed as grep_allowed;
+    pub use super::read::description::absolute as read_absolute;
+    pub use super::read::description::allowed as read_allowed;
+    pub use super::task::DESCRIPTION_PREFIX as TASK_PREFIX;
+    pub use super::todo_read::DESCRIPTION as TODO_READ;
+    pub use super::todo_write::DESCRIPTION as TODO_WRITE;
+    pub use super::webfetch::DESCRIPTION as WEBFETCH;
+    pub use super::write::description::ABSOLUTE as WRITE_ABSOLUTE;
+    pub use super::write::description::ALLOWED as WRITE_ALLOWED;
+}
 
 /// Shared parameter metadata for provider-facing tool schemas.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -37,25 +55,6 @@ impl ParamMetadata {
             required,
         }
     }
-}
-
-/// Backward-compatible flat description exports.
-pub mod descriptions {
-    pub use super::bash::DESCRIPTION as BASH;
-    pub use super::edit::description::ABSOLUTE as EDIT_ABSOLUTE;
-    pub use super::edit::description::ALLOWED as EDIT_ALLOWED;
-    pub use super::glob::description::ABSOLUTE as GLOB_ABSOLUTE;
-    pub use super::glob::description::ALLOWED as GLOB_ALLOWED;
-    pub use super::grep::description::absolute as grep_absolute;
-    pub use super::grep::description::allowed as grep_allowed;
-    pub use super::read::description::absolute as read_absolute;
-    pub use super::read::description::allowed as read_allowed;
-    pub use super::task::DESCRIPTION_PREFIX as TASK_PREFIX;
-    pub use super::todo_read::DESCRIPTION as TODO_READ;
-    pub use super::todo_write::DESCRIPTION as TODO_WRITE;
-    pub use super::webfetch::DESCRIPTION as WEBFETCH;
-    pub use super::write::description::ABSOLUTE as WRITE_ABSOLUTE;
-    pub use super::write::description::ALLOWED as WRITE_ALLOWED;
 }
 
 #[cfg(test)]

@@ -4,6 +4,12 @@ use std::io::ErrorKind;
 use std::path::Path;
 use tokio::io::AsyncReadExt as _;
 
+/// Creates a directory and all parent directories.
+#[inline]
+pub(crate) async fn create_dir_all(path: impl AsRef<Path>) -> std::io::Result<()> {
+    tokio::fs::create_dir_all(path).await
+}
+
 /// Reads a file into memory in one pre-sized allocation.
 ///
 /// # Safety
@@ -28,10 +34,4 @@ pub(crate) async fn read(path: impl AsRef<Path>) -> std::io::Result<Box<[u8]>> {
     }
 
     Ok(super::assume_init_u8_slice(bytes))
-}
-
-/// Creates a directory and all parent directories.
-#[inline]
-pub(crate) async fn create_dir_all(path: impl AsRef<Path>) -> std::io::Result<()> {
-    tokio::fs::create_dir_all(path).await
 }

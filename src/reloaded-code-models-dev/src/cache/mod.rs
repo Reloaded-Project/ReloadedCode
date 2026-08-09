@@ -12,9 +12,9 @@
 //! The public API currently exposes path resolution only; container helpers are
 //! crate-internal until the sync/load flow is wired.
 
+pub use crate::error::CatalogResult;
+pub use path::{shared_cache_path, CACHE_PATH_ENV_VAR};
+
 pub(crate) mod format;
 mod path;
 pub(crate) mod payload;
-
-pub use crate::error::CatalogResult;
-pub use path::{shared_cache_path, CACHE_PATH_ENV_VAR};

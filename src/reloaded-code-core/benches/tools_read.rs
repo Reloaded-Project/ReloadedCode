@@ -11,13 +11,13 @@
 //! # Test Cases (per mode)
 //!
 //! ```text
-//! | Case          | Source    | What it tests                     |
-//! |---------------|-----------|-----------------------------------|
-//! | small_file    | corpus S  | Small file, fits in one read      |
-//! | medium_file   | corpus M  | Medium file, buffered reads       |
-//! | large_file    | corpus L  | Large file, many lines processed  |
-//! | offset_read   | corpus M  | Offset + limit, partial read      |
-//! | crlf_file     | corpus M  | CRLF stripping overhead           |
+//! | Case        | Source   | What it tests                    |
+//! | ----------- | -------- | -------------------------------- |
+//! | small_file  | corpus S | Small file, fits in one read     |
+//! | medium_file | corpus M | Medium file, buffered reads      |
+//! | large_file  | corpus L | Large file, many lines processed |
+//! | offset_read | corpus M | Offset + limit, partial read     |
+//! | crlf_file   | corpus M | CRLF stripping overhead          |
 //! ```
 //!
 //! # Running Benchmarks
@@ -27,8 +27,9 @@
 //! cargo bench -p reloaded-code-core --no-default-features --features blocking --bench tools_read -- --sample-size 10 --measurement-time 1 --warm-up-time 1
 //! ```
 
-#[path = "common/mod.rs"]
-mod common;
+criterion_group!(benches, bench_read_file);
+
+criterion_main!(benches);
 
 use common::{corpus_content, corpus_crlf, CorpusSize};
 use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion, Throughput};
@@ -36,6 +37,9 @@ use reloaded_code_core::path::AbsolutePathResolver;
 use reloaded_code_core::tools::{read_file, ReadRequest, ReadSettings};
 use std::fs;
 use tempfile::TempDir;
+
+#[path = "common/mod.rs"]
+mod common;
 
 /// Holds a temporary test file for benchmarking.
 ///
@@ -48,19 +52,6 @@ struct TestFile {
     path: String,
     /// Number of lines in the file content.
     line_count: usize,
-}
-
-/// Creates a temporary file with the given content for benchmarking.
-fn create_test_file(content: &str) -> TestFile {
-    let temp_dir = TempDir::new().unwrap();
-    let file_path = temp_dir.path().join("test_input.rs");
-    fs::write(&file_path, content).unwrap();
-    let line_count = content.lines().count();
-    TestFile {
-        path: file_path.to_str().unwrap().to_owned(),
-        temp_dir,
-        line_count,
-    }
 }
 
 /// Benchmarks `read_file` across file sizes, offsets, line endings, and line-number modes.
@@ -193,5 +184,15 @@ fn bench_read_file(c: &mut Criterion) {
     group.finish();
 }
 
-criterion_group!(benches, bench_read_file);
-criterion_main!(benches);
+/// Creates a temporary file with the given content for benchmarking.
+fn create_test_file(content: &str) -> TestFile {
+    let temp_dir = TempDir::new().unwrap();
+    let file_path = temp_dir.path().join("test_input.rs");
+    fs::write(&file_path, content).unwrap();
+    let line_count = content.lines().count();
+    TestFile {
+        path: file_path.to_str().unwrap().to_owned(),
+        temp_dir,
+        line_count,
+    }
+}

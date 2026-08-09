@@ -43,6 +43,12 @@ pub struct EditRequest {
     pub replace_all: bool,
 }
 
+/// Runtime settings for edit requests.
+///
+/// Reserved for future use.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct EditSettings {}
+
 impl EditRequest {
     /// Parses a raw JSON tool payload into an edit request.
     ///
@@ -52,6 +58,14 @@ impl EditRequest {
     ///   or `new_string` fields, or invalid field types).
     pub fn parse(args: Value) -> ToolResult<Self> {
         serde_json::from_value(args).map_err(ToolError::from)
+    }
+}
+
+impl EditSettings {
+    /// Creates default edit settings.
+    #[must_use]
+    pub fn new() -> Self {
+        Self {}
     }
 }
 
@@ -82,23 +96,15 @@ impl From<EditError> for ToolError {
     }
 }
 
-/// Runtime settings for edit requests.
-///
-/// Reserved for future use.
-#[derive(Debug, Clone, Default, PartialEq, Eq)]
-pub struct EditSettings {}
-
-impl EditSettings {
-    /// Creates default edit settings.
-    #[must_use]
-    pub fn new() -> Self {
-        Self {}
-    }
-}
-
 /// Performs exact string replacement in a file.
 ///
 /// Returns success message with replacement count.
+///
+/// # Arguments
+/// - `resolver`: [`PathResolver`] used to resolve `request.file_path` to a filesystem path.
+/// - `request`: [`EditRequest`] carrying the file path, `old_string`, `new_string`, and
+///   the `replace_all` flag.
+/// - `_settings`: [`EditSettings`] (currently unused).
 ///
 /// # Errors
 /// - Returns [`EditError::EmptyOldString`] when `request.old_string` is empty.

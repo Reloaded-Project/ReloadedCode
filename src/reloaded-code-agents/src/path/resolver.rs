@@ -6,13 +6,13 @@
 //!
 //! # Optimisation tiers
 //!
-//! | Config pattern                     | Resolver                      | Cost             |
-//! |------------------------------------|-------------------------------|------------------|
-//! | No config for tool                 | `AllowedPathResolver([root])` | prefix check     |
-//! | `Action(Allow)`                    | `AllowedPathResolver([root])` | prefix check     |
-//! | Pattern `**` with Allow            | `AllowedPathResolver([root])` | prefix check     |
-//! | `/**` with Allow                   | `AbsolutePathResolver`        | zero             |
-//! | Otherwise                          | `AllowedGlobResolver`         | glob matching    |
+//! | Config pattern          | Resolver                      | Cost          |
+//! | ----------------------- | ----------------------------- | ------------- |
+//! | No config for tool      | `AllowedPathResolver([root])` | prefix check  |
+//! | `Action(Allow)`         | `AllowedPathResolver([root])` | prefix check  |
+//! | Pattern `**` with Allow | `AllowedPathResolver([root])` | prefix check  |
+//! | `/**` with Allow        | `AbsolutePathResolver`        | zero          |
+//! | Otherwise               | `AllowedGlobResolver`         | glob matching |
 
 use crate::types::PermissionRule;
 use indexmap::IndexMap;
@@ -133,19 +133,20 @@ pub fn build_resolver_for_tool(
     }
 }
 
-/// Checks if any pattern is `/**` (unrestricted access to all absolute paths).
-///
-/// Returns `Some(AbsolutePathResolver)` if found, `None` otherwise.
-fn try_globstar_optimisation(
+/// Builds a `GlobPolicy` from a pattern map.
+fn build_glob_policy(
     patterns: &IndexMap<String, PermissionAction>,
-) -> Result<Option<AbsolutePathResolver>, ToolError> {
-    for pattern in patterns.keys() {
-        let expanded = expand_shell(pattern)?;
-        if expanded.to_string_lossy() == "/**" {
-            return Ok(Some(AbsolutePathResolver));
-        }
+    workspace_root: &Path,
+) -> Result<GlobPolicy, ToolError> {
+    let mut builder = GlobPolicy::builder_with_base(workspace_root)?;
+    for (pattern, action) in patterns {
+        let rule_action = match action {
+            PermissionAction::Allow => RuleAction::Allow,
+            PermissionAction::Deny => RuleAction::Deny,
+        };
+        builder = builder.add(pattern, rule_action)?;
     }
-    Ok(None)
+    builder.build()
 }
 
 /// Checks if the pattern map contains exactly one pattern "**" (bare globstar).
@@ -163,20 +164,19 @@ fn is_bare_globstar(patterns: &IndexMap<String, PermissionAction>) -> bool {
     false
 }
 
-/// Builds a `GlobPolicy` from a pattern map.
-fn build_glob_policy(
+/// Checks if any pattern is `/**` (unrestricted access to all absolute paths).
+///
+/// Returns `Some(AbsolutePathResolver)` if found, `None` otherwise.
+fn try_globstar_optimisation(
     patterns: &IndexMap<String, PermissionAction>,
-    workspace_root: &Path,
-) -> Result<GlobPolicy, ToolError> {
-    let mut builder = GlobPolicy::builder_with_base(workspace_root)?;
-    for (pattern, action) in patterns {
-        let rule_action = match action {
-            PermissionAction::Allow => RuleAction::Allow,
-            PermissionAction::Deny => RuleAction::Deny,
-        };
-        builder = builder.add(pattern, rule_action)?;
+) -> Result<Option<AbsolutePathResolver>, ToolError> {
+    for pattern in patterns.keys() {
+        let expanded = expand_shell(pattern)?;
+        if expanded.to_string_lossy() == "/**" {
+            return Ok(Some(AbsolutePathResolver));
+        }
     }
-    builder.build()
+    Ok(None)
 }
 
 #[cfg(test)]

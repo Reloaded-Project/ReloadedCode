@@ -2,22 +2,6 @@
 
 use super::ParamMetadata;
 
-/// Canonical tool name.
-pub const NAME: &str = "webfetch";
-
-/// Default timeout in milliseconds.
-pub const DEFAULT_TIMEOUT_MS: u32 = 30_000;
-
-/// Maximum timeout in milliseconds.
-pub const MAX_TIMEOUT_MS: u32 = 600_000;
-
-/// Maximum response size in bytes (5 MiB).
-pub const MAX_RESPONSE_SIZE: usize = 5 * 1024 * 1024;
-
-/// Tool description.
-pub const DESCRIPTION: &str =
-    "Fetch one URL. HTML is converted to Markdown and JSON is pretty-printed.";
-
 /// Parameter metadata.
 pub mod param {
     use super::{ParamMetadata, DEFAULT_TIMEOUT_MS, MAX_TIMEOUT_MS};
@@ -37,3 +21,15 @@ pub mod param {
         false,
     );
 }
+
+/// Default timeout in milliseconds.
+pub const DEFAULT_TIMEOUT_MS: u32 = 30_000;
+/// Tool description.
+pub const DESCRIPTION: &str =
+    "Fetch one URL. HTML is converted to Markdown and JSON is pretty-printed.";
+/// Maximum response size in bytes (5 MiB).
+pub const MAX_RESPONSE_SIZE: usize = 5 * 1024 * 1024;
+/// Maximum timeout in milliseconds.
+pub const MAX_TIMEOUT_MS: u32 = 600_000;
+/// Canonical tool name.
+pub const NAME: &str = "webfetch";

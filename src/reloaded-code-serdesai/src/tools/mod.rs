@@ -53,16 +53,6 @@
 //! [`Tool`]: serdes_ai::tools::Tool
 //! [`AllowedGlobResolver`]: reloaded_code_core::path::AllowedGlobResolver
 
-mod bash;
-mod custom;
-mod edit;
-mod glob;
-mod grep;
-mod read;
-pub mod todo;
-mod webfetch;
-mod write;
-
 pub use bash::BashTool;
 pub use custom::CustomToolAdapter;
 pub use edit::EditTool;
@@ -72,3 +62,13 @@ pub use read::ReadTool;
 pub use todo::{TodoReadTool, TodoWriteTool, create_todo_tools};
 pub use webfetch::WebFetchTool;
 pub use write::WriteTool;
+
+mod bash;
+mod custom;
+mod edit;
+mod glob;
+mod grep;
+mod read;
+pub mod todo;
+mod webfetch;
+mod write;

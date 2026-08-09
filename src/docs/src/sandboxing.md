@@ -31,7 +31,7 @@ protection:
 Built on [bubblewrap](https://github.com/containers/bubblewrap), a lightweight
 sandboxing tool that uses Linux kernel namespaces.
 
-- **Feature flag**: `linux-bubblewrap` (see [Feature Flags](feature-flags.md))
+- **Feature flag**: `linux-bubblewrap` (see [Feature Flags])
 - **Requirement**: Linux host with `bwrap` installed
 
 The sandbox never silently falls back to host execution. If `bwrap` is missing
@@ -48,7 +48,7 @@ reloaded-code-serdesai = { version = "0.2", features = ["linux-bubblewrap"] }
 ```
 
 *(Also shown in [Getting Started](getting-started.md) and
-[Feature Flags](feature-flags.md).)*
+[Feature Flags].)*
 
 When you enable sandboxing, start with the **Public Bot** profile.
 
@@ -262,16 +262,16 @@ full mount table, environment variables, and design rationale.
 
 ### Quick comparison
 
-| Aspect             | Public Bot                        | Trusted Maintenance                       |
-| ------------------ | --------------------------------- | ----------------------------------------- |
-| Use case           | Untrusted / hostile input         | Trusted automation                        |
-| Network            | Disabled                          | Enabled                                   |
-| Host filesystem    | Minimal (bins, libs, workspace)   | Full `/` read-only                        |
-| Writable paths     | Workspace, synthetic home, `/tmp` | Workspace, synthetic home, cache, `/tmp`  |
-| `/etc` visible     | No                                | Yes (except `/etc/shadow`)                |
+| Aspect             | Public Bot                        | Trusted Maintenance                                           |
+| ------------------ | --------------------------------- | ------------------------------------------------------------- |
+| Use case           | Untrusted / hostile input         | Trusted automation                                            |
+| Network            | Disabled                          | Enabled                                                       |
+| Host filesystem    | Minimal (bins, libs, workspace)   | Full `/` read-only                                            |
+| Writable paths     | Workspace, synthetic home, `/tmp` | Workspace, synthetic home, cache, `/tmp`                      |
+| `/etc` visible     | No                                | Yes (except `/etc/shadow`)                                    |
 | Environment        | Cleared, minimal sanitized `PATH` | Cleared, sanitized host `PATH` + XDG Base Directory variables |
-| Credential mounts  | Not supported                     | Supported (validated)                     |
-| Safe for untrusted | **Yes**                           | **No**                                    |
+| Credential mounts  | Not supported                     | Supported (validated)                                         |
+| Safe for untrusted | **Yes**                           | **No**                                                        |
 
 ### Under the hood
 
@@ -328,3 +328,4 @@ and design rationale, see [Profile Reference](extra-sandboxing-notes.md).
 [with_linux_bwrap]: https://docs.rs/reloaded-code-serdesai/latest/reloaded_code_serdesai/struct.BashTool.html#method.with_linux_bwrap
 [new_with_temp_sandbox]: https://docs.rs/reloaded-code-serdesai/latest/reloaded_code_serdesai/struct.AgentBuildContext.html#method.new_with_temp_sandbox
 [Preset]: https://docs.rs/reloaded-code-bubblewrap/latest/reloaded_code_bubblewrap/profile/enum.Preset.html
+[Feature Flags]: feature-flags.md

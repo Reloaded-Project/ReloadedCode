@@ -25,15 +25,15 @@
 //! real tool when the chain is exhausted. Not calling it blocks or replaces the
 //! tool call. Session hooks remain simple lifecycle events.
 
-mod builder;
-mod hook_set;
-mod session;
-mod tool_hook;
-
 pub use self::builder::HookSetBuilder;
 pub use self::hook_set::HookSet;
 pub use self::session::*;
 pub use self::tool_hook::*;
+
+mod builder;
+mod hook_set;
+mod session;
+mod tool_hook;
 
 /// Max hooks per point before falling back to heap.
 pub(crate) const INLINE_CAP: usize = 3;

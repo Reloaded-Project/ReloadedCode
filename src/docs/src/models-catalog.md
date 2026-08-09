@@ -82,8 +82,8 @@ let result = ModelsDevCatalog::load_at(&cache_path).await?;
 
 **Location** (platform default):
 
-| Platform | Path                                                            |
-| -------- | --------------------------------------------------------------- |
+| Platform | Path                                                         |
+| -------- | ------------------------------------------------------------ |
 | Linux    | `~/.cache/reloaded-code/models.dev.catalog.v1.cache`         |
 | macOS    | `~/Library/Caches/reloaded-code/models.dev.catalog.v1.cache` |
 | Windows  | `%LOCALAPPDATA%\reloaded-code\models.dev.catalog.v1.cache`   |

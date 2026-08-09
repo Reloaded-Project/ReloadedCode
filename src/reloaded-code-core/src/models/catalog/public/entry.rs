@@ -16,46 +16,9 @@ use crate::models::catalog::internal::Fixed4;
 use crate::models::ProviderType;
 use tinyvec::TinyVec;
 
+/// Number of environment variable strings stored inline (without heap
+/// allocation) in a [`ProviderEnvVars`] value.
 pub(crate) const INLINE_PROVIDER_ENV_VARS: usize = 2;
-
-pub(crate) type ProviderEnvVars<'a> = TinyVec<[&'a str; INLINE_PROVIDER_ENV_VARS]>;
-
-/// Provider lookup result.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct Provider<'a> {
-    /// Index into provider metadata tables.
-    pub provider_idx: ProviderIdx,
-    /// Provider base URL.
-    pub api_url: &'a str,
-    /// Candidate environment variables used to resolve API keys.
-    env_vars: ProviderEnvVars<'a>,
-    /// Type of API used by the provider.
-    pub api_type: ProviderType,
-}
-
-impl<'a> Provider<'a> {
-    /// Creates a new Provider with the given parameters.
-    #[inline]
-    pub(crate) fn new(
-        provider_idx: ProviderIdx,
-        api_url: &'a str,
-        env_vars: ProviderEnvVars<'a>,
-        api_type: ProviderType,
-    ) -> Self {
-        Self {
-            provider_idx,
-            api_url,
-            env_vars,
-            api_type,
-        }
-    }
-
-    /// Returns the candidate environment variables used to resolve API keys.
-    #[inline]
-    pub fn env_vars(&self) -> &[&'a str] {
-        self.env_vars.as_slice()
-    }
-}
 
 /// Model lookup result.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -71,6 +34,22 @@ pub struct Model {
     temperature: Fixed4,
     top_p: Fixed4,
 }
+
+/// Provider lookup result.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Provider<'a> {
+    /// Index into provider metadata tables.
+    pub provider_idx: ProviderIdx,
+    /// Provider base URL.
+    pub api_url: &'a str,
+    /// Candidate environment variables used to resolve API keys.
+    env_vars: ProviderEnvVars<'a>,
+    /// Type of API used by the provider.
+    pub api_type: ProviderType,
+}
+
+/// Candidate environment variables used to resolve a provider's API key.
+pub(crate) type ProviderEnvVars<'a> = TinyVec<[&'a str; INLINE_PROVIDER_ENV_VARS]>;
 
 impl Model {
     /// Creates a new Model with the given parameters.
@@ -103,5 +82,29 @@ impl Model {
     #[inline]
     pub fn top_p(&self) -> Option<f32> {
         self.top_p.value()
+    }
+}
+
+impl<'a> Provider<'a> {
+    /// Creates a new Provider with the given parameters.
+    #[inline]
+    pub(crate) fn new(
+        provider_idx: ProviderIdx,
+        api_url: &'a str,
+        env_vars: ProviderEnvVars<'a>,
+        api_type: ProviderType,
+    ) -> Self {
+        Self {
+            provider_idx,
+            api_url,
+            env_vars,
+            api_type,
+        }
+    }
+
+    /// Returns the candidate environment variables used to resolve API keys.
+    #[inline]
+    pub fn env_vars(&self) -> &[&'a str] {
+        self.env_vars.as_slice()
     }
 }

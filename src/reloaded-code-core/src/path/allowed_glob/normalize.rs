@@ -1,9 +1,40 @@
 //! Path normalization utilities for glob matching.
 
+use crate::error::{ToolError, ToolResult};
 use std::borrow::Cow;
 use std::path::{Path, PathBuf};
 
-use crate::error::{ToolError, ToolResult};
+/// Expands shell-like patterns in a path string, returning a [`PathBuf`].
+///
+/// Wraps the internal expansion logic with fail-fast error handling: returns
+/// `ToolError::InvalidPath` if expansion fails (e.g., unset variable).
+///
+/// # Arguments
+/// - `path`: The path pattern string to expand (e.g., `~/foo`, `$VAR/bar`).
+///
+/// # Errors
+/// - Returns [`ToolError::InvalidPath`] when shell expansion fails (e.g., unset
+///   environment variable in the path pattern).
+pub fn expand_shell(path: &str) -> ToolResult<PathBuf> {
+    expand_pattern(path)
+        .map(|cow| PathBuf::from(cow.into_owned()))
+        .map_err(|e| {
+            ToolError::InvalidPath(format!(
+                "failed to expand shell pattern in path '{}': {}",
+                path, e
+            ))
+        })
+}
+
+/// Expands shell-like patterns (`~/`, `$HOME/`, `$VAR`, `${VAR:-default}`).
+///
+/// Returns `Cow::Borrowed` for patterns without shell metacharacters (zero allocation).
+/// All other `expand_*` functions in this crate are thin wrappers around this one.
+pub(crate) fn expand_pattern(
+    pattern: &str,
+) -> Result<Cow<'_, str>, shellexpand::LookupError<std::env::VarError>> {
+    shellexpand::full(pattern)
+}
 
 /// Normalizes a path to use forward slashes for consistent glob matching.
 ///
@@ -24,35 +55,6 @@ pub(crate) fn normalize_path(path: &Path) -> Cow<'_, str> {
     {
         path_str
     }
-}
-
-/// Expands shell-like patterns (`~/`, `$HOME/`, `$VAR`, `${VAR:-default}`).
-///
-/// Returns `Cow::Borrowed` for patterns without shell metacharacters (zero allocation).
-/// All other `expand_*` functions in this crate are thin wrappers around this one.
-pub(crate) fn expand_pattern(
-    pattern: &str,
-) -> Result<Cow<'_, str>, shellexpand::LookupError<std::env::VarError>> {
-    shellexpand::full(pattern)
-}
-
-/// Expands shell-like patterns in a path string, returning a [`PathBuf`].
-///
-/// Wraps the internal expansion logic with fail-fast error handling: returns
-/// `ToolError::InvalidPath` if expansion fails (e.g., unset variable).
-///
-/// # Errors
-/// - Returns [`ToolError::InvalidPath`] when shell expansion fails (e.g., unset
-///   environment variable in the path pattern).
-pub fn expand_shell(path: &str) -> ToolResult<PathBuf> {
-    expand_pattern(path)
-        .map(|cow| PathBuf::from(cow.into_owned()))
-        .map_err(|e| {
-            ToolError::InvalidPath(format!(
-                "failed to expand shell pattern in path '{}': {}",
-                path, e
-            ))
-        })
 }
 
 #[cfg(test)]

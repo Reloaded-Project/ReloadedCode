@@ -10,6 +10,22 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::time::SystemTime;
 
+/// Output from glob file matching.
+#[derive(Debug, Serialize)]
+pub struct GlobOutput {
+    /// Matched file paths relative to search directory, sorted by mtime (newest first).
+    pub files: Vec<String>,
+    /// Whether results were truncated due to limit.
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub truncated: bool,
+    /// Whether one or more paths could not be traversed or processed.
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub partial: bool,
+    /// Per-path traversal errors encountered while collecting matches.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub errors: Vec<String>,
+}
+
 /// Serde-friendly glob request owned by the core crate.
 #[derive(Debug, Deserialize)]
 pub struct GlobRequest {
@@ -17,18 +33,6 @@ pub struct GlobRequest {
     pub pattern: String,
     /// Absolute or relative directory path to search.
     pub path: String,
-}
-
-impl GlobRequest {
-    /// Parses a raw JSON tool payload into a glob request.
-    ///
-    /// # Errors
-    /// - Returns [`ToolError::Json`] when the JSON payload cannot be deserialized
-    ///   into a [`GlobRequest`] (e.g., missing required `pattern` or `path` fields,
-    ///   or invalid field types).
-    pub fn parse(args: Value) -> ToolResult<Self> {
-        serde_json::from_value(args).map_err(ToolError::from)
-    }
 }
 
 /// Runtime settings applied to glob requests.
@@ -40,9 +44,15 @@ pub struct GlobSettings {
     limit: usize,
 }
 
-impl Default for GlobSettings {
-    fn default() -> Self {
-        Self::new()
+impl GlobRequest {
+    /// Parses a raw JSON tool payload into a glob request.
+    ///
+    /// # Errors
+    /// - Returns [`ToolError::Json`] when the JSON payload cannot be deserialized
+    ///   into a [`GlobRequest`] (e.g., missing required `pattern` or `path` fields,
+    ///   or invalid field types).
+    pub fn parse(args: Value) -> ToolResult<Self> {
+        serde_json::from_value(args).map_err(ToolError::from)
     }
 }
 
@@ -83,20 +93,10 @@ impl GlobSettings {
     }
 }
 
-/// Output from glob file matching.
-#[derive(Debug, Serialize)]
-pub struct GlobOutput {
-    /// Matched file paths relative to search directory, sorted by mtime (newest first).
-    pub files: Vec<String>,
-    /// Whether results were truncated due to limit.
-    #[serde(skip_serializing_if = "std::ops::Not::not")]
-    pub truncated: bool,
-    /// Whether one or more paths could not be traversed or processed.
-    #[serde(skip_serializing_if = "std::ops::Not::not")]
-    pub partial: bool,
-    /// Per-path traversal errors encountered while collecting matches.
-    #[serde(skip_serializing_if = "Vec::is_empty")]
-    pub errors: Vec<String>,
+impl Default for GlobSettings {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 /// Finds files matching a glob pattern in the given directory.

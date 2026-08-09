@@ -27,12 +27,6 @@ pub struct WebFetchTool {
     settings: WebFetchSettings,
 }
 
-impl Default for WebFetchTool {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
 impl WebFetchTool {
     /// Creates a new webfetch tool with default client and settings.
     pub fn new() -> Self {
@@ -60,6 +54,12 @@ impl WebFetchTool {
             definition: build_definition(settings.max_timeout_ms()),
             settings,
         }
+    }
+}
+
+impl Default for WebFetchTool {
+    fn default() -> Self {
+        Self::new()
     }
 }
 

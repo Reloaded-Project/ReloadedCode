@@ -3,10 +3,9 @@
 //! Each helper in this module writes one tool's guidance text, which keeps the
 //! top-level renderer small and easy to follow.
 
-use const_format::formatcp;
-
 use super::{push_block, push_line, write_tool_list, ToolPrompt, ToolPromptFacts};
 use crate::tool_metadata::{bash, edit, glob, grep, read, webfetch};
+use const_format::formatcp;
 
 /// Appends the guidance text for `prompt` into `output`.
 ///
@@ -57,67 +56,6 @@ fn write_bash_section(output: &mut String, network_disabled: bool, sandboxed: bo
     }
     if network_disabled {
         push_line(output, "- Network access is disabled in this sandbox.");
-    }
-}
-
-fn write_read_section(output: &mut String, facts: ToolPromptFacts, line_numbers: bool) {
-    if line_numbers {
-        push_line(
-            output,
-            formatcp!(
-                "- Returns `{}` text. Lines over `{}` chars are truncated.",
-                read::LINE_PREFIX_DISPLAY,
-                read::MAX_LINE_LENGTH,
-            ),
-        );
-    } else {
-        push_line(
-            output,
-            formatcp!(
-                "- Returns raw text. Lines over `{}` chars are truncated.",
-                read::MAX_LINE_LENGTH,
-            ),
-        );
-    }
-
-    match (facts.has_glob, facts.has_bash) {
-        (true, true) => push_line(
-            output,
-            formatcp!(
-                "- Reads files, not directories. Use `{}` to find files or `{}` for directory listings.",
-                glob::NAME,
-                bash::NAME,
-            ),
-        ),
-        (true, false) => {
-            push_line(
-                output,
-                formatcp!("- Reads files, not directories. Use `{}` to find files.", glob::NAME),
-            )
-        }
-        (false, true) => {
-            push_line(
-                output,
-                formatcp!("- Reads files, not directories. Use `{}` for directory listings.", bash::NAME),
-            )
-        }
-        (false, false) => push_line(output, "- Reads files, not directories."),
-    }
-
-    push_block(
-        output,
-        "- Missing files return an error. Non-text files are returned as text bytes; there is no special image rendering.\n\
-- Read related files in parallel when useful.\n",
-    );
-}
-
-fn write_write_section(output: &mut String, facts: ToolPromptFacts) {
-    push_line(output, "- Existing files are overwritten.");
-    if !facts.has_edit {
-        push_line(
-            output,
-            "- Use this for new files or full rewrites, not small edits.",
-        );
     }
 }
 
@@ -180,37 +118,54 @@ fn write_grep_section(output: &mut String, facts: ToolPromptFacts) {
     }
 }
 
-fn write_webfetch_section(output: &mut String) {
-    push_block(
-        output,
-        formatcp!(
-            "- Output starts with `[content-type - bytes]`.\n\
-            - Maximum response size is `{}` bytes.\n\
-            - Use this for known URLs, not web search. Prefer a more specialized web tool when one exists.\n",
-            webfetch::MAX_RESPONSE_SIZE,
-        ),
-    );
-}
+fn write_read_section(output: &mut String, facts: ToolPromptFacts, line_numbers: bool) {
+    if line_numbers {
+        push_line(
+            output,
+            formatcp!(
+                "- Returns `{}` text. Lines over `{}` chars are truncated.",
+                read::LINE_PREFIX_DISPLAY,
+                read::MAX_LINE_LENGTH,
+            ),
+        );
+    } else {
+        push_line(
+            output,
+            formatcp!(
+                "- Returns raw text. Lines over `{}` chars are truncated.",
+                read::MAX_LINE_LENGTH,
+            ),
+        );
+    }
 
-fn write_todo_read_section(output: &mut String) {
-    push_block(
-        output,
-        "- Output is plain text: either `No tasks.` or one line per task with status icon, priority, id, and content.\n\
-- Use it before starting or resuming complex work when you need the current task list.\n",
-    );
-}
-
-fn write_todo_write_section(output: &mut String) {
-    push_block(
-        output,
-        formatcp!(
-            "- Use it for multi-step or non-trivial work, or when the user asks for task tracking. Skip it for a single small task.\n\
-            - Send the full desired list each time; this tool replaces the whole list.\n\
-            - `{}` and `{}` must not be empty.\n\
-            - Keep task text short and imperative. Update statuses as you work; keep one `in_progress` task when practical.\n",
-            crate::tool_metadata::todo_write::param::ID.name,
-            crate::tool_metadata::todo_write::param::CONTENT.name,
+    match (facts.has_glob, facts.has_bash) {
+        (true, true) => push_line(
+            output,
+            formatcp!(
+                "- Reads files, not directories. Use `{}` to find files or `{}` for directory listings.",
+                glob::NAME,
+                bash::NAME,
+            ),
         ),
+        (true, false) => {
+            push_line(
+                output,
+                formatcp!("- Reads files, not directories. Use `{}` to find files.", glob::NAME),
+            )
+        }
+        (false, true) => {
+            push_line(
+                output,
+                formatcp!("- Reads files, not directories. Use `{}` for directory listings.", bash::NAME),
+            )
+        }
+        (false, false) => push_line(output, "- Reads files, not directories."),
+    }
+
+    push_block(
+        output,
+        "- Missing files return an error. Non-text files are returned as text bytes; there is no special image rendering.\n\
+- Read related files in parallel when useful.\n",
     );
 }
 
@@ -244,4 +199,48 @@ fn write_task_section(output: &mut String, facts: ToolPromptFacts) {
         output,
         "- The delegated result is returned only to you, so summarize it for the user.",
     );
+}
+
+fn write_todo_read_section(output: &mut String) {
+    push_block(
+        output,
+        "- Output is plain text: either `No tasks.` or one line per task with status icon, priority, id, and content.\n\
+- Use it before starting or resuming complex work when you need the current task list.\n",
+    );
+}
+
+fn write_todo_write_section(output: &mut String) {
+    push_block(
+        output,
+        formatcp!(
+            "- Use it for multi-step or non-trivial work, or when the user asks for task tracking. Skip it for a single small task.\n\
+            - Send the full desired list each time; this tool replaces the whole list.\n\
+            - `{}` and `{}` must not be empty.\n\
+            - Keep task text short and imperative. Update statuses as you work; keep one `in_progress` task when practical.\n",
+            crate::tool_metadata::todo_write::param::ID.name,
+            crate::tool_metadata::todo_write::param::CONTENT.name,
+        ),
+    );
+}
+
+fn write_webfetch_section(output: &mut String) {
+    push_block(
+        output,
+        formatcp!(
+            "- Output starts with `[content-type - bytes]`.\n\
+            - Maximum response size is `{}` bytes.\n\
+            - Use this for known URLs, not web search. Prefer a more specialized web tool when one exists.\n",
+            webfetch::MAX_RESPONSE_SIZE,
+        ),
+    );
+}
+
+fn write_write_section(output: &mut String, facts: ToolPromptFacts) {
+    push_line(output, "- Existing files are overwritten.");
+    if !facts.has_edit {
+        push_line(
+            output,
+            "- Use this for new files or full rewrites, not small edits.",
+        );
+    }
 }

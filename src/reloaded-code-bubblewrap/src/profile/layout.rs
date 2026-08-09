@@ -11,6 +11,19 @@ use super::types::{FileOverlay, TmpBacking};
 use std::borrow::Cow;
 use std::path::{Path, PathBuf};
 
+/// Describes where a host path ends up inside the sandbox.
+pub(crate) enum PathMapping<'config, 'path> {
+    /// The path appears at the same absolute location in the sandbox.
+    SamePath,
+    /// The path appears under a different prefix inside the sandbox.
+    ///
+    /// The sandbox path is `dest_prefix` joined with `relative`.
+    Remap {
+        dest_prefix: &'config Path,
+        relative: &'path Path,
+    },
+}
+
 /// Snapshot of the path-mapping rules that determine which host paths are
 /// reachable inside the sandbox and where they appear.
 ///
@@ -31,19 +44,6 @@ pub(crate) struct SandboxLayout<'a> {
     pub(crate) file_overlays: &'a [FileOverlay],
     pub(crate) read_only_mounts: &'a [Box<Path>],
     pub(crate) read_write_mounts: &'a [Box<Path>],
-}
-
-/// Describes where a host path ends up inside the sandbox.
-pub(crate) enum PathMapping<'config, 'path> {
-    /// The path appears at the same absolute location in the sandbox.
-    SamePath,
-    /// The path appears under a different prefix inside the sandbox.
-    ///
-    /// The sandbox path is `dest_prefix` joined with `relative`.
-    Remap {
-        dest_prefix: &'config Path,
-        relative: &'path Path,
-    },
 }
 
 impl<'config> SandboxLayout<'config> {
@@ -102,6 +102,19 @@ impl<'config> SandboxLayout<'config> {
     }
 }
 
+/// Maps a sandbox prefix and relative path into a sandbox path.
+pub(crate) fn join_mapped_path<'a>(base: &'a Path, relative: &Path) -> Cow<'a, Path> {
+    if relative.as_os_str().is_empty() {
+        Cow::Borrowed(base)
+    } else {
+        let mut joined =
+            PathBuf::with_capacity(base.as_os_str().len() + relative.as_os_str().len() + 1);
+        joined.push(base);
+        joined.push(relative);
+        Cow::Owned(joined)
+    }
+}
+
 /// Whether `entry` is masked by a tmpfs overlay (and therefore unreadable
 /// even when the host rootfs is mounted read-only).
 ///
@@ -137,19 +150,6 @@ pub(crate) fn path_hidden_by_overlay(
         TmpBacking::BindHost(host_dir) => {
             entry.starts_with(Path::new("/tmp")) && !entry.starts_with(host_dir)
         }
-    }
-}
-
-/// Maps a sandbox prefix and relative path into a sandbox path.
-pub(crate) fn join_mapped_path<'a>(base: &'a Path, relative: &Path) -> Cow<'a, Path> {
-    if relative.as_os_str().is_empty() {
-        Cow::Borrowed(base)
-    } else {
-        let mut joined =
-            PathBuf::with_capacity(base.as_os_str().len() + relative.as_os_str().len() + 1);
-        joined.push(base);
-        joined.push(relative);
-        Cow::Owned(joined)
     }
 }
 

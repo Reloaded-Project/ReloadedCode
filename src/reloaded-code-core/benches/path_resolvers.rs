@@ -11,14 +11,14 @@
 //! # Test Cases (resolvers)
 //!
 //! ```text
-//! | Case                   | Path                                               | What it tests                                  |
-//! |------------------------|----------------------------------------------------|------------------------------------------------|
-//! | existing_file          | src/lib.rs                                         | Fast path: file exists, canonicalize succeeds  |
-//! | new_file_existing_dir  | src/new_file_test.rs                               | Fast path: parent exists, canonicalize parent   |
-//! | new_file_missing_dir   | src/new_dir/nested/new_file_test.rs                | Slow path: soft-canonicalize for non-existent  |
-//! | policy_reject          | benchmarks/new_file_test.rs                        | Rejection via glob policy after resolution     |
-//! | deep_nested            | src/reloaded-code-core/src/path/.../policy.rs   | Longer path, more components to process        |
-//! | traversal_reject       | ../../../outside.txt                               | Early rejection via lexical escape check       |
+//! | Case                  | Path                                          | What it tests                                 |
+//! | --------------------- | --------------------------------------------- | --------------------------------------------- |
+//! | existing_file         | src/lib.rs                                    | Fast path: file exists, canonicalize succeeds |
+//! | new_file_existing_dir | src/new_file_test.rs                          | Fast path: parent exists, canonicalize parent |
+//! | new_file_missing_dir  | src/new_dir/nested/new_file_test.rs           | Slow path: soft-canonicalize for non-existent |
+//! | policy_reject         | benchmarks/new_file_test.rs                   | Rejection via glob policy after resolution    |
+//! | deep_nested           | src/reloaded-code-core/src/path/.../policy.rs | Longer path, more components to process       |
+//! | traversal_reject      | ../../../outside.txt                          | Early rejection via lexical escape check      |
 //! ```
 //!
 //! # Reference Results (Linux, optimized build)
@@ -75,6 +75,15 @@
 //! cargo bench -p reloaded-code-core --bench path_resolvers -- --baseline main
 //! ```
 
+criterion_group!(
+    benches,
+    bench_resolvers_same_paths,
+    bench_multiple_bases,
+    bench_canonicalize_vs_soft
+);
+
+criterion_main!(benches);
+
 use core::hint::black_box;
 use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion, Throughput};
 use reloaded_code_core::path::{
@@ -84,21 +93,113 @@ use soft_canonicalize::soft_canonicalize;
 use std::fs;
 use tempfile::TempDir;
 
+const DEEP_NESTED: &str = "src/reloaded-code-core/src/path/allowed_glob/policy.rs";
 const EXISTING_FILE: &str = "src/lib.rs";
 const NEW_FILE_EXISTING_DIR: &str = "src/new_file_test.rs";
 // Path that matches simple policy (src/**/*.rs) but has missing directories
 const NEW_FILE_MISSING_DIR: &str = "src/new_dir/nested/new_file_test.rs";
 // Path that does NOT match simple policy - tests early rejection
 const POLICY_REJECT: &str = "benchmarks/new_file_test.rs";
-const DEEP_NESTED: &str = "src/reloaded-code-core/src/path/allowed_glob/policy.rs";
 const TRAVERSAL: &str = "../../../outside.txt";
 
-fn build_policy<F>(f: F) -> reloaded_code_core::error::ToolResult<GlobPolicy>
-where
-    F: FnOnce(GlobPolicyBuilder) -> reloaded_code_core::error::ToolResult<GlobPolicyBuilder>,
-{
-    let base = soft_canonicalize(std::env::current_dir().unwrap()).unwrap();
-    f(GlobPolicy::builder_with_base(&base)?).and_then(|b| b.build())
+/// Benchmarks `std::fs::canonicalize` vs `soft_canonicalize` directly.
+///
+/// Isolates the core filesystem operation to understand where time is spent.
+///
+/// # Test Cases
+///
+/// ```text
+/// | Case             | Path                         | canonicalize | soft_canonicalize |
+/// | ---------------- | ---------------------------- | ------------ | ----------------- |
+/// | existing_file    | src/lib.rs (exists)          | O(1) FS call | O(1) FS call      |
+/// | new_file_shallow | new_file.rs (in root)        | N/A          | O(1) FS call      |
+/// | new_file_deep    | a/b/c/new_file.rs (3 levels) | N/A          | O(4) FS calls     |
+/// ```
+fn bench_canonicalize_vs_soft(c: &mut Criterion) {
+    let mut group = c.benchmark_group("canonicalize");
+
+    let current_dir = std::env::current_dir().unwrap();
+    let existing = current_dir.join("src/lib.rs");
+    let new_shallow = current_dir.join("new_file.rs");
+    let new_deep = current_dir.join("a/b/c/new_file.rs");
+
+    group.throughput(Throughput::Elements(1));
+
+    group.bench_function("existing_file_canonicalize", |b| {
+        b.iter(|| existing.canonicalize().unwrap())
+    });
+
+    group.bench_function("existing_file_soft_canonicalize", |b| {
+        b.iter(|| soft_canonicalize(&existing).unwrap())
+    });
+
+    group.bench_function("new_file_shallow_soft_canonicalize", |b| {
+        b.iter(|| soft_canonicalize(&new_shallow).unwrap())
+    });
+
+    group.bench_function("new_file_deep_soft_canonicalize", |b| {
+        b.iter(|| soft_canonicalize(&new_deep).unwrap())
+    });
+
+    group.finish();
+}
+
+/// Benchmarks [`AllowedPathResolver`] with multiple base directories.
+///
+/// Tests how the resolver performs when it must search through multiple
+/// allowed directories to find a match.
+///
+/// # Setup
+///
+/// ```text
+/// | Base   | Directory         | Contains   |
+/// | ------ | ----------------- | ---------- |
+/// | Base 1 | Current workspace | src/lib.rs |
+/// | Base 2 | Temp directory 1  | file1.txt  |
+/// | Base 3 | Temp directory 2  | file2.txt  |
+/// ```
+///
+/// # Test Cases
+///
+/// ```text
+/// | Case        | What it tests                              |
+/// | ----------- | ------------------------------------------ |
+/// | first_base  | Path found in first base (fastest)         |
+/// | second_base | Path found in second base (one miss, hit)  |
+/// | third_base  | Path found in third base (two misses, hit) |
+/// | not_found   | Path not in any base (all bases tried)     |
+/// ```
+fn bench_multiple_bases(c: &mut Criterion) {
+    let mut group = c.benchmark_group("multiple_bases");
+
+    let current_dir = std::env::current_dir().unwrap();
+    let temp1 = TempDir::new().unwrap();
+    let temp2 = TempDir::new().unwrap();
+
+    fs::write(temp1.path().join("file1.txt"), "content").unwrap();
+    fs::write(temp2.path().join("file2.txt"), "content").unwrap();
+
+    let resolver = AllowedPathResolver::new(vec![
+        current_dir.clone(),
+        temp1.path().to_path_buf(),
+        temp2.path().to_path_buf(),
+    ])
+    .unwrap();
+
+    group.throughput(Throughput::Elements(1));
+
+    for (case_name, path_input) in [
+        ("first_base", "src/lib.rs"),
+        ("second_base", "file1.txt"),
+        ("third_base", "file2.txt"),
+        ("not_found", "nonexistent.xyz"),
+    ] {
+        group.bench_function(case_name, |b| {
+            b.iter(|| resolver.resolve(black_box(path_input)))
+        });
+    }
+
+    group.finish();
 }
 
 /// Benchmarks [`AllowedPathResolver`] and [`AllowedGlobResolver`] on the same paths.
@@ -108,23 +209,23 @@ where
 /// # Resolvers Compared
 ///
 /// ```text
-/// | Resolver                        | Description                              |
-/// |---------------------------------|------------------------------------------|
-/// | AllowedPathResolver             | Baseline: no glob policy                 |
-/// | AllowedGlobResolver_simple      | Single rule: src/**/*.rs                 |
-/// | AllowedGlobResolver_complex     | 10 rules: realistic project config       |
+/// | Resolver                    | Description                        |
+/// | --------------------------- | ---------------------------------- |
+/// | AllowedPathResolver         | Baseline: no glob policy           |
+/// | AllowedGlobResolver_simple  | Single rule: src/**/*.rs           |
+/// | AllowedGlobResolver_complex | 10 rules: realistic project config |
 /// ```
 ///
 /// # Expected Performance (Unix)
 ///
 /// ```text
-/// | Case                   | Expected Time | Why                                    |
-/// |------------------------|---------------|----------------------------------------|
-/// | existing_file          | 1-2 µs        | canonicalize is fast for existing      |
-/// | new_file_existing_dir  | 3-4 µs        | canonicalize parent, join filename     |
-/// | new_file_missing_dir   | 7-8 µs        | soft-canonicalize walks filesystem     |
-/// | deep_nested            | 10-11 µs      | more path components to process        |
-/// | traversal_reject       | ~20 ns        | lexical check only, no filesystem I/O  |
+/// | Case                  | Expected Time | Why                                   |
+/// | --------------------- | ------------- | ------------------------------------- |
+/// | existing_file         | 1-2 µs        | canonicalize is fast for existing     |
+/// | new_file_existing_dir | 3-4 µs        | canonicalize parent, join filename    |
+/// | new_file_missing_dir  | 7-8 µs        | soft-canonicalize walks filesystem    |
+/// | deep_nested           | 10-11 µs      | more path components to process       |
+/// | traversal_reject      | ~20 ns        | lexical check only, no filesystem I/O |
 /// ```
 fn bench_resolvers_same_paths(c: &mut Criterion) {
     let mut group = c.benchmark_group("resolvers");
@@ -190,111 +291,10 @@ fn bench_resolvers_same_paths(c: &mut Criterion) {
     group.finish();
 }
 
-/// Benchmarks [`AllowedPathResolver`] with multiple base directories.
-///
-/// Tests how the resolver performs when it must search through multiple
-/// allowed directories to find a match.
-///
-/// # Setup
-///
-/// ```text
-/// | Base    | Directory         | Contains     |
-/// |---------|-------------------|--------------|
-/// | Base 1  | Current workspace | src/lib.rs   |
-/// | Base 2  | Temp directory 1  | file1.txt    |
-/// | Base 3  | Temp directory 2  | file2.txt    |
-/// ```
-///
-/// # Test Cases
-///
-/// ```text
-/// | Case        | What it tests                              |
-/// |-------------|--------------------------------------------|
-/// | first_base  | Path found in first base (fastest)          |
-/// | second_base | Path found in second base (one miss, hit)   |
-/// | third_base  | Path found in third base (two misses, hit)  |
-/// | not_found   | Path not in any base (all bases tried)     |
-/// ```
-fn bench_multiple_bases(c: &mut Criterion) {
-    let mut group = c.benchmark_group("multiple_bases");
-
-    let current_dir = std::env::current_dir().unwrap();
-    let temp1 = TempDir::new().unwrap();
-    let temp2 = TempDir::new().unwrap();
-
-    fs::write(temp1.path().join("file1.txt"), "content").unwrap();
-    fs::write(temp2.path().join("file2.txt"), "content").unwrap();
-
-    let resolver = AllowedPathResolver::new(vec![
-        current_dir.clone(),
-        temp1.path().to_path_buf(),
-        temp2.path().to_path_buf(),
-    ])
-    .unwrap();
-
-    group.throughput(Throughput::Elements(1));
-
-    for (case_name, path_input) in [
-        ("first_base", "src/lib.rs"),
-        ("second_base", "file1.txt"),
-        ("third_base", "file2.txt"),
-        ("not_found", "nonexistent.xyz"),
-    ] {
-        group.bench_function(case_name, |b| {
-            b.iter(|| resolver.resolve(black_box(path_input)))
-        });
-    }
-
-    group.finish();
+fn build_policy<F>(f: F) -> reloaded_code_core::error::ToolResult<GlobPolicy>
+where
+    F: FnOnce(GlobPolicyBuilder) -> reloaded_code_core::error::ToolResult<GlobPolicyBuilder>,
+{
+    let base = soft_canonicalize(std::env::current_dir().unwrap()).unwrap();
+    f(GlobPolicy::builder_with_base(&base)?).and_then(|b| b.build())
 }
-
-/// Benchmarks `std::fs::canonicalize` vs `soft_canonicalize` directly.
-///
-/// Isolates the core filesystem operation to understand where time is spent.
-///
-/// # Test Cases
-///
-/// ```text
-/// | Case              | Path                          | canonicalize | soft_canonicalize |
-/// |-------------------|-------------------------------|--------------|-------------------|
-/// | existing_file     | src/lib.rs (exists)           | O(1) FS call | O(1) FS call      |
-/// | new_file_shallow  | new_file.rs (in root)         | N/A          | O(1) FS call      |
-/// | new_file_deep     | a/b/c/new_file.rs (3 levels)  | N/A          | O(4) FS calls     |
-/// ```
-fn bench_canonicalize_vs_soft(c: &mut Criterion) {
-    let mut group = c.benchmark_group("canonicalize");
-
-    let current_dir = std::env::current_dir().unwrap();
-    let existing = current_dir.join("src/lib.rs");
-    let new_shallow = current_dir.join("new_file.rs");
-    let new_deep = current_dir.join("a/b/c/new_file.rs");
-
-    group.throughput(Throughput::Elements(1));
-
-    group.bench_function("existing_file_canonicalize", |b| {
-        b.iter(|| existing.canonicalize().unwrap())
-    });
-
-    group.bench_function("existing_file_soft_canonicalize", |b| {
-        b.iter(|| soft_canonicalize(&existing).unwrap())
-    });
-
-    group.bench_function("new_file_shallow_soft_canonicalize", |b| {
-        b.iter(|| soft_canonicalize(&new_shallow).unwrap())
-    });
-
-    group.bench_function("new_file_deep_soft_canonicalize", |b| {
-        b.iter(|| soft_canonicalize(&new_deep).unwrap())
-    });
-
-    group.finish();
-}
-
-criterion_group!(
-    benches,
-    bench_resolvers_same_paths,
-    bench_multiple_bases,
-    bench_canonicalize_vs_soft
-);
-
-criterion_main!(benches);

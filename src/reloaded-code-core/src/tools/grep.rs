@@ -16,83 +16,12 @@ use std::time::SystemTime;
 
 /// Default maximum line length (in characters) for formatted grep output.
 pub const DEFAULT_MAX_LINE_LENGTH: usize = 2000;
-
 /// Estimated characters per grep match for buffer pre-allocation.
 const ESTIMATED_CHARS_PER_MATCH: usize = 128;
 
-/// Serde-friendly grep request owned by the core crate.
-#[derive(Debug, Deserialize)]
-pub struct GrepRequest {
-    pub pattern: String,
-    pub path: String,
-    #[serde(default)]
-    pub include: Option<String>,
-    #[serde(default)]
-    pub limit: Option<usize>,
-}
-
-impl GrepRequest {
-    /// Parses a raw JSON tool payload into a grep request.
-    ///
-    /// # Errors
-    /// - Returns [`ToolError::Json`] when the JSON payload cannot be deserialized
-    ///   into a [`GrepRequest`] (e.g., missing required `pattern` or `path` fields,
-    ///   or invalid field types).
-    pub fn parse(args: Value) -> ToolResult<Self> {
-        serde_json::from_value(args).map_err(ToolError::from)
-    }
-}
-
-/// Runtime settings applied to grep requests.
-///
-/// The `max_limit` field caps the number of matching lines returned, even if
-/// the caller requests more.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct GrepSettings {
-    max_limit: usize,
-}
-
-impl Default for GrepSettings {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
-impl GrepSettings {
-    /// Creates valid grep search settings with the standard defaults.
-    #[must_use]
-    pub fn new() -> Self {
-        Self {
-            max_limit: grep_meta::DEFAULT_LIMIT,
-        }
-    }
-
-    /// Sets the upper bound on matching lines returned per search.
-    ///
-    /// # Errors
-    /// - Returns an error when `max_limit` is below [`MIN_LIMIT`].
-    ///
-    /// [`MIN_LIMIT`]: crate::util::MIN_LIMIT
-    pub fn with_max_limit(mut self, max_limit: usize) -> ToolResult<Self> {
-        use crate::util::MIN_LIMIT;
-        if max_limit < MIN_LIMIT {
-            return Err(ToolError::validation_for(
-                "max_limit",
-                format!("max_limit must be >= {}", MIN_LIMIT),
-            ));
-        }
-        self.max_limit = max_limit;
-        Ok(self)
-    }
-
-    /// Returns the upper bound on matching lines returned per search.
-    ///
-    /// # Returns
-    /// - The configured maximum line limit.
-    #[must_use]
-    pub const fn max_limit(&self) -> usize {
-        self.max_limit
-    }
+struct FileSearchResult {
+    matches: Vec<GrepLineMatch>,
+    error: Option<String>,
 }
 
 /// Formatting settings for rendered grep output.
@@ -105,10 +34,64 @@ pub struct GrepFormattingSettings {
     line_numbers: bool,
 }
 
-impl Default for GrepFormattingSettings {
-    fn default() -> Self {
-        Self::new()
-    }
+/// Output from grep search.
+#[derive(Debug, Serialize)]
+pub struct GrepOutput {
+    /// Files with matches, sorted by modification time (newest first).
+    pub files: Vec<GrepFileMatches>,
+    /// Total match count across all files.
+    pub match_count: usize,
+    /// Whether results were truncated due to limit.
+    pub truncated: bool,
+    /// Whether one or more files could not be searched.
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub partial: bool,
+    /// Per-file traversal/search errors encountered while collecting matches.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub errors: Vec<String>,
+    /// Effective match limit applied to the search.
+    #[serde(skip)]
+    pub effective_limit: usize,
+}
+
+/// Serde-friendly grep request owned by the core crate.
+#[derive(Debug, Deserialize)]
+pub struct GrepRequest {
+    pub pattern: String,
+    pub path: String,
+    #[serde(default)]
+    pub include: Option<String>,
+    #[serde(default)]
+    pub limit: Option<usize>,
+}
+
+/// Runtime settings applied to grep requests.
+///
+/// The `max_limit` field caps the number of matching lines returned, even if
+/// the caller requests more.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct GrepSettings {
+    max_limit: usize,
+}
+
+/// All matches within a single file.
+#[derive(Debug, Clone, Serialize)]
+pub struct GrepFileMatches {
+    /// File path.
+    pub path: String,
+    /// Matches in this file, in line order.
+    pub matches: Vec<GrepLineMatch>,
+    #[serde(skip)]
+    pub(crate) mtime: SystemTime,
+}
+
+/// A single line match within a file.
+#[derive(Debug, Clone, Serialize)]
+pub struct GrepLineMatch {
+    /// 1-indexed line number.
+    pub line_num: u64,
+    /// Content of the matched line.
+    pub line_text: String,
 }
 
 impl GrepFormattingSettings {
@@ -160,52 +143,12 @@ impl GrepFormattingSettings {
     }
 }
 
-/// A single line match within a file.
-#[derive(Debug, Clone, Serialize)]
-pub struct GrepLineMatch {
-    /// 1-indexed line number.
-    pub line_num: u64,
-    /// Content of the matched line.
-    pub line_text: String,
-}
-
-/// All matches within a single file.
-#[derive(Debug, Clone, Serialize)]
-pub struct GrepFileMatches {
-    /// File path.
-    pub path: String,
-    /// Matches in this file, in line order.
-    pub matches: Vec<GrepLineMatch>,
-    #[serde(skip)]
-    pub(crate) mtime: SystemTime,
-}
-
-/// Output from grep search.
-#[derive(Debug, Serialize)]
-pub struct GrepOutput {
-    /// Files with matches, sorted by modification time (newest first).
-    pub files: Vec<GrepFileMatches>,
-    /// Total match count across all files.
-    pub match_count: usize,
-    /// Whether results were truncated due to limit.
-    pub truncated: bool,
-    /// Whether one or more files could not be searched.
-    #[serde(skip_serializing_if = "std::ops::Not::not")]
-    pub partial: bool,
-    /// Per-file traversal/search errors encountered while collecting matches.
-    #[serde(skip_serializing_if = "Vec::is_empty")]
-    pub errors: Vec<String>,
-    /// Effective match limit applied to the search.
-    #[serde(skip)]
-    pub effective_limit: usize,
-}
-
 impl GrepOutput {
     /// Formats grep results as human-readable text.
     ///
     /// # Arguments
     ///
-    /// * `formatting` - The formatting settings to use for output
+    /// - `formatting`: The formatting settings to use for output
     pub fn format(&self, formatting: GrepFormattingSettings) -> String {
         let line_numbers = formatting.line_numbers();
         let max_line_len = formatting.max_line_length();
@@ -279,10 +222,77 @@ impl GrepOutput {
     }
 }
 
+impl GrepRequest {
+    /// Parses a raw JSON tool payload into a grep request.
+    ///
+    /// # Errors
+    /// - Returns [`ToolError::Json`] when the JSON payload cannot be deserialized
+    ///   into a [`GrepRequest`] (e.g., missing required `pattern` or `path` fields,
+    ///   or invalid field types).
+    pub fn parse(args: Value) -> ToolResult<Self> {
+        serde_json::from_value(args).map_err(ToolError::from)
+    }
+}
+
+impl GrepSettings {
+    /// Creates valid grep search settings with the standard defaults.
+    #[must_use]
+    pub fn new() -> Self {
+        Self {
+            max_limit: grep_meta::DEFAULT_LIMIT,
+        }
+    }
+
+    /// Sets the upper bound on matching lines returned per search.
+    ///
+    /// # Errors
+    /// - Returns an error when `max_limit` is below [`MIN_LIMIT`].
+    ///
+    /// [`MIN_LIMIT`]: crate::util::MIN_LIMIT
+    pub fn with_max_limit(mut self, max_limit: usize) -> ToolResult<Self> {
+        use crate::util::MIN_LIMIT;
+        if max_limit < MIN_LIMIT {
+            return Err(ToolError::validation_for(
+                "max_limit",
+                format!("max_limit must be >= {}", MIN_LIMIT),
+            ));
+        }
+        self.max_limit = max_limit;
+        Ok(self)
+    }
+
+    /// Returns the upper bound on matching lines returned per search.
+    ///
+    /// # Returns
+    /// - The configured maximum line limit.
+    #[must_use]
+    pub const fn max_limit(&self) -> usize {
+        self.max_limit
+    }
+}
+
+impl Default for GrepFormattingSettings {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl Default for GrepSettings {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 /// Searches for content matching a regex pattern.
 ///
 /// Results are sorted by modification time (newest first).
 /// Binary files are automatically skipped.
+///
+/// # Arguments
+/// - `resolver`: [`PathResolver`] used to resolve `request.path` to an absolute directory.
+/// - `request`: [`GrepRequest`] carrying the regex pattern, search path, optional filename
+///   filter, and optional result limit.
+/// - `settings`: [`GrepSettings`] providing the maximum result limit.
 pub fn grep_search<R: PathResolver>(
     resolver: &R,
     request: GrepRequest,
@@ -423,11 +433,6 @@ pub fn grep_search<R: PathResolver>(
         errors,
         effective_limit: limit,
     })
-}
-
-struct FileSearchResult {
-    matches: Vec<GrepLineMatch>,
-    error: Option<String>,
 }
 
 #[inline]

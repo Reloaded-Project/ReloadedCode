@@ -1,27 +1,13 @@
+use super::sort_sizes_desc;
 use reloaded_code_core::context::PathMode;
 use serde_json::Value;
 
-use super::sort_sizes_desc;
-
-/// Configures the `read` tool for one example case.
-#[derive(Debug, Clone, Copy)]
-pub struct ReadConfig {
-    pub path_mode: PathMode,
-    pub line_numbers: bool,
-}
-
-/// Configures the `grep` tool for one example case.
-#[derive(Debug, Clone, Copy)]
-pub struct GrepConfig {
-    pub path_mode: PathMode,
-    pub line_numbers: bool,
-}
-
-/// Describes one subagent target for the `task` example definition.
-#[derive(Debug, Clone, Copy)]
-pub struct TaskTarget {
-    pub name: &'static str,
-    pub description: &'static str,
+/// Holds the rendered prompt and serialized tool definitions for one case.
+pub struct PromptArtifacts {
+    pub system_prompt: String,
+    pub tool_definitions: Vec<Value>,
+    pub tool_definition_payload: String,
+    pub guideline_sections: Vec<(String, usize)>,
 }
 
 /// Describes one system prompt example scenario.
@@ -44,21 +30,25 @@ pub struct PromptCase {
     pub task_targets: &'static [TaskTarget],
 }
 
-impl PromptCase {
-    /// Returns the same case without supplemental git workflow sections.
-    pub fn without_supplemental(mut self) -> Self {
-        self.include_git_workflow = false;
-        self.include_github_cli = false;
-        self
-    }
+/// Configures the `grep` tool for one example case.
+#[derive(Debug, Clone, Copy)]
+pub struct GrepConfig {
+    pub path_mode: PathMode,
+    pub line_numbers: bool,
 }
 
-/// Holds the rendered prompt and serialized tool definitions for one case.
-pub struct PromptArtifacts {
-    pub system_prompt: String,
-    pub tool_definitions: Vec<Value>,
-    pub tool_definition_payload: String,
-    pub guideline_sections: Vec<(String, usize)>,
+/// Configures the `read` tool for one example case.
+#[derive(Debug, Clone, Copy)]
+pub struct ReadConfig {
+    pub path_mode: PathMode,
+    pub line_numbers: bool,
+}
+
+/// Describes one subagent target for the `task` example definition.
+#[derive(Debug, Clone, Copy)]
+pub struct TaskTarget {
+    pub name: &'static str,
+    pub description: &'static str,
 }
 
 impl PromptArtifacts {
@@ -80,5 +70,14 @@ impl PromptArtifacts {
             .collect();
         sort_sizes_desc(&mut sizes);
         sizes
+    }
+}
+
+impl PromptCase {
+    /// Returns the same case without supplemental git workflow sections.
+    pub fn without_supplemental(mut self) -> Self {
+        self.include_git_workflow = false;
+        self.include_github_cli = false;
+        self
     }
 }

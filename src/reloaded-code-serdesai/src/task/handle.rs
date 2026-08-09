@@ -17,18 +17,6 @@ pub(crate) struct TaskHandle<C: CredentialLookup + Send + Sync + ?Sized = Creden
     current_depth: u8,
 }
 
-impl<C> Clone for TaskHandle<C>
-where
-    C: CredentialLookup + Send + Sync + 'static,
-{
-    fn clone(&self) -> Self {
-        Self {
-            context: Arc::clone(&self.context),
-            current_depth: self.current_depth,
-        }
-    }
-}
-
 impl<C> TaskHandle<C>
 where
     C: CredentialLookup + Send + Sync + 'static,
@@ -145,6 +133,18 @@ where
         }
 
         Ok(())
+    }
+}
+
+impl<C> Clone for TaskHandle<C>
+where
+    C: CredentialLookup + Send + Sync + 'static,
+{
+    fn clone(&self) -> Self {
+        Self {
+            context: Arc::clone(&self.context),
+            current_depth: self.current_depth,
+        }
     }
 }
 

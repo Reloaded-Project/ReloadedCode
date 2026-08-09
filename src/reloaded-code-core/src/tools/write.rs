@@ -13,6 +13,12 @@ pub struct WriteRequest {
     pub content: String,
 }
 
+/// Runtime settings for write requests.
+///
+/// Reserved for future use.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct WriteSettings {}
+
 impl WriteRequest {
     /// Parses a raw JSON tool payload into a write request.
     ///
@@ -25,12 +31,6 @@ impl WriteRequest {
     }
 }
 
-/// Runtime settings for write requests.
-///
-/// Reserved for future use.
-#[derive(Debug, Clone, Default, PartialEq, Eq)]
-pub struct WriteSettings {}
-
 impl WriteSettings {
     /// Creates default write settings.
     #[must_use]
@@ -42,6 +42,11 @@ impl WriteSettings {
 /// Writes content to a file, creating parent directories if needed.
 ///
 /// Overwrites existing files. Returns a success message with byte count.
+///
+/// # Arguments
+/// - `resolver`: Resolves `request.file_path` to an absolute path.
+/// - `request`: The write request containing the target path and content.
+/// - `_settings`: Runtime settings; currently unused.
 ///
 /// # Errors
 /// - Returns [`ToolError::InvalidPath`] when `resolver.resolve()` fails to

@@ -1,15 +1,5 @@
 #![doc = include_str!(concat!("../", env!("CARGO_PKG_README")))]
 
-mod catalog;
-mod extensions;
-mod loader;
-mod parser;
-mod path;
-mod runtime;
-#[cfg(test)]
-mod test_helpers;
-mod types;
-
 pub use catalog::AgentCatalog;
 pub use extensions::RulesetExt;
 pub use loader::AgentLoader;
@@ -25,3 +15,13 @@ pub use types::{
     BashToolSettings, GlobToolSettings, GrepToolSettings, PermissionRule, ReadToolSettings,
     WebFetchToolSettings,
 };
+
+mod catalog;
+mod extensions;
+mod loader;
+mod parser;
+mod path;
+mod runtime;
+#[cfg(test)]
+mod test_helpers;
+mod types;

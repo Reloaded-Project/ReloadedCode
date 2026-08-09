@@ -34,6 +34,13 @@ enum WaitOutcome {
 /// - Windows: Job Objects
 /// - Unix: Process groups
 ///
+/// # Arguments
+/// - `mode`: The execution mode (host or Linux sandbox).
+/// - `request`: The bash request carrying the command, optional working directory, and
+///   optional timeout.
+/// - `settings`: The bash settings providing permission checks, default working directory,
+///   and timeout limits.
+///
 /// # Errors
 /// - Returns [`ToolError::PermissionDenied`] when the command is blocked by `settings.permission`.
 /// - Returns `ToolError::Validation` if timeout is 0 or exceeds max_timeout_ms.
@@ -68,11 +75,11 @@ pub fn execute_command(
 /// Executes a shell command with explicit mode selection.
 ///
 /// # Arguments
-/// - `mode` - The execution mode (host or Linux sandbox).
-/// - `command` - The shell command to execute.
-/// - `workdir` - Optional working directory (must be absolute if provided).
-/// - `timeout_ms` - Timeout in milliseconds (must be >= 1 and <= max_timeout_ms).
-/// - `max_timeout_ms` - Maximum allowed timeout in milliseconds.
+/// - `mode`: The execution mode (host or Linux sandbox).
+/// - `command`: The shell command to execute.
+/// - `workdir`: Optional working directory (must be absolute if provided).
+/// - `timeout_ms`: Timeout in milliseconds (must be >= 1 and <= max_timeout_ms).
+/// - `max_timeout_ms`: Maximum allowed timeout in milliseconds.
 ///
 /// # Errors
 /// - Returns `ToolError::Validation` if timeout_ms is 0 or exceeds max_timeout_ms.

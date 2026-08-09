@@ -16,18 +16,8 @@ mod tool_sections;
 
 /// Heading used for the shared rule block.
 pub(crate) const COMMON_RULES_HEADER: &str = "## Common Rules\n";
-
 /// Largest common-rules section length, including [`COMMON_RULES_HEADER`].
 pub(crate) const COMMON_RULES_SECTION_MAX_SIZE: usize = 475;
-
-/// Describes how a tool accepts paths.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum PathMode {
-    /// The tool accepts absolute filesystem paths.
-    Absolute,
-    /// The tool accepts paths within allowed directories.
-    Allowed,
-}
 
 /// Describes the guidance to render for one tool.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -77,13 +67,6 @@ pub enum ToolPrompt {
     Task,
 }
 
-impl ToolPrompt {
-    /// Writes this tool's guidance into `output`.
-    pub(crate) fn render(self, output: &mut String, facts: ToolPromptFacts) {
-        tool_sections::render_tool(self, output, facts);
-    }
-}
-
 /// Tracks which built-in tools are present.
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
 pub(crate) struct ToolPromptFacts {
@@ -95,6 +78,22 @@ pub(crate) struct ToolPromptFacts {
     has_edit: bool,
     has_glob: bool,
     has_grep: bool,
+}
+
+/// Describes how a tool accepts paths.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PathMode {
+    /// The tool accepts absolute filesystem paths.
+    Absolute,
+    /// The tool accepts paths within allowed directories.
+    Allowed,
+}
+
+impl ToolPrompt {
+    /// Writes this tool's guidance into `output`.
+    pub(crate) fn render(self, output: &mut String, facts: ToolPromptFacts) {
+        tool_sections::render_tool(self, output, facts);
+    }
 }
 
 impl ToolPromptFacts {
@@ -166,15 +165,21 @@ impl ToolPromptFacts {
     }
 }
 
+/// Appends a text block to `output` without adding a trailing newline.
+pub(super) fn push_block(output: &mut String, block: &str) {
+    output.push_str(block);
+}
+
+/// Appends a text line followed by a trailing newline to `output`.
 pub(super) fn push_line(output: &mut String, line: &str) {
     output.push_str(line);
     output.push('\n');
 }
 
-pub(super) fn push_block(output: &mut String, block: &str) {
-    output.push_str(block);
-}
-
+/// Writes a human-readable list of tool names into `output`.
+///
+/// Renders zero, one, two, or many tools, joining items with commas and "and"
+/// as appropriate.
 pub(super) fn write_tool_list(output: &mut String, tools: &[&str]) {
     match tools {
         [] => {}

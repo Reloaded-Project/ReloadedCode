@@ -13,7 +13,6 @@ use tokio::sync::mpsc;
 use tokio::time::Duration;
 use tokio::time::Instant;
 use tokio_util::sync::CancellationToken;
-
 use crate::bash::extract_bash_command;
 use crate::codex::Session;
 use crate::codex::TurnContext;
@@ -29,7 +28,6 @@ use crate::tools::sandboxing::ToolCtx;
 use crate::truncate::TruncationPolicy;
 use crate::truncate::approx_token_count;
 use crate::truncate::formatted_truncate_text;
-
 use super::CommandTranscript;
 use super::ExecCommandRequest;
 use super::MAX_UNIFIED_EXEC_SESSIONS;
@@ -62,13 +60,6 @@ const UNIFIED_EXEC_ENV: [(&str, &str); 8] = [
     ("GIT_PAGER", "cat"),
 ];
 
-fn apply_unified_exec_env(mut env: HashMap<String, String>) -> HashMap<String, String> {
-    for (key, value) in UNIFIED_EXEC_ENV {
-        env.insert(key.to_string(), value.to_string());
-    }
-    env
-}
-
 struct PreparedSessionHandles {
     writer_tx: mpsc::Sender<Vec<u8>>,
     output_buffer: OutputBuffer,
@@ -78,6 +69,19 @@ struct PreparedSessionHandles {
     turn_ref: Arc<TurnContext>,
     command: Vec<String>,
     process_id: String,
+}
+
+enum SessionStatus {
+    Alive {
+        exit_code: Option<i32>,
+        call_id: String,
+        process_id: String,
+    },
+    Exited {
+        exit_code: Option<i32>,
+        entry: Box<SessionEntry>,
+    },
+    Unknown,
 }
 
 impl UnifiedExecSessionManager {
@@ -651,17 +655,11 @@ impl UnifiedExecSessionManager {
     }
 }
 
-enum SessionStatus {
-    Alive {
-        exit_code: Option<i32>,
-        call_id: String,
-        process_id: String,
-    },
-    Exited {
-        exit_code: Option<i32>,
-        entry: Box<SessionEntry>,
-    },
-    Unknown,
+fn apply_unified_exec_env(mut env: HashMap<String, String>) -> HashMap<String, String> {
+    for (key, value) in UNIFIED_EXEC_ENV {
+        env.insert(key.to_string(), value.to_string());
+    }
+    env
 }
 
 #[cfg(test)]

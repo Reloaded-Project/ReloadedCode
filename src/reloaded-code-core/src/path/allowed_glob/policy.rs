@@ -29,15 +29,6 @@ use crate::error::{ToolError, ToolResult};
 use globset::{Glob, GlobMatcher, GlobSet, GlobSetBuilder};
 use std::path::{Path, PathBuf};
 
-/// Action to take when a glob pattern matches.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum RuleAction {
-    /// Allow access to the matched path.
-    Allow,
-    /// Deny access to the matched path.
-    Deny,
-}
-
 /// Glob pattern policy for path resolution.
 ///
 /// Patterns are evaluated with **last-match-wins** precedence using reverse
@@ -63,13 +54,22 @@ pub struct GlobPolicy {
     glob_set: GlobSet,
 }
 
-impl std::fmt::Debug for GlobPolicy {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("GlobPolicy")
-            .field("rules_count", &self.rules.len())
-            .field("glob_set", &self.glob_set)
-            .finish()
-    }
+/// Builder for constructing [`GlobPolicy`] instances.
+#[derive(Debug)]
+pub struct GlobPolicyBuilder {
+    /// Optional workspace root. When set, relative patterns are joined with
+    /// this path before compilation.
+    base_path: Option<PathBuf>,
+    rules: Vec<(Glob, RuleAction)>,
+}
+
+/// Action to take when a glob pattern matches.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RuleAction {
+    /// Allow access to the matched path.
+    Allow,
+    /// Deny access to the matched path.
+    Deny,
 }
 
 impl GlobPolicy {
@@ -146,25 +146,6 @@ impl GlobPolicy {
         }
 
         false
-    }
-}
-
-/// Builder for constructing [`GlobPolicy`] instances.
-#[derive(Debug)]
-pub struct GlobPolicyBuilder {
-    /// Optional workspace root. When set, relative patterns are joined with
-    /// this path before compilation.
-    base_path: Option<PathBuf>,
-    rules: Vec<(Glob, RuleAction)>,
-}
-
-#[allow(clippy::derivable_impls)] // Explicit impl for clarity; base_path=None is required by spec
-impl Default for GlobPolicyBuilder {
-    fn default() -> Self {
-        Self {
-            base_path: None,
-            rules: Vec::new(),
-        }
     }
 }
 
@@ -324,6 +305,25 @@ impl GlobPolicyBuilder {
             .map_err(|e| ToolError::InvalidPattern(format!("failed to build glob set: {}", e)))?;
 
         Ok(GlobPolicy { rules, glob_set })
+    }
+}
+
+impl std::fmt::Debug for GlobPolicy {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("GlobPolicy")
+            .field("rules_count", &self.rules.len())
+            .field("glob_set", &self.glob_set)
+            .finish()
+    }
+}
+
+#[allow(clippy::derivable_impls)] // Explicit impl for clarity; base_path=None is required by spec
+impl Default for GlobPolicyBuilder {
+    fn default() -> Self {
+        Self {
+            base_path: None,
+            rules: Vec::new(),
+        }
     }
 }
 

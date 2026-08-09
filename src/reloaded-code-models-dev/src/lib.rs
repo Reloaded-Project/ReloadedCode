@@ -10,12 +10,12 @@ compile_error!(concat!(
     "must be enabled."
 ));
 
+pub use cache::shared_cache_path;
+pub use catalog::{CatalogLoadResult, CatalogLoadSource, ModelsDevCatalog};
+pub use error::{CatalogError, CatalogResult};
+
 mod api;
 pub mod cache;
 pub mod catalog;
 pub mod error;
 mod fs;
-
-pub use cache::shared_cache_path;
-pub use catalog::{CatalogLoadResult, CatalogLoadSource, ModelsDevCatalog};
-pub use error::{CatalogError, CatalogResult};

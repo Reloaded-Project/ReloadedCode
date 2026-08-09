@@ -7,20 +7,37 @@
 //! `(Vec<ProviderSource>, Vec<ProviderModelSource>)` pair. The model catalog
 //! consumes this pair.
 
-use indexmap::IndexMap;
-use std::path::{Path, PathBuf};
-
 use crate::api_type::{api_type_from_str, DEFAULT_API_TYPE};
 use crate::config::ProviderConfig;
 use crate::error::ProviderConfigError;
+use indexmap::IndexMap;
 use reloaded_code_core::models::{
     Modality, ModelInfo, ProviderIdx, ProviderInfo, ProviderModelSource, ProviderSource,
     ProviderType,
 };
+use std::path::{Path, PathBuf};
 
-const CONFIG_FILENAME: &str = "providers.yaml";
 const CONFIG_DIR_NAME: &str = "reloaded-code";
+const CONFIG_FILENAME: &str = "providers.yaml";
 const PROJECT_LOCAL_DIR: &str = ".reloaded";
+
+/// Merged, validated provider configuration ready for catalog conversion.
+///
+/// Call [`Self::to_catalog_sources()`] to obtain `Result<(Vec<ProviderSource>, Vec<ProviderModelSource>), ProviderConfigError>`
+/// that can be passed directly to [`ModelCatalog::build()`].
+///
+/// The map keys are user-chosen provider identifiers (e.g., `"my-llm"`,
+/// `"local-ollama"`) that become [`ProviderSource::provider_key`] values in
+/// the catalog. These are distinct from the provider names in the
+/// pre-bundled catalog (hosted at models.dev) - they are custom providers
+/// defined by the user.
+///
+/// [`ModelCatalog::build()`]: reloaded_code_core::models::ModelCatalog::build
+#[derive(Debug)]
+pub struct LoadedProviderConfig {
+    /// Merged provider entries keyed by user-chosen provider identifier.
+    pub providers: IndexMap<String, ProviderConfig>,
+}
 
 /// Builder that collects an ordered list of config sources and merges them
 /// into a [`LoadedProviderConfig`].
@@ -37,6 +54,92 @@ const PROJECT_LOCAL_DIR: &str = ".reloaded";
 /// file locations, then chain additional sources before calling [`Self::load()`].
 pub struct ProviderConfigLoader {
     sources: Vec<ConfigSource>,
+}
+
+/// Individual source of provider configuration: a YAML file or a programmatic entry.
+enum ConfigSource {
+    /// A YAML file on disk.
+    File(std::path::PathBuf),
+    /// A programmatic provider entry added at build time.
+    Programmatic { key: String, config: ProviderConfig },
+}
+
+impl LoadedProviderConfig {
+    /// Converts the merged config into catalog source types.
+    ///
+    /// # Returns
+    ///
+    /// - `Ok((Vec<ProviderSource>, Vec<ProviderModelSource<'_>))`: A pair where
+    ///   each model's [`ProviderModelSource::provider_idx`] (a [`ProviderIdx`] numeric
+    ///   index) corresponds to its provider's position in the first vector. The
+    ///   returned [`ProviderModelSource`] borrows `model_key` strings from `self`, so
+    ///   `self` must outlive the sources.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`ProviderConfigError::TooManyProviders`] when the number of
+    /// providers exceeds `u16::MAX + 1` (65,536), which is the maximum
+    /// addressable by [`ProviderIdx`].
+    pub fn to_catalog_sources(
+        &self,
+    ) -> Result<(Vec<ProviderSource>, Vec<ProviderModelSource<'_>>), ProviderConfigError> {
+        let provider_count = self.providers.len();
+        let max = (u16::MAX as usize) + 1;
+        if provider_count > max {
+            return Err(ProviderConfigError::TooManyProviders {
+                count: provider_count,
+                max,
+            });
+        }
+        let mut provider_sources = Vec::with_capacity(self.providers.len());
+        let mut model_sources = Vec::new();
+
+        for (idx, (key, config)) in self.providers.iter().enumerate() {
+            // Resolve the provider type from the api_type string, defaulting to openai-compatible.
+            let provider_type =
+                api_type_from_str(config.api_type.as_deref().unwrap_or(DEFAULT_API_TYPE));
+            let provider_info = ProviderInfo {
+                api_url: config.api_url.clone().unwrap_or_default(),
+                env_vars: config.env.clone().unwrap_or_default(),
+                api_type: provider_type,
+            };
+            let provider_source = ProviderSource::new(key, provider_info);
+            let provider_idx = ProviderIdx::new(idx as u16);
+
+            // Convert each model entry into a ProviderModelSource.
+            if let Some(models) = &config.models {
+                for (model_key, model_config) in models {
+                    // Build the modality bitmask by OR'ing individual Modality flags;
+                    // defaults to text-only if the model declares no modalities.
+                    let mut modalities = Modality::empty();
+                    for s in &model_config.modalities {
+                        if let Some(m) = Modality::from_label(s) {
+                            modalities |= m;
+                        }
+                    }
+                    if modalities.is_empty() {
+                        modalities = Modality::TEXT;
+                    }
+                    let model_info = ModelInfo {
+                        modalities,
+                        max_input: model_config.max_input,
+                        max_output: model_config.max_output,
+                        temperature: model_config.default_temperature,
+                        top_p: model_config.default_top_p,
+                    };
+                    model_sources.push(ProviderModelSource::new(
+                        provider_idx,
+                        model_key,
+                        model_info,
+                    ));
+                }
+            }
+
+            provider_sources.push(provider_source);
+        }
+
+        Ok((provider_sources, model_sources))
+    }
 }
 
 impl ProviderConfigLoader {
@@ -243,110 +346,6 @@ pub fn default_config_paths() -> Vec<PathBuf> {
 
     // Filter to only paths that exist on disk.
     paths.into_iter().filter(|p| p.exists()).collect()
-}
-
-/// Merged, validated provider configuration ready for catalog conversion.
-///
-/// Call [`Self::to_catalog_sources()`] to obtain `Result<(Vec<ProviderSource>, Vec<ProviderModelSource>), ProviderConfigError>`
-/// that can be passed directly to [`ModelCatalog::build()`].
-///
-/// The map keys are user-chosen provider identifiers (e.g., `"my-llm"`,
-/// `"local-ollama"`) that become [`ProviderSource::provider_key`] values in
-/// the catalog. These are distinct from the provider names in the
-/// pre-bundled catalog (hosted at models.dev) - they are custom providers
-/// defined by the user.
-///
-/// [`ModelCatalog::build()`]: reloaded_code_core::models::ModelCatalog::build
-#[derive(Debug)]
-pub struct LoadedProviderConfig {
-    /// Merged provider entries keyed by user-chosen provider identifier.
-    pub providers: IndexMap<String, ProviderConfig>,
-}
-
-impl LoadedProviderConfig {
-    /// Converts the merged config into catalog source types.
-    ///
-    /// # Returns
-    ///
-    /// - `Ok((Vec<ProviderSource>, Vec<ProviderModelSource<'_>))`: A pair where
-    ///   each model's [`ProviderModelSource::provider_idx`] (a [`ProviderIdx`] numeric
-    ///   index) corresponds to its provider's position in the first vector. The
-    ///   returned [`ProviderModelSource`] borrows `model_key` strings from `self`, so
-    ///   `self` must outlive the sources.
-    ///
-    /// # Errors
-    ///
-    /// Returns [`ProviderConfigError::TooManyProviders`] when the number of
-    /// providers exceeds `u16::MAX + 1` (65,536), which is the maximum
-    /// addressable by [`ProviderIdx`].
-    pub fn to_catalog_sources(
-        &self,
-    ) -> Result<(Vec<ProviderSource>, Vec<ProviderModelSource<'_>>), ProviderConfigError> {
-        let provider_count = self.providers.len();
-        let max = (u16::MAX as usize) + 1;
-        if provider_count > max {
-            return Err(ProviderConfigError::TooManyProviders {
-                count: provider_count,
-                max,
-            });
-        }
-        let mut provider_sources = Vec::with_capacity(self.providers.len());
-        let mut model_sources = Vec::new();
-
-        for (idx, (key, config)) in self.providers.iter().enumerate() {
-            // Resolve the provider type from the api_type string, defaulting to openai-compatible.
-            let provider_type =
-                api_type_from_str(config.api_type.as_deref().unwrap_or(DEFAULT_API_TYPE));
-            let provider_info = ProviderInfo {
-                api_url: config.api_url.clone().unwrap_or_default(),
-                env_vars: config.env.clone().unwrap_or_default(),
-                api_type: provider_type,
-            };
-            let provider_source = ProviderSource::new(key, provider_info);
-            let provider_idx = ProviderIdx::new(idx as u16);
-
-            // Convert each model entry into a ProviderModelSource.
-            if let Some(models) = &config.models {
-                for (model_key, model_config) in models {
-                    // Build the modality bitmask by OR'ing individual Modality flags;
-                    // defaults to text-only if the model declares no modalities.
-                    let mut modalities = Modality::empty();
-                    for s in &model_config.modalities {
-                        if let Some(m) = Modality::from_label(s) {
-                            modalities |= m;
-                        }
-                    }
-                    if modalities.is_empty() {
-                        modalities = Modality::TEXT;
-                    }
-                    let model_info = ModelInfo {
-                        modalities,
-                        max_input: model_config.max_input,
-                        max_output: model_config.max_output,
-                        temperature: model_config.default_temperature,
-                        top_p: model_config.default_top_p,
-                    };
-                    model_sources.push(ProviderModelSource::new(
-                        provider_idx,
-                        model_key,
-                        model_info,
-                    ));
-                }
-            }
-
-            provider_sources.push(provider_source);
-        }
-
-        Ok((provider_sources, model_sources))
-    }
-}
-
-/// Individual source of provider configuration: a YAML file or a programmatic entry.
-enum ConfigSource {
-    /// A YAML file on disk.
-    File(std::path::PathBuf),
-    /// A programmatic provider entry added at build time.
-    Programmatic { key: String, config: ProviderConfig },
 }
 
 #[cfg(test)]

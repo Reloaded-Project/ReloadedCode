@@ -2,12 +2,6 @@
 
 use super::ParamMetadata;
 
-/// Canonical tool name.
-pub const NAME: &str = "todowrite";
-
-/// Tool description.
-pub const DESCRIPTION: &str = "Replace the full todo list.";
-
 /// Parameter metadata.
 pub mod param {
     use super::ParamMetadata;
@@ -29,3 +23,8 @@ pub mod param {
     /// Todo item `priority` field metadata.
     pub const PRIORITY: ParamMetadata = ParamMetadata::new("priority", "Task priority.", true);
 }
+
+/// Tool description.
+pub const DESCRIPTION: &str = "Replace the full todo list.";
+/// Canonical tool name.
+pub const NAME: &str = "todowrite";

@@ -13,247 +13,6 @@ use std::ffi::OsString;
 use std::path::Path;
 use std::sync::Arc;
 
-/// Preset names for common sandbox setups.
-///
-/// [`Self::TrustedMaintenance`] is only for trusted jobs. It keeps network
-/// access enabled, so a command can send out any data it can read.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Preset {
-    /// Safer defaults for untrusted or public input.
-    ///
-    /// This preset mounts selected system paths, the workspace, the synthetic
-    /// home, `/dev`, `/proc`, and `/tmp`. It does not expose the real home
-    /// directory or inherited env vars.
-    PublicBot,
-    /// Broader defaults for trusted jobs.
-    ///
-    /// This preset keeps network access enabled and exposes the host root
-    /// read-only. Do not use it for untrusted input.
-    TrustedMaintenance,
-}
-
-/// Network policy for Linux sandbox execution.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
-pub enum NetworkPolicy {
-    /// Network access is disabled (default).
-    #[default]
-    Disabled,
-    /// Network access is enabled.
-    Enabled,
-}
-
-/// How sandbox `/tmp` is mounted.
-///
-/// Use [`Self::Tmpfs`] to keep `/tmp` in memory. Use [`Self::BindHost`] to
-/// mount a host directory at `/tmp`.
-#[derive(Debug, Clone, PartialEq, Eq, Default)]
-pub enum TmpBacking {
-    /// Mount `/tmp` as tmpfs inside the sandbox.
-    #[default]
-    Tmpfs,
-    /// Mount a host directory at sandbox `/tmp`.
-    ///
-    /// You create and clean up the directory.
-    BindHost(Box<Path>),
-}
-
-/// Whether bubblewrap can run.
-///
-/// Stores the check result and, when unavailable, the reason.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum Availability {
-    /// Availability has not been checked yet.
-    Unknown,
-    /// Bubblewrap is available.
-    Available,
-    /// Bubblewrap cannot run.
-    Unavailable {
-        /// Why bubblewrap is unavailable.
-        reason: Box<str>,
-    },
-}
-
-impl Availability {
-    /// Checks whether bubblewrap can run in the current process.
-    ///
-    /// # Returns
-    /// - [`Availability::Available`] when `bwrap` is present and usable.
-    /// - [`Availability::Unavailable`] with an actionable reason otherwise.
-    pub fn detect() -> Self {
-        crate::probe::probe_availability()
-    }
-
-    /// Creates an unavailable state with a reason.
-    ///
-    /// # Examples
-    /// ```
-    /// use reloaded_code_bubblewrap::profile::Availability;
-    ///
-    /// let avail = Availability::unavailable("bwrap not found");
-    /// assert!(!avail.is_available());
-    /// ```
-    pub fn unavailable(reason: impl Into<Box<str>>) -> Self {
-        Self::Unavailable {
-            reason: reason.into(),
-        }
-    }
-
-    /// Returns the reason when bubblewrap is unavailable.
-    ///
-    /// Returns `None` for `Unknown` and `Available`.
-    pub fn reason(&self) -> Option<&str> {
-        match self {
-            Self::Unavailable { reason } => Some(reason.as_ref()),
-            Self::Unknown | Self::Available => None,
-        }
-    }
-
-    /// Returns whether bubblewrap is known to be available.
-    pub fn is_available(&self) -> bool {
-        matches!(self, Self::Available)
-    }
-}
-
-/// One environment variable for the sandbox.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct EnvVar {
-    name: Box<str>,
-    value: Box<str>,
-}
-
-impl EnvVar {
-    /// Creates an environment variable.
-    ///
-    /// # Arguments
-    /// - `name` - The variable name, such as `PATH` or `HOME`.
-    /// - `value` - The variable value.
-    pub fn new(name: impl Into<Box<str>>, value: impl Into<Box<str>>) -> Self {
-        Self {
-            name: name.into(),
-            value: value.into(),
-        }
-    }
-
-    /// Returns the variable name.
-    pub fn name(&self) -> &str {
-        &self.name
-    }
-
-    /// Returns the variable value.
-    pub fn value(&self) -> &str {
-        &self.value
-    }
-}
-
-/// One symlink to create inside the sandbox root.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct Symlink {
-    target: Box<str>,
-    link_path: Box<Path>,
-}
-
-impl Symlink {
-    /// Creates a symlink entry.
-    ///
-    /// # Arguments
-    /// - `target` - The symlink target path.
-    /// - `link_path` - The path where the symlink is created inside the sandbox.
-    pub fn new(target: impl Into<Box<str>>, link_path: impl Into<Box<Path>>) -> Self {
-        Self {
-            target: target.into(),
-            link_path: link_path.into(),
-        }
-    }
-
-    /// Returns the symlink target.
-    pub fn target(&self) -> &str {
-        &self.target
-    }
-
-    /// Returns the link path inside the sandbox.
-    pub fn link_path(&self) -> &Path {
-        &self.link_path
-    }
-}
-
-/// One read-only file mount inside the sandbox.
-///
-/// # Validation
-/// - The source must be an absolute regular file on the host.
-/// - The destination must stay under the mounted synthetic home, workspace, or cache root.
-/// - Directory mounts, sockets, and agent forwarding are not allowed.
-///
-/// Make sure the destination parent directory exists before launch.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct FileMount {
-    source: Box<Path>,
-    dest: Box<Path>,
-}
-
-impl FileMount {
-    /// Creates a file mount.
-    ///
-    /// # Arguments
-    /// - `source` - The source file path on the host.
-    /// - `dest` - The destination path inside the sandbox.
-    pub fn new(source: impl Into<Box<Path>>, dest: impl Into<Box<Path>>) -> Self {
-        Self {
-            source: source.into(),
-            dest: dest.into(),
-        }
-    }
-
-    /// Returns the source file path on the host.
-    pub fn source(&self) -> &Path {
-        &self.source
-    }
-
-    /// Returns the destination path inside the sandbox.
-    pub fn dest(&self) -> &Path {
-        &self.dest
-    }
-}
-
-/// One read-only file overlay inside the sandbox.
-///
-/// Replaces a file anywhere in the sandbox rootfs with content from a host
-/// file via a read-only bind-mount. Unlike [`FileMount`], the destination is
-/// not restricted to mounted prefixes - it can target any absolute path such
-/// as `/etc/shadow` or `/etc/hostname`.
-///
-/// # Validation
-/// - The source must be an absolute path that exists on the host.
-/// - The destination must be an absolute path.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct FileOverlay {
-    source: Box<Path>,
-    dest: Box<Path>,
-}
-
-impl FileOverlay {
-    /// Creates a file overlay.
-    ///
-    /// # Arguments
-    /// - `source` - The host file whose content is bind-mounted read-only.
-    /// - `dest` - The sandbox path to be replaced.
-    pub fn new(source: impl Into<Box<Path>>, dest: impl Into<Box<Path>>) -> Self {
-        Self {
-            source: source.into(),
-            dest: dest.into(),
-        }
-    }
-
-    /// Returns the host source file path.
-    pub fn source(&self) -> &Path {
-        &self.source
-    }
-
-    /// Returns the sandbox destination path.
-    pub fn dest(&self) -> &Path {
-        &self.dest
-    }
-}
-
 /// A validated bubblewrap profile ready for repeated command wrapping.
 ///
 /// Build this with [`crate::profile::Builder::build`](crate::profile::Builder::build).
@@ -287,6 +46,110 @@ pub struct Profile {
     pub(crate) bwrap_program: Arc<Path>,
     pub(crate) shell: Box<Path>,
     pub(crate) static_args: Arc<[OsString]>,
+}
+
+/// Whether bubblewrap can run.
+///
+/// Stores the check result and, when unavailable, the reason.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Availability {
+    /// Availability has not been checked yet.
+    Unknown,
+    /// Bubblewrap is available.
+    Available,
+    /// Bubblewrap cannot run.
+    Unavailable {
+        /// Why bubblewrap is unavailable.
+        reason: Box<str>,
+    },
+}
+
+/// One environment variable for the sandbox.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct EnvVar {
+    name: Box<str>,
+    value: Box<str>,
+}
+
+/// One read-only file mount inside the sandbox.
+///
+/// # Validation
+/// - The source must be an absolute regular file on the host.
+/// - The destination must stay under the mounted synthetic home, workspace, or cache root.
+/// - Directory mounts, sockets, and agent forwarding are not allowed.
+///
+/// Make sure the destination parent directory exists before launch.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct FileMount {
+    source: Box<Path>,
+    dest: Box<Path>,
+}
+
+/// One read-only file overlay inside the sandbox.
+///
+/// Replaces a file anywhere in the sandbox rootfs with content from a host
+/// file via a read-only bind-mount. Unlike [`FileMount`], the destination is
+/// not restricted to mounted prefixes - it can target any absolute path such
+/// as `/etc/shadow` or `/etc/hostname`.
+///
+/// # Validation
+/// - The source must be an absolute path that exists on the host.
+/// - The destination must be an absolute path.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct FileOverlay {
+    source: Box<Path>,
+    dest: Box<Path>,
+}
+
+/// Network policy for Linux sandbox execution.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum NetworkPolicy {
+    /// Network access is disabled (default).
+    #[default]
+    Disabled,
+    /// Network access is enabled.
+    Enabled,
+}
+
+/// Preset names for common sandbox setups.
+///
+/// [`Self::TrustedMaintenance`] is only for trusted jobs. It keeps network
+/// access enabled, so a command can send out any data it can read.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Preset {
+    /// Safer defaults for untrusted or public input.
+    ///
+    /// This preset mounts selected system paths, the workspace, the synthetic
+    /// home, `/dev`, `/proc`, and `/tmp`. It does not expose the real home
+    /// directory or inherited env vars.
+    PublicBot,
+    /// Broader defaults for trusted jobs.
+    ///
+    /// This preset keeps network access enabled and exposes the host root
+    /// read-only. Do not use it for untrusted input.
+    TrustedMaintenance,
+}
+
+/// One symlink to create inside the sandbox root.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Symlink {
+    target: Box<str>,
+    link_path: Box<Path>,
+}
+
+/// How sandbox `/tmp` is mounted.
+///
+/// Use [`Self::Tmpfs`] to keep `/tmp` in memory. Use [`Self::BindHost`] to
+/// mount a host directory at `/tmp`.
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub enum TmpBacking {
+    /// Mount `/tmp` as tmpfs inside the sandbox.
+    #[default]
+    Tmpfs,
+    /// Mount a host directory at sandbox `/tmp`.
+    ///
+    /// You create and clean up the directory.
+    BindHost(Box<Path>),
 }
 
 impl Profile {
@@ -502,6 +365,143 @@ impl Profile {
             read_only_mounts: self.read_only_mounts(),
             read_write_mounts: self.read_write_mounts(),
         }
+    }
+}
+
+impl Availability {
+    /// Checks whether bubblewrap can run in the current process.
+    ///
+    /// # Returns
+    /// - [`Availability::Available`] when `bwrap` is present and usable.
+    /// - [`Availability::Unavailable`] with an actionable reason otherwise.
+    pub fn detect() -> Self {
+        crate::probe::probe_availability()
+    }
+
+    /// Creates an unavailable state with a reason.
+    ///
+    /// # Examples
+    /// ```
+    /// use reloaded_code_bubblewrap::profile::Availability;
+    ///
+    /// let avail = Availability::unavailable("bwrap not found");
+    /// assert!(!avail.is_available());
+    /// ```
+    pub fn unavailable(reason: impl Into<Box<str>>) -> Self {
+        Self::Unavailable {
+            reason: reason.into(),
+        }
+    }
+
+    /// Returns the reason when bubblewrap is unavailable.
+    ///
+    /// Returns `None` for `Unknown` and `Available`.
+    pub fn reason(&self) -> Option<&str> {
+        match self {
+            Self::Unavailable { reason } => Some(reason.as_ref()),
+            Self::Unknown | Self::Available => None,
+        }
+    }
+
+    /// Returns whether bubblewrap is known to be available.
+    pub fn is_available(&self) -> bool {
+        matches!(self, Self::Available)
+    }
+}
+
+impl EnvVar {
+    /// Creates an environment variable.
+    ///
+    /// # Arguments
+    /// - `name` - The variable name, such as `PATH` or `HOME`.
+    /// - `value` - The variable value.
+    pub fn new(name: impl Into<Box<str>>, value: impl Into<Box<str>>) -> Self {
+        Self {
+            name: name.into(),
+            value: value.into(),
+        }
+    }
+
+    /// Returns the variable name.
+    pub fn name(&self) -> &str {
+        &self.name
+    }
+
+    /// Returns the variable value.
+    pub fn value(&self) -> &str {
+        &self.value
+    }
+}
+
+impl FileMount {
+    /// Creates a file mount.
+    ///
+    /// # Arguments
+    /// - `source` - The source file path on the host.
+    /// - `dest` - The destination path inside the sandbox.
+    pub fn new(source: impl Into<Box<Path>>, dest: impl Into<Box<Path>>) -> Self {
+        Self {
+            source: source.into(),
+            dest: dest.into(),
+        }
+    }
+
+    /// Returns the source file path on the host.
+    pub fn source(&self) -> &Path {
+        &self.source
+    }
+
+    /// Returns the destination path inside the sandbox.
+    pub fn dest(&self) -> &Path {
+        &self.dest
+    }
+}
+
+impl FileOverlay {
+    /// Creates a file overlay.
+    ///
+    /// # Arguments
+    /// - `source` - The host file whose content is bind-mounted read-only.
+    /// - `dest` - The sandbox path to be replaced.
+    pub fn new(source: impl Into<Box<Path>>, dest: impl Into<Box<Path>>) -> Self {
+        Self {
+            source: source.into(),
+            dest: dest.into(),
+        }
+    }
+
+    /// Returns the host source file path.
+    pub fn source(&self) -> &Path {
+        &self.source
+    }
+
+    /// Returns the sandbox destination path.
+    pub fn dest(&self) -> &Path {
+        &self.dest
+    }
+}
+
+impl Symlink {
+    /// Creates a symlink entry.
+    ///
+    /// # Arguments
+    /// - `target` - The symlink target path.
+    /// - `link_path` - The path where the symlink is created inside the sandbox.
+    pub fn new(target: impl Into<Box<str>>, link_path: impl Into<Box<Path>>) -> Self {
+        Self {
+            target: target.into(),
+            link_path: link_path.into(),
+        }
+    }
+
+    /// Returns the symlink target.
+    pub fn target(&self) -> &str {
+        &self.target
+    }
+
+    /// Returns the link path inside the sandbox.
+    pub fn link_path(&self) -> &Path {
+        &self.link_path
     }
 }
 

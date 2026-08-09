@@ -19,8 +19,7 @@ use codex_protocol::protocol::EventMsg;
 use std::collections::BTreeMap;
 use std::sync::LazyLock;
 
-pub struct PlanHandler;
-
+/// Static tool specification for the `update_plan` tool.
 pub static PLAN_TOOL: LazyLock<ToolSpec> = LazyLock::new(|| {
     let mut plan_item_props = BTreeMap::new();
     plan_item_props.insert("step".to_string(), JsonSchema::String { description: None });
@@ -63,6 +62,9 @@ At most one step can be in_progress at a time.
     })
 });
 
+/// Handles `update_plan` tool invocations by recording the model's plan.
+pub struct PlanHandler;
+
 #[async_trait]
 impl ToolHandler for PlanHandler {
     fn kind(&self) -> ToolKind {
@@ -100,7 +102,7 @@ impl ToolHandler for PlanHandler {
 
 /// This function doesn't do anything useful. However, it gives the model a structured way to record its plan that clients can read and render.
 /// So it's the _inputs_ to this function that are useful to clients, not the outputs and neither are actually useful for the model other
-/// than forcing it to come up and document a plan (TBD how that affects performance).
+/// than forcing it to come up and document a plan; the parsed plan is forwarded to the session as a `PlanUpdate` event for clients to consume.
 pub(crate) async fn handle_update_plan(
     session: &Session,
     turn_context: &TurnContext,

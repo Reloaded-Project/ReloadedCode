@@ -12,6 +12,12 @@ use memchr::{memchr, memchr_iter};
 use serde::Deserialize;
 use serde_json::Value;
 
+#[cfg(feature = "blocking")]
+type BufFile = std::io::BufReader<std::fs::File>;
+
+#[cfg(feature = "tokio")]
+type BufFile = tokio::io::BufReader<tokio::fs::File>;
+
 /// Serde-friendly read request owned by the core crate.
 #[derive(Debug, Deserialize)]
 pub struct ReadRequest {
@@ -20,18 +26,6 @@ pub struct ReadRequest {
     pub offset: usize,
     #[serde(default)]
     pub limit: Option<usize>,
-}
-
-impl ReadRequest {
-    /// Parses a raw JSON tool payload into a read request.
-    ///
-    /// # Errors
-    /// - Returns [`ToolError::Json`] when the JSON payload cannot be deserialized
-    ///   into a [`ReadRequest`] (e.g., missing required `file_path` field or
-    ///   invalid field types).
-    pub fn parse(args: Value) -> ToolResult<Self> {
-        serde_json::from_value(args).map_err(ToolError::from)
-    }
 }
 
 /// Runtime settings applied to read requests.
@@ -49,9 +43,15 @@ pub struct ReadSettings {
     line_numbers: bool,
 }
 
-impl Default for ReadSettings {
-    fn default() -> Self {
-        Self::new()
+impl ReadRequest {
+    /// Parses a raw JSON tool payload into a read request.
+    ///
+    /// # Errors
+    /// - Returns [`ToolError::Json`] when the JSON payload cannot be deserialized
+    ///   into a [`ReadRequest`] (e.g., missing required `file_path` field or
+    ///   invalid field types).
+    pub fn parse(args: Value) -> ToolResult<Self> {
+        serde_json::from_value(args).map_err(ToolError::from)
     }
 }
 
@@ -182,10 +182,11 @@ impl ReadSettings {
     }
 }
 
-#[cfg(feature = "blocking")]
-type BufFile = std::io::BufReader<std::fs::File>;
-#[cfg(feature = "tokio")]
-type BufFile = tokio::io::BufReader<tokio::fs::File>;
+impl Default for ReadSettings {
+    fn default() -> Self {
+        Self::new()
+    }
+}
 
 /// Reads a range of lines from a file using buffered, streaming I/O with
 /// SIMD-accelerated newline scanning.
@@ -470,6 +471,40 @@ fn emit_line(
     }
 }
 
+fn ensure_max_line_length(max_line_length: usize) -> ToolResult<()> {
+    use crate::util::MIN_LINE_LENGTH;
+    if max_line_length < MIN_LINE_LENGTH {
+        return Err(ToolError::validation_for(
+            "max_line_length",
+            format!("max_line_length must be >= {}", MIN_LINE_LENGTH),
+        ));
+    }
+    Ok(())
+}
+
+fn ensure_read_limits(default_limit: usize, max_limit: usize) -> ToolResult<()> {
+    use crate::util::MIN_LIMIT;
+    if default_limit < MIN_LIMIT {
+        return Err(ToolError::validation_for(
+            "default_limit",
+            format!("default_limit must be >= {}", MIN_LIMIT),
+        ));
+    }
+    if max_limit < MIN_LIMIT {
+        return Err(ToolError::validation_for(
+            "max_limit",
+            format!("max_limit must be >= {}", MIN_LIMIT),
+        ));
+    }
+    if default_limit > max_limit {
+        return Err(ToolError::validation_for(
+            "default_limit",
+            format!("default_limit ({default_limit}) must be <= max_limit ({max_limit})"),
+        ));
+    }
+    Ok(())
+}
+
 /// Processes a single line, appending it to output with optional line numbers.
 ///
 /// Const-generic over `LINE_NUMBERS` so the compiler can eliminate the
@@ -509,16 +544,6 @@ fn process_line<const LINE_NUMBERS: bool>(
     *lines_output += 1;
 }
 
-/// Strips trailing CR from a line (for CRLF handling).
-#[inline]
-fn strip_cr(line: &[u8]) -> &[u8] {
-    if line.last() == Some(&b'\r') {
-        &line[..line.len() - 1]
-    } else {
-        line
-    }
-}
-
 #[inline]
 fn append_line_content(output: &mut String, content: &str, max_line_length: usize) {
     let (display_content, was_truncated) = truncate_line_with_ellipsis(content, max_line_length);
@@ -528,38 +553,14 @@ fn append_line_content(output: &mut String, content: &str, max_line_length: usiz
     }
 }
 
-fn ensure_read_limits(default_limit: usize, max_limit: usize) -> ToolResult<()> {
-    use crate::util::MIN_LIMIT;
-    if default_limit < MIN_LIMIT {
-        return Err(ToolError::validation_for(
-            "default_limit",
-            format!("default_limit must be >= {}", MIN_LIMIT),
-        ));
+/// Strips trailing CR from a line (for CRLF handling).
+#[inline]
+fn strip_cr(line: &[u8]) -> &[u8] {
+    if line.last() == Some(&b'\r') {
+        &line[..line.len() - 1]
+    } else {
+        line
     }
-    if max_limit < MIN_LIMIT {
-        return Err(ToolError::validation_for(
-            "max_limit",
-            format!("max_limit must be >= {}", MIN_LIMIT),
-        ));
-    }
-    if default_limit > max_limit {
-        return Err(ToolError::validation_for(
-            "default_limit",
-            format!("default_limit ({default_limit}) must be <= max_limit ({max_limit})"),
-        ));
-    }
-    Ok(())
-}
-
-fn ensure_max_line_length(max_line_length: usize) -> ToolResult<()> {
-    use crate::util::MIN_LINE_LENGTH;
-    if max_line_length < MIN_LINE_LENGTH {
-        return Err(ToolError::validation_for(
-            "max_line_length",
-            format!("max_line_length must be >= {}", MIN_LINE_LENGTH),
-        ));
-    }
-    Ok(())
 }
 
 #[cfg(test)]

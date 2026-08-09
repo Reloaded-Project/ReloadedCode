@@ -23,6 +23,7 @@
 //! [`AllowedPathResolver`]: reloaded_code_core::path::AllowedPathResolver
 //! [`Tool`]: serdes_ai::tools::Tool
 
+use crate::convert::{core_error_to_serdes, to_serdes_result};
 use async_trait::async_trait;
 use reloaded_code_core::ToolContext;
 use reloaded_code_core::context::{PathMode, ToolPrompt};
@@ -30,8 +31,6 @@ use reloaded_code_core::path::PathResolver;
 use reloaded_code_core::tool_metadata::read as read_meta;
 use reloaded_code_core::tools::{ReadRequest, ReadSettings, read_file};
 use serdes_ai::tools::{RunContext, SchemaBuilder, Tool, ToolDefinition, ToolResult};
-
-use crate::convert::{core_error_to_serdes, to_serdes_result};
 
 /// Tool for reading file contents with optional line ranges and numbers.
 ///

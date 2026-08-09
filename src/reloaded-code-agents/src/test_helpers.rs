@@ -50,6 +50,17 @@ pub(crate) fn allow_tools(names: &[&str]) -> IndexMap<String, PermissionRule> {
         .collect()
 }
 
+/// Return a deny-all rule for task execution.
+///
+/// # Returns
+/// A single-entry map keyed by [`task_meta::NAME`] with `PermissionRule::Action(Deny)`.
+pub(crate) fn deny_task() -> IndexMap<String, PermissionRule> {
+    IndexMap::from([(
+        task_meta::NAME.into(),
+        PermissionRule::Action(PermissionAction::Deny),
+    )])
+}
+
 /// Build task-scoped pattern permissions.
 ///
 /// Patterns are wrapped under the task metadata name so they apply to task execution.
@@ -67,15 +78,4 @@ pub(crate) fn pattern_task(
         map.insert(pattern.to_string(), *action);
     }
     IndexMap::from([(task_meta::NAME.into(), PermissionRule::Pattern(map))])
-}
-
-/// Return a deny-all rule for task execution.
-///
-/// # Returns
-/// A single-entry map keyed by [`task_meta::NAME`] with `PermissionRule::Action(Deny)`.
-pub(crate) fn deny_task() -> IndexMap<String, PermissionRule> {
-    IndexMap::from([(
-        task_meta::NAME.into(),
-        PermissionRule::Action(PermissionAction::Deny),
-    )])
 }

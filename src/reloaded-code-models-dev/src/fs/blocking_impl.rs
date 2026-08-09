@@ -3,6 +3,12 @@
 use std::io::{ErrorKind, Read as _};
 use std::path::Path;
 
+/// Creates a directory and all parent directories.
+#[inline]
+pub(crate) fn create_dir_all(path: impl AsRef<Path>) -> std::io::Result<()> {
+    std::fs::create_dir_all(path)
+}
+
 /// Reads a file into memory in one pre-sized allocation.
 ///
 /// # Safety
@@ -27,10 +33,4 @@ pub(crate) fn read(path: impl AsRef<Path>) -> std::io::Result<Box<[u8]>> {
     }
 
     Ok(super::assume_init_u8_slice(bytes))
-}
-
-/// Creates a directory and all parent directories.
-#[inline]
-pub(crate) fn create_dir_all(path: impl AsRef<Path>) -> std::io::Result<()> {
-    std::fs::create_dir_all(path)
 }

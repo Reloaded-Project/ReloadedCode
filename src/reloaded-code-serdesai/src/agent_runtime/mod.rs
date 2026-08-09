@@ -8,13 +8,6 @@
 //! - [`AgentBuildContext`] - Shared context that builds runnable agents by name.
 //! - [`AgentBuildError`] - Build-time failures.
 
-mod build;
-mod model;
-mod provider_bridge;
-mod task;
-#[cfg(test)]
-mod test_stubs;
-
 pub use build::AgentBuildError;
 pub use reloaded_code_agents::{
     AgentDefaults, AgentRuntime, AgentRuntimeBuilder, ModelResolutionError, ResolvedModel,
@@ -22,3 +15,10 @@ pub use reloaded_code_agents::{
 };
 pub use task::AgentBuildContext;
 pub(crate) use task::{TaskBuildContext, build_agent};
+
+mod build;
+mod model;
+mod provider_bridge;
+mod task;
+#[cfg(test)]
+mod test_stubs;

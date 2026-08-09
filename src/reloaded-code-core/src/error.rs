@@ -2,6 +2,9 @@
 
 use thiserror::Error;
 
+/// Result type alias for tool operations.
+pub type ToolResult<T> = Result<T, ToolError>;
+
 /// Unified error type for all tool operations.
 #[derive(Debug, Error)]
 pub enum ToolError {
@@ -65,15 +68,6 @@ pub enum ToolError {
     },
 }
 
-/// Result type alias for tool operations.
-pub type ToolResult<T> = Result<T, ToolError>;
-
-impl From<globset::Error> for ToolError {
-    fn from(e: globset::Error) -> Self {
-        ToolError::InvalidPattern(e.to_string())
-    }
-}
-
 impl ToolError {
     /// Create a validation error without a specific field.
     #[must_use]
@@ -91,5 +85,11 @@ impl ToolError {
             field: Some(field.into()),
             message: message.into(),
         }
+    }
+}
+
+impl From<globset::Error> for ToolError {
+    fn from(e: globset::Error) -> Self {
+        ToolError::InvalidPattern(e.to_string())
     }
 }

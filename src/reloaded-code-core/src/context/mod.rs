@@ -37,22 +37,23 @@
 //! }
 //! ```
 
-mod tool_prompt;
-
 pub use tool_prompt::{PathMode, ToolPrompt};
 pub(crate) use tool_prompt::{ToolPromptFacts, COMMON_RULES_HEADER, COMMON_RULES_SECTION_MAX_SIZE};
 
+mod tool_prompt;
+
+/// GitHub CLI context - gh command usage guidance.
+///
+/// Supplemental context for agents using the GitHub CLI via the `bash` tool.
+/// Include via [`SystemPromptBuilder::add_context`].
+///
+/// [`SystemPromptBuilder::add_context`]: crate::SystemPromptBuilder::add_context
+pub const GITHUB_CLI: &str = include_str!("github_cli.txt");
 /// Git workflow context - commit creation guidance.
 ///
 /// Supplemental context for agents using git via the `bash` tool.
 /// Include via [`SystemPromptBuilder::add_context`](crate::SystemPromptBuilder::add_context).
 pub const GIT_WORKFLOW: &str = include_str!("git_workflow.txt");
-
-/// GitHub CLI context - gh command usage guidance.
-///
-/// Supplemental context for agents using the GitHub CLI via the `bash` tool.
-/// Include via [`SystemPromptBuilder::add_context`](crate::SystemPromptBuilder::add_context).
-pub const GITHUB_CLI: &str = include_str!("github_cli.txt");
 
 /// Trait for tools that provide guidance for system prompts.
 ///

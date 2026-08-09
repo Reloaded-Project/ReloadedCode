@@ -26,6 +26,8 @@
 
 use crate::convert::{core_error_to_serdes, to_serdes_result};
 use async_trait::async_trait;
+#[cfg(all(feature = "linux-bubblewrap", target_os = "linux"))]
+use reloaded_code_bubblewrap::profile::{NetworkPolicy, Profile};
 use reloaded_code_core::context::{ToolContext, ToolPrompt};
 use reloaded_code_core::permissions::Ruleset;
 use reloaded_code_core::tool_metadata::bash as bash_meta;
@@ -33,9 +35,6 @@ use reloaded_code_core::tools::{BashExecutionMode, BashRequest, BashSettings, ex
 use serdes_ai::tools::{RunContext, SchemaBuilder, Tool, ToolDefinition, ToolResult};
 use std::path::PathBuf;
 use std::sync::Arc;
-
-#[cfg(all(feature = "linux-bubblewrap", target_os = "linux"))]
-use reloaded_code_bubblewrap::profile::{NetworkPolicy, Profile};
 
 /// Tool for executing shell commands.
 ///
@@ -53,12 +52,6 @@ pub struct BashTool {
     default_workdir: Option<PathBuf>,
     /// Optional permission ruleset for command access control.
     permission: Option<Arc<Ruleset>>,
-}
-
-impl Default for BashTool {
-    fn default() -> Self {
-        Self::host()
-    }
 }
 
 impl BashTool {
@@ -191,6 +184,12 @@ impl BashTool {
     }
 }
 
+impl Default for BashTool {
+    fn default() -> Self {
+        Self::host()
+    }
+}
+
 #[async_trait]
 impl<Deps: Send + Sync> Tool<Deps> for BashTool {
     fn definition(&self) -> ToolDefinition {
@@ -226,6 +225,19 @@ impl<Deps: Send + Sync> Tool<Deps> for BashTool {
     }
 }
 
+impl ToolContext for BashTool {
+    fn name(&self) -> &'static str {
+        bash_meta::NAME
+    }
+
+    fn context(&self) -> ToolPrompt {
+        ToolPrompt::Bash {
+            network_disabled: bash_prompt_network_disabled(&self.mode),
+            sandboxed: bash_prompt_sandboxed(&self.mode),
+        }
+    }
+}
+
 #[inline]
 fn bash_prompt_network_disabled(mode: &BashExecutionMode) -> bool {
     #[cfg(all(feature = "linux-bubblewrap", target_os = "linux"))]
@@ -255,19 +267,6 @@ fn bash_prompt_sandboxed(mode: &BashExecutionMode) -> bool {
     {
         let _ = mode;
         false
-    }
-}
-
-impl ToolContext for BashTool {
-    fn name(&self) -> &'static str {
-        bash_meta::NAME
-    }
-
-    fn context(&self) -> ToolPrompt {
-        ToolPrompt::Bash {
-            network_disabled: bash_prompt_network_disabled(&self.mode),
-            sandboxed: bash_prompt_sandboxed(&self.mode),
-        }
     }
 }
 

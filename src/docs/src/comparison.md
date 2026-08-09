@@ -41,7 +41,7 @@ reloaded-code is for embedding agent tools into your own applications.
   (`name`, `mode`, `description`, `model`, `permission`, `tool_settings`).
   Agent files written for [OpenCode] are drop-in compatible (add
   explicit permissions). See [Agents](agents.md) for the full format
-  reference and [Migrating from OpenCode](migration.md) for the differences.
+  reference and [Migrating from OpenCode] for the differences.
 
 - **Core tools** - both provide `read`, `write`, `edit`, `glob`, `grep`,
   `bash`, and `webfetch`. See [Tools](tools.md) for the complete tool
@@ -65,7 +65,7 @@ reloaded-code uses **default-deny**: every tool is blocked unless you
 explicitly allow it in the agent frontmatter. There is no interactive approval
 flow because there is no user to prompt - the agent runs unattended.
 
-See [Migrating from OpenCode](migration.md) for a side-by-side YAML example,
+See [Migrating from OpenCode] for a side-by-side YAML example,
 a [portable default-deny configuration](migration.md#portable-default-deny),
 and a migration checklist.
 
@@ -123,7 +123,7 @@ configuration. See [Sandboxing](sandboxing.md) for the full guide.
 ---
 
 Ready to get started? See [Getting Started](getting-started.md) or
-[Migrating from OpenCode](migration.md).
+[Migrating from OpenCode].
 
 [OpenCode]: https://opencode.ai/
 [SerdesAI]: https://crates.io/crates/serdes-ai
@@ -131,3 +131,4 @@ Ready to get started? See [Getting Started](getting-started.md) or
 [bubblewrap]: https://github.com/containers/bubblewrap
 [Bun]: https://bun.sh
 [tokio]: https://tokio.rs
+[Migrating from OpenCode]: migration.md

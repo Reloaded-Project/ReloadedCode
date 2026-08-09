@@ -10,6 +10,19 @@ use crate::tool_metadata::{
     webfetch as webfetch_meta, write as write_meta,
 };
 
+const DEFAULT_TOOLS: [ToolCatalogEntry; 10] = [
+    ToolCatalogEntry::new(read_meta::NAME, ToolCatalogKind::Read),
+    ToolCatalogEntry::new(write_meta::NAME, ToolCatalogKind::Write),
+    ToolCatalogEntry::new(edit_meta::NAME, ToolCatalogKind::Edit),
+    ToolCatalogEntry::new(glob_meta::NAME, ToolCatalogKind::Glob),
+    ToolCatalogEntry::new(grep_meta::NAME, ToolCatalogKind::Grep),
+    ToolCatalogEntry::new(bash_meta::NAME, ToolCatalogKind::Bash),
+    ToolCatalogEntry::new(webfetch_meta::NAME, ToolCatalogKind::WebFetch),
+    ToolCatalogEntry::new(todo_read_meta::NAME, ToolCatalogKind::TodoRead),
+    ToolCatalogEntry::new(todo_write_meta::NAME, ToolCatalogKind::TodoWrite),
+    ToolCatalogEntry::new(task_meta::NAME, ToolCatalogKind::Task),
+];
+
 /// One tool an integration can provide.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ToolCatalogEntry {
@@ -17,14 +30,6 @@ pub struct ToolCatalogEntry {
     pub name: &'static str,
     /// Which tool this is.
     pub kind: ToolCatalogKind,
-}
-
-impl ToolCatalogEntry {
-    /// Creates a tool entry from its name and kind.
-    #[must_use]
-    pub const fn new(name: &'static str, kind: ToolCatalogKind) -> Self {
-        Self { name, kind }
-    }
 }
 
 /// Standard and custom tool kinds understood by reloaded-code adapters.
@@ -55,18 +60,13 @@ pub enum ToolCatalogKind {
     Custom,
 }
 
-const DEFAULT_TOOLS: [ToolCatalogEntry; 10] = [
-    ToolCatalogEntry::new(read_meta::NAME, ToolCatalogKind::Read),
-    ToolCatalogEntry::new(write_meta::NAME, ToolCatalogKind::Write),
-    ToolCatalogEntry::new(edit_meta::NAME, ToolCatalogKind::Edit),
-    ToolCatalogEntry::new(glob_meta::NAME, ToolCatalogKind::Glob),
-    ToolCatalogEntry::new(grep_meta::NAME, ToolCatalogKind::Grep),
-    ToolCatalogEntry::new(bash_meta::NAME, ToolCatalogKind::Bash),
-    ToolCatalogEntry::new(webfetch_meta::NAME, ToolCatalogKind::WebFetch),
-    ToolCatalogEntry::new(todo_read_meta::NAME, ToolCatalogKind::TodoRead),
-    ToolCatalogEntry::new(todo_write_meta::NAME, ToolCatalogKind::TodoWrite),
-    ToolCatalogEntry::new(task_meta::NAME, ToolCatalogKind::Task),
-];
+impl ToolCatalogEntry {
+    /// Creates a tool entry from its name and kind.
+    #[must_use]
+    pub const fn new(name: &'static str, kind: ToolCatalogKind) -> Self {
+        Self { name, kind }
+    }
+}
 
 /// Returns the standard tool set.
 #[must_use]

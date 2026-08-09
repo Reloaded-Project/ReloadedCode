@@ -8,43 +8,21 @@ use serde_json::Value;
 use std::fmt::Write;
 use std::sync::Arc;
 
-/// Task status.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
-#[serde(rename_all = "snake_case")]
-pub enum TodoStatus {
-    /// Not yet started.
-    Pending,
-    /// Currently being worked on.
-    InProgress,
-    /// Successfully finished.
-    Completed,
-    /// Abandoned or no longer relevant.
-    Cancelled,
+/// Serde-friendly request for reading the task list, owned by the core crate.
+#[derive(Debug, Clone, Deserialize)]
+pub struct TodoReadRequest {}
+
+/// Thread-safe shared state holding the tracked task list.
+#[derive(Debug, Clone, Default)]
+pub struct TodoState {
+    todos: Arc<RwLock<Vec<Todo>>>,
 }
 
-impl TodoStatus {
-    /// Returns the status indicator icon.
-    #[inline]
-    pub const fn icon(self) -> &'static str {
-        match self {
-            Self::Pending => "[ ]",
-            Self::InProgress => "[>]",
-            Self::Completed => "[x]",
-            Self::Cancelled => "[-]",
-        }
-    }
-}
-
-/// Task priority level.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
-#[serde(rename_all = "snake_case")]
-pub enum TodoPriority {
-    /// Urgent, should be addressed first.
-    High,
-    /// Normal priority.
-    Medium,
-    /// Can be deferred.
-    Low,
+/// Serde-friendly request for replacing the task list, owned by the core crate.
+#[derive(Debug, Clone, Deserialize)]
+pub struct TodoWriteRequest {
+    /// The complete list of todos to set.
+    pub todos: Vec<Todo>,
 }
 
 /// A single task item.
@@ -60,34 +38,31 @@ pub struct Todo {
     pub priority: TodoPriority,
 }
 
-/// Thread-safe shared state for todo list.
-#[derive(Debug, Clone, Default)]
-pub struct TodoState {
-    todos: Arc<RwLock<Vec<Todo>>>,
+/// Task priority level.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum TodoPriority {
+    /// Urgent, should be addressed first.
+    High,
+    /// Normal priority.
+    Medium,
+    /// Can be deferred.
+    Low,
 }
 
-/// Serde-friendly todo-write request owned by the core crate.
-#[derive(Debug, Clone, Deserialize)]
-pub struct TodoWriteRequest {
-    /// The complete list of todos to set.
-    pub todos: Vec<Todo>,
+/// Task status.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum TodoStatus {
+    /// Not yet started.
+    Pending,
+    /// Currently being worked on.
+    InProgress,
+    /// Successfully finished.
+    Completed,
+    /// Abandoned or no longer relevant.
+    Cancelled,
 }
-
-impl TodoWriteRequest {
-    /// Parses a raw JSON tool payload into a todo-write request.
-    ///
-    /// # Errors
-    /// - Returns [`ToolError::Json`] when the JSON payload cannot be deserialized
-    ///   into a [`TodoWriteRequest`] (e.g., missing `todos` field or invalid todo
-    ///   structure).
-    pub fn parse(args: Value) -> ToolResult<Self> {
-        serde_json::from_value(args).map_err(ToolError::from)
-    }
-}
-
-/// Serde-friendly todo-read request owned by the core crate.
-#[derive(Debug, Clone, Deserialize)]
-pub struct TodoReadRequest {}
 
 impl TodoReadRequest {
     /// Parses a raw JSON tool payload into a todo-read request.
@@ -108,35 +83,37 @@ impl TodoState {
     }
 }
 
-/// Writes/replaces the todo list with new items.
-///
-/// Validates that all todos have non-empty id and content.
-///
-/// # Errors
-/// - Returns [`ToolError::Validation`] when any todo has an empty or whitespace-only `id`.
-/// - Returns [`ToolError::Validation`] when any todo has empty or whitespace-only `content`.
-pub fn write_todos(state: &TodoState, request: TodoWriteRequest) -> ToolResult<String> {
-    for todo in &request.todos {
-        if todo.id.trim().is_empty() {
-            return Err(ToolError::validation_for(
-                "todos",
-                "todo id cannot be empty",
-            ));
-        }
-        if todo.content.trim().is_empty() {
-            return Err(ToolError::validation_for(
-                "todos",
-                "todo content cannot be empty",
-            ));
-        }
+impl TodoWriteRequest {
+    /// Parses a raw JSON tool payload into a todo-write request.
+    ///
+    /// # Errors
+    /// - Returns [`ToolError::Json`] when the JSON payload cannot be deserialized
+    ///   into a [`TodoWriteRequest`] (e.g., missing `todos` field or invalid todo
+    ///   structure).
+    pub fn parse(args: Value) -> ToolResult<Self> {
+        serde_json::from_value(args).map_err(ToolError::from)
     }
-
-    let count = request.todos.len();
-    *state.todos.write() = request.todos;
-    Ok(format!("Updated todo list with {count} task(s)."))
 }
 
-/// Reads and formats the current todo list.
+impl TodoStatus {
+    /// Returns the status indicator icon.
+    #[inline]
+    pub const fn icon(self) -> &'static str {
+        match self {
+            Self::Pending => "[ ]",
+            Self::InProgress => "[>]",
+            Self::Completed => "[x]",
+            Self::Cancelled => "[-]",
+        }
+    }
+}
+
+/// Reads and formats the current list of tracked tasks.
+///
+/// # Arguments
+/// - `state`: Shared state holding the task list to read.
+/// - `_request`: Placeholder request required by the tool dispatch signature;
+///   it carries no fields.
 pub fn read_todos(state: &TodoState, _request: TodoReadRequest) -> String {
     let todos = state.todos.read();
 
@@ -158,6 +135,38 @@ pub fn read_todos(state: &TodoState, _request: TodoReadRequest) -> String {
 
     output.truncate(output.trim_end().len());
     output
+}
+
+/// Replaces the current task list with new items.
+///
+/// Validates that all todos have non-empty id and content.
+///
+/// # Arguments
+/// - `state`: Shared state whose task list is replaced by the new items.
+/// - `request`: Request carrying the new list of todos to store.
+///
+/// # Errors
+/// - Returns [`ToolError::Validation`] when any task has an empty or whitespace-only `id`.
+/// - Returns [`ToolError::Validation`] when any task has empty or whitespace-only `content`.
+pub fn write_todos(state: &TodoState, request: TodoWriteRequest) -> ToolResult<String> {
+    for todo in &request.todos {
+        if todo.id.trim().is_empty() {
+            return Err(ToolError::validation_for(
+                "todos",
+                "todo id cannot be empty",
+            ));
+        }
+        if todo.content.trim().is_empty() {
+            return Err(ToolError::validation_for(
+                "todos",
+                "todo content cannot be empty",
+            ));
+        }
+    }
+
+    let count = request.todos.len();
+    *state.todos.write() = request.todos;
+    Ok(format!("Updated todo list with {count} task(s)."))
 }
 
 #[cfg(test)]

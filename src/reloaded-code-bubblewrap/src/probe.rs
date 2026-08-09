@@ -13,10 +13,10 @@ use std::process::{Command, Output, Stdio};
 use std::sync::Arc;
 use std::sync::OnceLock;
 
-/// A no-op shell command used as the probe payload.
-const PROBE_COMMAND: &str = ":";
 /// Sentinel argument appended to the probe command to distinguish its logs.
 pub(crate) const PROBE_ARG0: &str = "__reloaded_code_bwrap_probe__";
+/// A no-op shell command used as the probe payload.
+const PROBE_COMMAND: &str = ":";
 /// Absolute paths checked when `PATH` lookups for `bash`/`sh` yield nothing.
 const SHELL_CANDIDATES: &[&str] = &[
     "/run/current-system/sw/bin/bash",
@@ -38,6 +38,18 @@ enum LinuxBwrapBackend {
     MissingBinary { reason: Box<str> },
     /// `bwrap` exists but the environment cannot run sandboxes (e.g. missing namespaces).
     Unusable { reason: Box<str> },
+}
+
+/// Returns the first shell binary for which `classify` returns [`Some`],
+/// checking `PATH` first then the hardcoded [`SHELL_CANDIDATES`].
+///
+/// On success the host path and the classifier's return value are yielded
+/// together so the caller need not re-classify.
+pub(crate) fn first_shell_candidate_with<F, R>(mut classify: F) -> Option<(Box<Path>, R)>
+where
+    F: FnMut(&Path) -> Option<R>,
+{
+    first_shell_candidate_with_in(env::var_os("PATH").as_deref(), &mut classify)
 }
 
 /// Returns whether `bwrap` is usable on this host.
@@ -91,93 +103,6 @@ pub(crate) fn resolve_backend_or_error_for(
     }
 }
 
-fn profile_name(preset: Option<Preset>) -> &'static str {
-    match preset {
-        Some(Preset::PublicBot) => "PublicBot",
-        Some(Preset::TrustedMaintenance) => "TrustedMaintenance",
-        None => "Custom",
-    }
-}
-
-#[inline]
-fn find_binary_on_path_in(name: &str, path: Option<&OsStr>) -> Option<Box<Path>> {
-    let path = path?;
-    for dir in env::split_paths(path) {
-        if !dir.is_absolute() || dir.as_os_str().is_empty() {
-            continue;
-        }
-        let candidate = dir.join(name);
-        if candidate.is_file() {
-            return Some(candidate.into_boxed_path());
-        }
-    }
-    None
-}
-
-/// Returns the first shell binary for which `classify` returns [`Some`],
-/// checking `PATH` first then the hardcoded [`SHELL_CANDIDATES`].
-///
-/// On success the host path and the classifier's return value are yielded
-/// together so the caller need not re-classify.
-pub(crate) fn first_shell_candidate_with<F, R>(mut classify: F) -> Option<(Box<Path>, R)>
-where
-    F: FnMut(&Path) -> Option<R>,
-{
-    first_shell_candidate_with_in(env::var_os("PATH").as_deref(), &mut classify)
-}
-
-fn first_shell_candidate_with_in<F, R>(
-    env_path: Option<&OsStr>,
-    classify: &mut F,
-) -> Option<(Box<Path>, R)>
-where
-    F: FnMut(&Path) -> Option<R>,
-{
-    let mut seen = HashSet::with_capacity(10);
-
-    for name in ["bash", "sh"] {
-        if let Some(shell_path) = find_binary_on_path_in(name, env_path) {
-            if let Some(result) = classify_shell_candidate(classify, &mut seen, shell_path) {
-                return Some(result);
-            }
-        }
-    }
-
-    for candidate in SHELL_CANDIDATES {
-        let candidate_path = PathBuf::from(candidate);
-        if candidate_path.is_file() {
-            if let Some(result) =
-                classify_shell_candidate(classify, &mut seen, candidate_path.into_boxed_path())
-            {
-                return Some(result);
-            }
-        }
-    }
-
-    None
-}
-
-#[inline]
-fn classify_shell_candidate<F, R>(
-    classify: &mut F,
-    seen: &mut HashSet<Box<Path>>,
-    path: Box<Path>,
-) -> Option<(Box<Path>, R)>
-where
-    F: FnMut(&Path) -> Option<R>,
-{
-    let path = normalize_path(path.as_ref());
-    if !seen.insert(path.clone()) {
-        return None;
-    }
-    classify(path.as_ref()).map(|result| (path, result))
-}
-
-#[inline]
-fn resolve_host_shell_in(path: Option<&OsStr>) -> Option<Box<Path>> {
-    first_shell_candidate_with_in(path, &mut |_| Some(())).map(|(path, _)| path)
-}
-
 fn probe_backend() -> LinuxBwrapBackend {
     // Cache keyed on PATH: a changed PATH invalidates the result.
     #[allow(clippy::type_complexity)]
@@ -198,6 +123,14 @@ fn probe_backend() -> LinuxBwrapBackend {
     let backend = probe_backend_uncached(path.as_deref());
     *cache.write() = Some((path, backend.clone()));
     backend
+}
+
+fn profile_name(preset: Option<Preset>) -> &'static str {
+    match preset {
+        Some(Preset::PublicBot) => "PublicBot",
+        Some(Preset::TrustedMaintenance) => "TrustedMaintenance",
+        None => "Custom",
+    }
 }
 
 /// Checks `bwrap` without using the cache.
@@ -268,6 +201,73 @@ fn probe_failure_reason(output: &Output, fallback: &str) -> Box<str> {
     } else {
         trimmed.to_owned().into_boxed_str()
     }
+}
+
+#[inline]
+fn resolve_host_shell_in(path: Option<&OsStr>) -> Option<Box<Path>> {
+    first_shell_candidate_with_in(path, &mut |_| Some(())).map(|(path, _)| path)
+}
+
+fn first_shell_candidate_with_in<F, R>(
+    env_path: Option<&OsStr>,
+    classify: &mut F,
+) -> Option<(Box<Path>, R)>
+where
+    F: FnMut(&Path) -> Option<R>,
+{
+    let mut seen = HashSet::with_capacity(10);
+
+    for name in ["bash", "sh"] {
+        if let Some(shell_path) = find_binary_on_path_in(name, env_path) {
+            if let Some(result) = classify_shell_candidate(classify, &mut seen, shell_path) {
+                return Some(result);
+            }
+        }
+    }
+
+    for candidate in SHELL_CANDIDATES {
+        let candidate_path = PathBuf::from(candidate);
+        if candidate_path.is_file() {
+            if let Some(result) =
+                classify_shell_candidate(classify, &mut seen, candidate_path.into_boxed_path())
+            {
+                return Some(result);
+            }
+        }
+    }
+
+    None
+}
+
+#[inline]
+fn classify_shell_candidate<F, R>(
+    classify: &mut F,
+    seen: &mut HashSet<Box<Path>>,
+    path: Box<Path>,
+) -> Option<(Box<Path>, R)>
+where
+    F: FnMut(&Path) -> Option<R>,
+{
+    let path = normalize_path(path.as_ref());
+    if !seen.insert(path.clone()) {
+        return None;
+    }
+    classify(path.as_ref()).map(|result| (path, result))
+}
+
+#[inline]
+fn find_binary_on_path_in(name: &str, path: Option<&OsStr>) -> Option<Box<Path>> {
+    let path = path?;
+    for dir in env::split_paths(path) {
+        if !dir.is_absolute() || dir.as_os_str().is_empty() {
+            continue;
+        }
+        let candidate = dir.join(name);
+        if candidate.is_file() {
+            return Some(candidate.into_boxed_path());
+        }
+    }
+    None
 }
 
 #[cfg(test)]

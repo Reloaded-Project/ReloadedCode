@@ -10,12 +10,12 @@
 //! # Test Cases
 //!
 //! ```text
-//! | Case          | Content   | Path depth | What it tests                         |
-//! |---------------|-----------|------------|---------------------------------------|
-//! | small_write   | corpus S  | 1          | Small write to flat directory         |
-//! | medium_write  | corpus M  | 1          | Medium write to flat directory        |
-//! | large_write   | corpus L  | 1          | Large write to flat directory         |
-//! | nested_dirs   | corpus S  | 4 (a/b/c/) | Write creating nested directories    |
+//! | Case         | Content  | Path depth | What it tests                     |
+//! | ------------ | -------- | ---------- | --------------------------------- |
+//! | small_write  | corpus S | 1          | Small write to flat directory     |
+//! | medium_write | corpus M | 1          | Medium write to flat directory    |
+//! | large_write  | corpus L | 1          | Large write to flat directory     |
+//! | nested_dirs  | corpus S | 4 (a/b/c/) | Write creating nested directories |
 //! ```
 //!
 //! # Running Benchmarks
@@ -25,8 +25,9 @@
 //! cargo bench -p reloaded-code-core --no-default-features --features blocking --bench tools_write -- --sample-size 10 --measurement-time 1 --warm-up-time 1
 //! ```
 
-#[path = "common/mod.rs"]
-mod common;
+criterion_group!(benches, bench_write_file);
+
+criterion_main!(benches);
 
 use common::corpus_content;
 use common::CorpusSize;
@@ -35,6 +36,9 @@ use criterion::{criterion_group, criterion_main, BatchSize, BenchmarkId, Criteri
 use reloaded_code_core::path::AbsolutePathResolver;
 use reloaded_code_core::tools::{write_file, WriteRequest, WriteSettings};
 use tempfile::TempDir;
+
+#[path = "common/mod.rs"]
+mod common;
 
 fn bench_write_file(c: &mut Criterion) {
     let mut group = c.benchmark_group("write_file");
@@ -91,6 +95,3 @@ fn bench_write_file(c: &mut Criterion) {
 
     group.finish();
 }
-
-criterion_group!(benches, bench_write_file);
-criterion_main!(benches);

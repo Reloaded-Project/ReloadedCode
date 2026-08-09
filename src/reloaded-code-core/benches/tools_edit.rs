@@ -10,13 +10,13 @@
 //! # Test Cases
 //!
 //! ```text
-//! | Case             | Source    | Occurrences | replace_all | What it tests                      |
-//! |------------------|-----------|-------------|-------------|------------------------------------|
-//! | rename_string    | corpus S  | 1           | false       | Rename a string literal            |
-//! | change_type      | corpus M  | 1           | false       | Change a type annotation           |
-//! | update_constant  | corpus L  | 1           | false       | Update a numeric constant          |
-//! | replace_all      | corpus L  | many        | true        | Bulk rename across many occurrences|
-//! | not_found        | corpus M  | 0           | false       | Error path: string not found       |
+//! | Case            | Source   | Occurrences | replace_all | What it tests                       |
+//! | --------------- | -------- | ----------- | ----------- | ----------------------------------- |
+//! | rename_string   | corpus S | 1           | false       | Rename a string literal             |
+//! | change_type     | corpus M | 1           | false       | Change a type annotation            |
+//! | update_constant | corpus L | 1           | false       | Update a numeric constant           |
+//! | replace_all     | corpus L | many        | true        | Bulk rename across many occurrences |
+//! | not_found       | corpus M | 0           | false       | Error path: string not found        |
 //! ```
 //!
 //! # Running Benchmarks
@@ -26,8 +26,9 @@
 //! cargo bench -p reloaded-code-core --no-default-features --features blocking --bench tools_edit -- --sample-size 10 --measurement-time 1 --warm-up-time 1
 //! ```
 
-#[path = "common/mod.rs"]
-mod common;
+criterion_group!(benches, bench_edit_file);
+
+criterion_main!(benches);
 
 use common::corpus_content;
 use common::CorpusSize;
@@ -37,12 +38,8 @@ use reloaded_code_core::path::AbsolutePathResolver;
 use reloaded_code_core::tools::{edit_file, EditRequest, EditSettings};
 use tempfile::TempDir;
 
-fn create_temp_file(content: &str) -> (TempDir, String) {
-    let temp_dir = TempDir::new().unwrap();
-    let file_path = temp_dir.path().join("test_input.rs");
-    std::fs::write(&file_path, content).unwrap();
-    (temp_dir, file_path.to_str().unwrap().to_owned())
-}
+#[path = "common/mod.rs"]
+mod common;
 
 fn bench_edit_file(c: &mut Criterion) {
     let mut group = c.benchmark_group("edit_file");
@@ -177,5 +174,9 @@ fn bench_edit_file(c: &mut Criterion) {
     group.finish();
 }
 
-criterion_group!(benches, bench_edit_file);
-criterion_main!(benches);
+fn create_temp_file(content: &str) -> (TempDir, String) {
+    let temp_dir = TempDir::new().unwrap();
+    let file_path = temp_dir.path().join("test_input.rs");
+    std::fs::write(&file_path, content).unwrap();
+    (temp_dir, file_path.to_str().unwrap().to_owned())
+}

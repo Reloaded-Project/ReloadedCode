@@ -25,14 +25,10 @@ use serdes_ai_models::OpenAIChatModel;
 use std::fmt::Write;
 use std::sync::Arc;
 
-const MODEL_ID: &str = "hf:zai-org/GLM-4.7-Flash";
-const BASE_URL: &str = "https://api.synthetic.new/openai/v1";
 /// Fallback API key if env var is not set. Leave empty to require env var.
 const API_KEY: &str = "";
-
-fn get_api_key() -> String {
-    std::env::var("OPENAI_API_KEY").unwrap_or_else(|_| API_KEY.to_string())
-}
+const BASE_URL: &str = "https://api.synthetic.new/openai/v1";
+const MODEL_ID: &str = "hf:zai-org/GLM-4.7-Flash";
 
 // -- Portable custom tool (depends only on reloaded-code-core) --
 
@@ -149,4 +145,8 @@ async fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
     }
 
     Ok(())
+}
+
+fn get_api_key() -> String {
+    std::env::var("OPENAI_API_KEY").unwrap_or_else(|_| API_KEY.to_string())
 }

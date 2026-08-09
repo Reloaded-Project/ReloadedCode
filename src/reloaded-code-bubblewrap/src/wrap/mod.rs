@@ -15,12 +15,11 @@
 //! - `blocking` - enables the `blocking` submodule (sync)
 //! - `tokio` - enables the `tokio` submodule (async)
 
-pub(crate) mod command;
+pub use crate::LinuxBwrapError;
+pub use command::{wrap_command, LinuxBwrapWrappedCommand};
 
 #[cfg(feature = "blocking")]
 pub mod blocking;
+pub(crate) mod command;
 #[cfg(feature = "tokio")]
 pub mod tokio;
-
-pub use crate::LinuxBwrapError;
-pub use command::{wrap_command, LinuxBwrapWrappedCommand};

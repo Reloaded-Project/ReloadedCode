@@ -17,13 +17,13 @@
 //! - Trims leading/trailing ASCII whitespace from the body.
 //! - Preprocesses YAML before deserialization (see [`preprocessor`]).
 
-mod preprocessor;
-
 use crlf_to_lf_inplace::crlf_to_lf_inplace;
 use preprocessor::preprocess_frontmatter_yaml;
 use serde::de::DeserializeOwned;
 use serde_yaml::Value;
 use thiserror::Error;
+
+mod preprocessor;
 
 /// Parser error variants independent of file paths.
 #[derive(Debug, Error)]
@@ -57,6 +57,13 @@ pub(crate) struct AgentParseResult<T> {
     pub(crate) content: String,
 }
 
+#[derive(Clone, Copy)]
+struct FrontmatterOffsets {
+    yaml_start: usize,
+    yaml_end: usize,
+    body_start: usize,
+}
+
 /// Path-free agent parsing function.
 pub(crate) fn parse_agent<T: DeserializeOwned>(
     mut content: String,
@@ -88,6 +95,96 @@ pub(crate) fn parse_agent<T: DeserializeOwned>(
     Ok(AgentParseResult {
         data,
         content: body,
+    })
+}
+
+/// Extracts the body by mutating the original string in-place.
+/// Reuses the existing allocation and leaves only the trimmed body.
+#[inline]
+fn extract_body_inplace(mut content: String, body_start: usize) -> String {
+    if body_start >= content.len() {
+        content.clear();
+        return content;
+    }
+
+    let len = content.len();
+    let bytes = content.as_bytes();
+    let mut start_offset = body_start;
+    let mut end_offset = len;
+
+    // UTF-8 byte classes:
+    // | Range       | Meaning                  | `is_ascii_whitespace()`  |
+    // |-------------|--------------------------|--------------------------|
+    // | `0x00..=7F` | ASCII / single-byte UTF-8| can be true              |
+    // | `0x80..=BF` | UTF-8 continuation byte  | always false             |
+    // | `0xC2..=F4` | UTF-8 leading byte       | always false             |
+    // Therefore ASCII byte-wise trimming cannot cut through a multibyte code point.
+    while start_offset < len && bytes[start_offset].is_ascii_whitespace() {
+        start_offset += 1;
+    }
+    while end_offset > start_offset && bytes[end_offset - 1].is_ascii_whitespace() {
+        end_offset -= 1;
+    }
+
+    debug_assert!(content.is_char_boundary(body_start));
+    debug_assert!(content.is_char_boundary(start_offset));
+    debug_assert!(content.is_char_boundary(end_offset));
+
+    let body_len = end_offset - start_offset;
+    if start_offset == 0 && body_len == len {
+        return content;
+    }
+
+    unsafe {
+        let vec = content.as_mut_vec();
+        core::ptr::copy(vec.as_ptr().add(start_offset), vec.as_mut_ptr(), body_len);
+        vec.set_len(body_len);
+    }
+
+    content
+}
+
+#[inline]
+fn find_frontmatter_offsets(content: &str) -> Option<FrontmatterOffsets> {
+    let bom_len = if content.starts_with('\u{FEFF}') {
+        '\u{FEFF}'.len_utf8()
+    } else {
+        0
+    };
+    let start = &content[bom_len..];
+    if !start.starts_with("---") {
+        return None;
+    }
+
+    // Byte index after the opening "---" delimiter
+    let after_opener = bom_len + 3;
+    let tail = &content[after_opener..];
+    let end_offset = tail.find("\n---")?;
+    // Byte index of the newline before the closing "---"
+    let closing_newline = after_opener + end_offset;
+    let yaml_end = closing_newline;
+
+    let yaml_start = tail
+        .find('\n')
+        .map(|n| after_opener + n + 1)
+        .unwrap_or(after_opener);
+
+    // Byte index at the start of the closing "---" delimiter
+    let closing_start = closing_newline + 1;
+    // Byte index after the closing "---" delimiter
+    let after_closing = closing_start + 3;
+    let mut body_start = after_closing;
+    if after_closing < content.len() {
+        let rest = &content.as_bytes()[after_closing..];
+        if rest.starts_with(b"\n") {
+            body_start += 1;
+        }
+    }
+
+    Some(FrontmatterOffsets {
+        yaml_start: yaml_start.min(yaml_end),
+        yaml_end,
+        body_start,
     })
 }
 
@@ -146,103 +243,6 @@ fn task_rule_contains_ask(rule: &Value) -> bool {
         ),
         _ => false,
     }
-}
-
-#[derive(Clone, Copy)]
-struct FrontmatterOffsets {
-    yaml_start: usize,
-    yaml_end: usize,
-    body_start: usize,
-}
-
-#[inline]
-fn find_frontmatter_offsets(content: &str) -> Option<FrontmatterOffsets> {
-    let bom_len = if content.starts_with('\u{FEFF}') {
-        '\u{FEFF}'.len_utf8()
-    } else {
-        0
-    };
-    let start = &content[bom_len..];
-    if !start.starts_with("---") {
-        return None;
-    }
-
-    // Byte index after the opening "---" delimiter
-    let after_opener = bom_len + 3;
-    let tail = &content[after_opener..];
-    let end_offset = tail.find("\n---")?;
-    // Byte index of the newline before the closing "---"
-    let closing_newline = after_opener + end_offset;
-    let yaml_end = closing_newline;
-
-    let yaml_start = tail
-        .find('\n')
-        .map(|n| after_opener + n + 1)
-        .unwrap_or(after_opener);
-
-    // Byte index at the start of the closing "---" delimiter
-    let closing_start = closing_newline + 1;
-    // Byte index after the closing "---" delimiter
-    let after_closing = closing_start + 3;
-    let mut body_start = after_closing;
-    if after_closing < content.len() {
-        let rest = &content.as_bytes()[after_closing..];
-        if rest.starts_with(b"\n") {
-            body_start += 1;
-        }
-    }
-
-    Some(FrontmatterOffsets {
-        yaml_start: yaml_start.min(yaml_end),
-        yaml_end,
-        body_start,
-    })
-}
-
-/// Extracts the body by mutating the original string in-place.
-/// Reuses the existing allocation and leaves only the trimmed body.
-#[inline]
-fn extract_body_inplace(mut content: String, body_start: usize) -> String {
-    if body_start >= content.len() {
-        content.clear();
-        return content;
-    }
-
-    let len = content.len();
-    let bytes = content.as_bytes();
-    let mut start_offset = body_start;
-    let mut end_offset = len;
-
-    // UTF-8 byte classes:
-    // | Range       | Meaning                  | `is_ascii_whitespace()`  |
-    // |-------------|--------------------------|--------------------------|
-    // | `0x00..=7F` | ASCII / single-byte UTF-8| can be true              |
-    // | `0x80..=BF` | UTF-8 continuation byte  | always false             |
-    // | `0xC2..=F4` | UTF-8 leading byte       | always false             |
-    // Therefore ASCII byte-wise trimming cannot cut through a multibyte code point.
-    while start_offset < len && bytes[start_offset].is_ascii_whitespace() {
-        start_offset += 1;
-    }
-    while end_offset > start_offset && bytes[end_offset - 1].is_ascii_whitespace() {
-        end_offset -= 1;
-    }
-
-    debug_assert!(content.is_char_boundary(body_start));
-    debug_assert!(content.is_char_boundary(start_offset));
-    debug_assert!(content.is_char_boundary(end_offset));
-
-    let body_len = end_offset - start_offset;
-    if start_offset == 0 && body_len == len {
-        return content;
-    }
-
-    unsafe {
-        let vec = content.as_mut_vec();
-        core::ptr::copy(vec.as_ptr().add(start_offset), vec.as_mut_ptr(), body_len);
-        vec.set_len(body_len);
-    }
-
-    content
 }
 
 #[cfg(test)]

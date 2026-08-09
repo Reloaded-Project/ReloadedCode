@@ -51,6 +51,13 @@
 
 use std::borrow::Cow;
 
+struct FirstBlockScalar<'a> {
+    line_start: usize,
+    rest_start: usize,
+    key: &'a str,
+    value: &'a str,
+}
+
 /// Rewrites ambiguous frontmatter values so YAML parsing stays unambiguous.
 pub(super) fn preprocess_frontmatter_yaml(input: &str) -> Cow<'_, str> {
     if input.is_empty() {
@@ -100,13 +107,6 @@ fn convert_block_scalars(input: &str) -> Option<String> {
     }
 
     Some(out)
-}
-
-struct FirstBlockScalar<'a> {
-    line_start: usize,
-    rest_start: usize,
-    key: &'a str,
-    value: &'a str,
 }
 
 /// Finds the first line that must be rewritten and returns its offsets.

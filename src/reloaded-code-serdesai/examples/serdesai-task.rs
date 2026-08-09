@@ -21,9 +21,21 @@ use std::{
 };
 
 const AGENT_NAME: &str = "orchestrator";
-const MODEL_ID: &str = "synthetic/hf:zai-org/GLM-4.7-Flash";
 const API_KEY_NAME: &str = "SYNTHETIC_API_KEY";
 const API_KEY_VALUE: &str = ""; // <-- Set your API key here
+const MODEL_ID: &str = "synthetic/hf:zai-org/GLM-4.7-Flash";
+
+struct OpenStreamTag {
+    message_id: u32,
+    tag: &'static str,
+}
+
+struct PendingToolCall {
+    message_id: u32,
+    tool_name: String,
+    tool_call_id: Option<String>,
+    args: String,
+}
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -158,11 +170,17 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
-fn render_user_content(content: &UserContent) -> String {
-    match content {
-        UserContent::Text(text) => text.clone(),
-        UserContent::Parts(_) => serde_json::to_string_pretty(content)
-            .expect("user content serialization should succeed"),
+fn find_pending_tool_call_mut<'a>(
+    pending: &'a mut [PendingToolCall],
+    tool_call_id: Option<&str>,
+) -> Option<&'a mut PendingToolCall> {
+    // Most providers include a tool_call_id; fall back to the last pending call otherwise.
+    match tool_call_id {
+        Some(tool_call_id) => pending
+            .iter_mut()
+            .rev()
+            .find(|call| call.tool_call_id.as_deref() == Some(tool_call_id)),
+        None => pending.last_mut(),
     }
 }
 
@@ -180,11 +198,35 @@ fn log_xml(message_id: u32, tag: &str, content: &str) {
     println!("{line}");
 }
 
-fn close_stream_xml(open_tag: &mut Option<OpenStreamTag>) {
-    if let Some(tag) = open_tag.take() {
-        println!();
-        println!("</{}>", tag.tag);
+fn render_tool_input(tool_name: &str, args_text: &str) -> String {
+    match serde_json::from_str::<serde_json::Value>(args_text) {
+        Ok(args) if tool_name == "task" => render_task_input(&args),
+        Ok(args) => {
+            serde_json::to_string_pretty(&args).expect("tool args serialization should succeed")
+        }
+        Err(_) => args_text.to_string(),
     }
+}
+
+fn render_user_content(content: &UserContent) -> String {
+    match content {
+        UserContent::Text(text) => text.clone(),
+        UserContent::Parts(_) => serde_json::to_string_pretty(content)
+            .expect("user content serialization should succeed"),
+    }
+}
+
+fn take_pending_tool_call(
+    pending: &mut Vec<PendingToolCall>,
+    tool_call_id: Option<&str>,
+) -> Option<PendingToolCall> {
+    let index = match tool_call_id {
+        Some(tool_call_id) => pending
+            .iter()
+            .rposition(|call| call.tool_call_id.as_deref() == Some(tool_call_id)),
+        None => pending.len().checked_sub(1),
+    }?;
+    Some(pending.remove(index))
 }
 
 fn write_stream_delta(
@@ -211,52 +253,10 @@ fn write_stream_delta(
     let _ = io::stdout().flush();
 }
 
-struct OpenStreamTag {
-    message_id: u32,
-    tag: &'static str,
-}
-
-struct PendingToolCall {
-    message_id: u32,
-    tool_name: String,
-    tool_call_id: Option<String>,
-    args: String,
-}
-
-fn find_pending_tool_call_mut<'a>(
-    pending: &'a mut [PendingToolCall],
-    tool_call_id: Option<&str>,
-) -> Option<&'a mut PendingToolCall> {
-    // Most providers include a tool_call_id; fall back to the last pending call otherwise.
-    match tool_call_id {
-        Some(tool_call_id) => pending
-            .iter_mut()
-            .rev()
-            .find(|call| call.tool_call_id.as_deref() == Some(tool_call_id)),
-        None => pending.last_mut(),
-    }
-}
-
-fn take_pending_tool_call(
-    pending: &mut Vec<PendingToolCall>,
-    tool_call_id: Option<&str>,
-) -> Option<PendingToolCall> {
-    let index = match tool_call_id {
-        Some(tool_call_id) => pending
-            .iter()
-            .rposition(|call| call.tool_call_id.as_deref() == Some(tool_call_id)),
-        None => pending.len().checked_sub(1),
-    }?;
-    Some(pending.remove(index))
-}
-
-fn render_tool_input(tool_name: &str, args_text: &str) -> String {
-    match serde_json::from_str::<serde_json::Value>(args_text) {
-        Ok(args) if tool_name == "task" => render_task_input(&args),
-        Ok(args) => {
-            serde_json::to_string_pretty(&args).expect("tool args serialization should succeed")
-        }
-        Err(_) => args_text.to_string(),
+fn close_stream_xml(open_tag: &mut Option<OpenStreamTag>) {
+    if let Some(tag) = open_tag.take() {
+        println!();
+        println!("</{}>", tag.tag);
     }
 }
 

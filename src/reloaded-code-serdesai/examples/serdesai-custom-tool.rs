@@ -21,67 +21,22 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 const AGENT_NAME: &str = "custom-tool-demo";
-const MODEL_ID: &str = "synthetic/hf:zai-org/GLM-4.7-Flash";
 const API_KEY_NAME: &str = "SYNTHETIC_API_KEY";
 const API_KEY_VALUE: &str = ""; // <-- Set your API key here
+const MODEL_ID: &str = "synthetic/hf:zai-org/GLM-4.7-Flash";
 const PROJECT_INFO_TOOL: &str = "project_info";
-
-#[tokio::main]
-async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let agents_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("examples")
-        .join("agents")
-        .join("custom-tool");
-
-    let mut credentials = CredentialResolver::without_env();
-    if !API_KEY_VALUE.is_empty() {
-        credentials.set_override(API_KEY_NAME, API_KEY_VALUE);
-    }
-
-    // Load model catalog from models.dev (online-first with local cache fallback).
-    let load_result = ModelsDevCatalog::load().await?;
-    println!(
-        "Loaded model catalog from models.dev (source: {:?})",
-        load_result.source
-    );
-
-    let mut catalog = AgentCatalog::new();
-    AgentLoader::new().add_file(&mut catalog, agents_dir.join("custom-tool-demo.md"))?;
-
-    let workspace_root = resolve_workspace_root()?;
-    let mut tools = default_tools();
-    tools.push(ToolCatalogEntry::new(
-        PROJECT_INFO_TOOL,
-        ToolCatalogKind::Custom,
-    ));
-
-    let runtime = AgentRuntimeBuilder::new()
-        .catalog(catalog)
-        .defaults(AgentDefaults::with_model(MODEL_ID))
-        .tools(tools)
-        .custom_tool(ProjectInfoFactory)
-        .build()?;
-
-    let build_context = AgentBuildContext::new(
-        Arc::new(runtime),
-        Arc::new(load_result.catalog),
-        Arc::new(credentials),
-        Arc::from(workspace_root.as_path()),
-    );
-
-    println!("Building `{AGENT_NAME}` with portable custom tool `{PROJECT_INFO_TOOL}`.");
-    let agent = build_context.build(AGENT_NAME)?;
-    println!("Built `{AGENT_NAME}` with {} tools.", agent.tools().len());
-
-    let prompt = "Call project_info with include_examples=true, then summarize what it says in three bullets.";
-    let response = agent.run(prompt, ()).await?;
-    println!("{}", response.output());
-
-    Ok(())
-}
 
 /// Factory registered with the framework-agnostic runtime.
 struct ProjectInfoFactory;
+
+/// The portable custom tool implementation.
+///
+/// This type depends only on `reloaded-code-core`, not SerdesAI. Other framework
+/// adapters can wrap the same `CustomTool` object in their native tool trait.
+struct ProjectInfoTool {
+    workspace_root: PathBuf,
+    manifest_dir: PathBuf,
+}
 
 impl ToolContext for ProjectInfoFactory {
     fn name(&self) -> &'static str {
@@ -102,15 +57,6 @@ impl ToolFactory for ProjectInfoFactory {
             manifest_dir: PathBuf::from(env!("CARGO_MANIFEST_DIR")),
         }))
     }
-}
-
-/// The portable custom tool implementation.
-///
-/// This type depends only on `reloaded-code-core`, not SerdesAI. Other framework
-/// adapters can wrap the same `CustomTool` object in their native tool trait.
-struct ProjectInfoTool {
-    workspace_root: PathBuf,
-    manifest_dir: PathBuf,
 }
 
 impl ToolContext for ProjectInfoTool {
@@ -173,6 +119,60 @@ impl CustomTool for ProjectInfoTool {
             Ok(ToolOutput::new(lines.join("\n")))
         })
     }
+}
+
+#[tokio::main]
+async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    let agents_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("examples")
+        .join("agents")
+        .join("custom-tool");
+
+    let mut credentials = CredentialResolver::without_env();
+    if !API_KEY_VALUE.is_empty() {
+        credentials.set_override(API_KEY_NAME, API_KEY_VALUE);
+    }
+
+    // Load model catalog from models.dev (online-first with local cache fallback).
+    let load_result = ModelsDevCatalog::load().await?;
+    println!(
+        "Loaded model catalog from models.dev (source: {:?})",
+        load_result.source
+    );
+
+    let mut catalog = AgentCatalog::new();
+    AgentLoader::new().add_file(&mut catalog, agents_dir.join("custom-tool-demo.md"))?;
+
+    let workspace_root = resolve_workspace_root()?;
+    let mut tools = default_tools();
+    tools.push(ToolCatalogEntry::new(
+        PROJECT_INFO_TOOL,
+        ToolCatalogKind::Custom,
+    ));
+
+    let runtime = AgentRuntimeBuilder::new()
+        .catalog(catalog)
+        .defaults(AgentDefaults::with_model(MODEL_ID))
+        .tools(tools)
+        .custom_tool(ProjectInfoFactory)
+        .build()?;
+
+    let build_context = AgentBuildContext::new(
+        Arc::new(runtime),
+        Arc::new(load_result.catalog),
+        Arc::new(credentials),
+        Arc::from(workspace_root.as_path()),
+    );
+
+    println!("Building `{AGENT_NAME}` with portable custom tool `{PROJECT_INFO_TOOL}`.");
+    let agent = build_context.build(AGENT_NAME)?;
+    println!("Built `{AGENT_NAME}` with {} tools.", agent.tools().len());
+
+    let prompt = "Call project_info with include_examples=true, then summarize what it says in three bullets.";
+    let response = agent.run(prompt, ()).await?;
+    println!("{}", response.output());
+
+    Ok(())
 }
 
 fn list_example_files(manifest_dir: &Path) -> ToolResult<Vec<String>> {

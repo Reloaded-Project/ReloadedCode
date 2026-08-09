@@ -2,9 +2,6 @@
 
 use super::ParamMetadata;
 
-/// Canonical tool name.
-pub const NAME: &str = "write";
-
 /// Tool descriptions.
 pub mod description {
     /// Absolute-path variant.
@@ -15,7 +12,6 @@ pub mod description {
     pub const ALLOWED: &str =
         "Write a file in allowed directories. Creates parent directories and overwrites existing files.";
 }
-
 /// Parameter metadata.
 pub mod param {
     use super::ParamMetadata;
@@ -35,3 +31,6 @@ pub mod param {
     pub const CONTENT: ParamMetadata =
         ParamMetadata::new("content", "Full file contents to write.", true);
 }
+
+/// Canonical tool name.
+pub const NAME: &str = "write";

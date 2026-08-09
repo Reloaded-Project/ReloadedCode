@@ -2,33 +2,6 @@
 
 use super::ParamMetadata;
 
-/// Canonical tool name.
-pub const NAME: &str = "read";
-
-/// Default 1-based line offset.
-pub const DEFAULT_OFFSET: usize = 1;
-
-/// Default maximum lines to return.
-pub const DEFAULT_LIMIT: usize = 2000;
-
-/// Maximum characters per output line before truncation.
-pub const MAX_LINE_LENGTH: usize = 2000;
-
-/// Display hint for the line-number prefix in prompts.
-pub const LINE_PREFIX_DISPLAY: &str = "{n}: ";
-
-/// Serde-friendly default offset helper.
-#[must_use]
-pub const fn default_offset() -> usize {
-    DEFAULT_OFFSET
-}
-
-/// Serde-friendly default line limit helper.
-#[must_use]
-pub const fn default_limit() -> usize {
-    DEFAULT_LIMIT
-}
-
 /// Tool descriptions.
 pub mod description {
     /// Absolute-path variant.
@@ -51,7 +24,6 @@ pub mod description {
         }
     }
 }
-
 /// Parameter metadata.
 pub mod param {
     use super::{ParamMetadata, DEFAULT_LIMIT};
@@ -78,4 +50,27 @@ pub mod param {
         formatcp!("Maximum lines to return. Default {}.", DEFAULT_LIMIT),
         false,
     );
+}
+
+/// Default maximum lines to return.
+pub const DEFAULT_LIMIT: usize = 2000;
+/// Default 1-based line offset.
+pub const DEFAULT_OFFSET: usize = 1;
+/// Display hint for the line-number prefix in prompts.
+pub const LINE_PREFIX_DISPLAY: &str = "{n}: ";
+/// Maximum characters per output line before truncation.
+pub const MAX_LINE_LENGTH: usize = 2000;
+/// Canonical tool name.
+pub const NAME: &str = "read";
+
+/// Serde-friendly default line limit helper.
+#[must_use]
+pub const fn default_limit() -> usize {
+    DEFAULT_LIMIT
+}
+
+/// Serde-friendly default offset helper.
+#[must_use]
+pub const fn default_offset() -> usize {
+    DEFAULT_OFFSET
 }

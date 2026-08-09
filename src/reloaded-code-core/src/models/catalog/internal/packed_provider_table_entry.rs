@@ -7,17 +7,15 @@
 use crate::models::catalog::public::ProviderIdx;
 use bitfields::bitfield;
 
-/// Number of retained hash bits for provider lookup entries.
-pub const PROVIDER_TABLE_HASH_BITS: u32 = 48;
-/// Bitmask used to truncate hashes to 48 bits.
-pub const PROVIDER_TABLE_HASH_MASK: u64 = (1u64 << PROVIDER_TABLE_HASH_BITS) - 1;
-
-/// Maximum provider index representable by `u16`.
-pub const MAX_PROVIDER_IDX: u16 = u16::MAX;
 /// Maximum provider count representable by `u16` indices.
 pub const MAX_PROVIDER_COUNT: usize = (MAX_PROVIDER_IDX as usize) + 1;
-
+/// Bitmask used to truncate hashes to 48 bits.
+pub const PROVIDER_TABLE_HASH_MASK: u64 = (1u64 << PROVIDER_TABLE_HASH_BITS) - 1;
 const _: () = assert!(PROVIDER_TABLE_HASH_BITS + 16 == 64);
+/// Maximum provider index representable by `u16`.
+pub const MAX_PROVIDER_IDX: u16 = u16::MAX;
+/// Number of retained hash bits for provider lookup entries.
+pub const PROVIDER_TABLE_HASH_BITS: u32 = 48;
 
 /// Packed provider-table entry.
 #[bitfield(u64)]

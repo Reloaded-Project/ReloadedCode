@@ -2,6 +2,9 @@
 
 use reloaded_code_core::models::ProviderType;
 
+/// Default `api_type` string used when the field is omitted from YAML.
+pub const DEFAULT_API_TYPE: &str = "openai-compatible";
+
 /// Maps a YAML `api_type` string to a [`ProviderType`].
 ///
 /// `openai` and `openai-compatible` both map to [`ProviderType::OpenAiCompletions`].
@@ -9,6 +12,10 @@ use reloaded_code_core::models::ProviderType;
 /// OpenAI-API-compatible endpoint.
 ///
 /// Returns [`ProviderType::Unknown`] for unrecognized strings.
+///
+/// # Arguments
+///
+/// - `s` - the YAML `api_type` string to map.
 pub fn api_type_from_str(s: &str) -> ProviderType {
     match s {
         "openai" | "openai-compatible" => ProviderType::OpenAiCompletions,
@@ -26,9 +33,6 @@ pub fn api_type_from_str(s: &str) -> ProviderType {
         _ => ProviderType::Unknown,
     }
 }
-
-/// Default `api_type` string used when the field is omitted from YAML.
-pub const DEFAULT_API_TYPE: &str = "openai-compatible";
 
 #[cfg(test)]
 mod tests {

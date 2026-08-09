@@ -2,18 +2,50 @@
 
 /// Generous estimate of average characters per line for buffer pre-allocation.
 pub const ESTIMATED_CHARS_PER_LINE: usize = 64;
-
+/// Minimum value for limit/count fields (e.g., read.limit, grep.limit, glob.limit).
+pub const MIN_LIMIT: usize = 1;
+/// Minimum characters per output line when using `...` truncation.
+pub const MIN_LINE_LENGTH: usize = TRUNCATION_ELLIPSIS.len() + 1;
+/// Minimum value for timeout fields in milliseconds (e.g., bash.timeout_ms, webfetch.timeout_ms).
+pub const MIN_TIMEOUT_MS: u32 = 1000;
 /// Suffix added to truncated lines.
 pub(crate) const TRUNCATION_ELLIPSIS: &str = "...";
 
-/// Minimum characters per output line when using `...` truncation.
-pub const MIN_LINE_LENGTH: usize = TRUNCATION_ELLIPSIS.len() + 1;
-
-/// Minimum value for limit/count fields (e.g., read.limit, grep.limit, glob.limit).
-pub const MIN_LIMIT: usize = 1;
-
-/// Minimum value for timeout fields in milliseconds (e.g., bash.timeout_ms, webfetch.timeout_ms).
-pub const MIN_TIMEOUT_MS: u32 = 1000;
+/// Appends `n` right-aligned with leading spaces to fill `width` characters.
+/// E.g. `push_padded_usize(buf, 5, 4)` appends `"   5"`.
+///
+/// When `width` equals the digit count of `n`, this appends just the digits
+/// (no padding), equivalent to a plain integer-to-string conversion.
+///
+/// # Safety (caller contract)
+///
+/// `width` must be >= the number of digits in `n`. This is guaranteed by
+/// construction: callers compute `width` from the maximum line number or
+/// from the number's own digit count.
+#[inline]
+pub(crate) fn push_padded_usize(output: &mut String, n: usize, width: usize) {
+    debug_assert!(width <= 20, "width exceeds stack buffer");
+    let mut buf = [b' '; 20];
+    let mut pos = 20usize;
+    let mut m = n;
+    if m == 0 {
+        pos -= 1;
+        buf[pos] = b'0';
+    } else {
+        while m > 0 {
+            pos -= 1;
+            buf[pos] = b'0' + (m % 10) as u8;
+            m /= 10;
+        }
+    }
+    // `width >= digit_count(n)` by contract, so `20 - width <= pos`.
+    // buf[20-width..pos] is already spaces; buf[pos..20] has digits.
+    let start = 20 - width;
+    debug_assert!(start <= pos, "width ({width}) < digit count of {n}");
+    unsafe {
+        output.push_str(core::str::from_utf8_unchecked(&buf[start..]));
+    }
+}
 
 /// Truncates a line for display with a trailing [`TRUNCATION_ELLIPSIS`].
 ///
@@ -66,42 +98,6 @@ pub(crate) fn truncate_line_with_ellipsis(line: &str, max_chars: usize) -> (&str
         (&line[..keep_byte], true)
     } else {
         (line, false)
-    }
-}
-
-/// Appends `n` right-aligned with leading spaces to fill `width` characters.
-/// E.g. `push_padded_usize(buf, 5, 4)` appends `"   5"`.
-///
-/// When `width` equals the digit count of `n`, this appends just the digits
-/// (no padding), equivalent to a plain integer-to-string conversion.
-///
-/// # Safety (caller contract)
-///
-/// `width` must be >= the number of digits in `n`. This is guaranteed by
-/// construction: callers compute `width` from the maximum line number or
-/// from the number's own digit count.
-#[inline]
-pub(crate) fn push_padded_usize(output: &mut String, n: usize, width: usize) {
-    debug_assert!(width <= 20, "width exceeds stack buffer");
-    let mut buf = [b' '; 20];
-    let mut pos = 20usize;
-    let mut m = n;
-    if m == 0 {
-        pos -= 1;
-        buf[pos] = b'0';
-    } else {
-        while m > 0 {
-            pos -= 1;
-            buf[pos] = b'0' + (m % 10) as u8;
-            m /= 10;
-        }
-    }
-    // `width >= digit_count(n)` by contract, so `20 - width <= pos`.
-    // buf[20-width..pos] is already spaces; buf[pos..20] has digits.
-    let start = 20 - width;
-    debug_assert!(start <= pos, "width ({width}) < digit count of {n}");
-    unsafe {
-        output.push_str(core::str::from_utf8_unchecked(&buf[start..]));
     }
 }
 

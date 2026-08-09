@@ -122,23 +122,23 @@
 //!
 //! `ProviderTable` (96 entries, 48-bit):
 //!
-//! | Seeds | Odds of failure      |
-//! | ----- | -------------------: |
-//! | 1     | 1 in 62 billion      |
-//! | 2     | 1 in 3.8 sextillion  |
-//! | 4     | 1 in 1.5 x 10^43     |
-//! | 8     | 1 in 2.1 x 10^86     |
-//! | 16    | 1 in 4.4 x 10^172    |
+//! | Seeds |     Odds of failure |
+//! | ----- | ------------------: |
+//! | 1     |     1 in 62 billion |
+//! | 2     | 1 in 3.8 sextillion |
+//! | 4     |    1 in 1.5 x 10^43 |
+//! | 8     |    1 in 2.1 x 10^86 |
+//! | 16    |   1 in 4.4 x 10^172 |
 //!
 //! `ProviderModelTable` (3,031 entries, 48-bit):
 //!
-//! | Seeds | Odds of failure      |
+//! | Seeds |      Odds of failure |
 //! | ----- | -------------------: |
-//! | 1     | 1 in 61 million      |
+//! | 1     |      1 in 61 million |
 //! | 2     | 1 in 3.8 quadrillion |
-//! | 4     | 1 in 1.4 x 10^31     |
-//! | 8     | 1 in 2.0 x 10^62     |
-//! | 16    | 1 in 4.0 x 10^124    |
+//! | 4     |     1 in 1.4 x 10^31 |
+//! | 8     |     1 in 2.0 x 10^62 |
+//! | 16    |    1 in 4.0 x 10^124 |
 //!
 //! This basically seals the deal, ensuring a collision will never happen.
 //!
@@ -147,16 +147,16 @@
 //!
 //! # Numeric Limits
 //!
-//! | Limit                     |       Value | Description                                      |
-//! | ------------------------- | ----------: | ------------------------------------------------ |
-//! | Max providers             |      65,536 | Addressable by 16-bit provider index             |
-//! | Max model configs         |      65,536 | Addressable by 16-bit model configuration index  |
-//! | Max provider env vars     |       8,192 | Global env-var pool offset (13-bit)              |
-//! | Max env vars per provider |           7 | Count field in provider range entry (3-bit)      |
-//! | Max input tokens          | 536,870,911 | 29-bit packed field (≈536M)                      |
-//! | Max output tokens         | 134,217,727 | 27-bit packed field (≈134M)                      |
-//! | Hash bits retained        |          48 | Truncated from 64-bit hash output                |
-//! | Max reseed attempts       |          16 | Number of alternative hash seeds                 |
+//! | Limit                     |       Value | Description                                     |
+//! | ------------------------- | ----------: | ----------------------------------------------- |
+//! | Max providers             |      65,536 | Addressable by 16-bit provider index            |
+//! | Max model configs         |      65,536 | Addressable by 16-bit model configuration index |
+//! | Max provider env vars     |       8,192 | Global env-var pool offset (13-bit)             |
+//! | Max env vars per provider |           7 | Count field in provider range entry (3-bit)     |
+//! | Max input tokens          | 536,870,911 | 29-bit packed field (≈536M)                     |
+//! | Max output tokens         | 134,217,727 | 27-bit packed field (≈134M)                     |
+//! | Hash bits retained        |          48 | Truncated from 64-bit hash output               |
+//! | Max reseed attempts       |          16 | Number of alternative hash seeds                |
 //!
 //! # Detailed Memory Layout
 //!
@@ -167,22 +167,22 @@
 //!
 //! ## Statistics (models.dev snapshot example)
 //!
-//! | Metric                               | Value   |
-//! | ------------------------------------ | ------: |
-//! | Unique providers                     |      96 |
-//! | Total model entries                  |   3,031 |
-//! | Unique model configurations          |     585 |
-//! | Avg models sharing same config       |    5.18 |
+//! | Metric                         | Value |
+//! | ------------------------------ | ----: |
+//! | Unique providers               |    96 |
+//! | Total model entries            | 3,031 |
+//! | Unique model configurations    |   585 |
+//! | Avg models sharing same config |  5.18 |
 //!
 //! ## Packed Metadata Storage
 //!
-//! | Field                  | Type                                         | Size | Count |   Total  |
-//! | ---------------------- | -------------------------------------------- | ---- | ----- | -------: |
-//! | `provider_table`       | `HashTable<PackedProviderTableEntry>`        | 8 B  |    96 |    768 B |
-//! | `provider_model_table` | `HashTable<PackedProviderModelTableEntry>`   | 8 B  | 3,031 | 24,248 B |
-//! | `provider_entries`     | `Box<[ProviderType]>`                        | 1 B  |    96 |     96 B |
-//! | `model_entries`        | `Box<[PackedModelEntry]>`                    | 8 B  |   585 |  4,680 B |
-//! | `provider_env_ranges`  | `Box<[PackedEnvRange]>`                      | 2 B  |    96 |    192 B |
+//! | Field                  | Type                                       | Size | Count |    Total |
+//! | ---------------------- | ------------------------------------------ | ---- | ----- | -------: |
+//! | `provider_table`       | `HashTable<PackedProviderTableEntry>`      | 8 B  | 96    |    768 B |
+//! | `provider_model_table` | `HashTable<PackedProviderModelTableEntry>` | 8 B  | 3,031 | 24,248 B |
+//! | `provider_entries`     | `Box<[ProviderType]>`                      | 1 B  | 96    |     96 B |
+//! | `model_entries`        | `Box<[PackedModelEntry]>`                  | 8 B  | 585   |  4,680 B |
+//! | `provider_env_ranges`  | `Box<[PackedEnvRange]>`                    | 2 B  | 96    |    192 B |
 //!
 //! **Packed metadata total: ~30.0 KB**
 //!
@@ -194,7 +194,7 @@
 //!
 //! | Field                  | Type                              | Size | Count | Total |
 //! | ---------------------- | --------------------------------- | ---- | ----- | ----: |
-//! | `model_config_entries` | `Option<Box<[ModelConfigEntry]>>` | 4 B  |     0 |    -  |
+//! | `model_config_entries` | `Option<Box<[ModelConfigEntry]>>` | 4 B  | 0     |     - |
 //!
 //! Alternative model info sources may provide recommended values for these fields.
 //!
@@ -203,10 +203,10 @@
 //! Provider API URLs and env-var names are stored in a compact buffer using
 //! `lite_strtab`. 4GB max size.
 //!
-//! | Field               | Type                            | String Data | Offsets |   Total  |
-//! | ------------------- | ------------------------------- | ----------: | ------: | -------: |
-//! | `provider_api_urls` | `StringTable<u32, ProviderIdx>` |    2,460 B  |   296 B |  2,756 B |
-//! | `provider_env_keys` | `StringTable<u32, ProviderIdx>` |    1,904 B  |   436 B |  2,340 B |
+//! | Field               | Type                            | String Data | Offsets |   Total |
+//! | ------------------- | ------------------------------- | ----------: | ------: | ------: |
+//! | `provider_api_urls` | `StringTable<u32, ProviderIdx>` |     2,460 B |   296 B | 2,756 B |
+//! | `provider_env_keys` | `StringTable<u32, ProviderIdx>` |     1,904 B |   436 B | 2,340 B |
 //!
 //! **String tables total: ~5.1 KB** (null-terminated strings + 4-byte offsets)
 //!
@@ -231,10 +231,9 @@ use internal::{
     PackedEnvRange, PackedModelEntry, PackedProviderModelTableEntry, PackedProviderTableEntry,
 };
 use lite_strtab::{StringId, StringTable};
-use public::{ProviderEnvVars, INLINE_PROVIDER_ENV_VARS};
-
 pub use public::builder_types::{ModelCatalogBuildError, ProviderModelSource, ProviderSource};
 pub use public::*;
+use public::{ProviderEnvVars, INLINE_PROVIDER_ENV_VARS};
 
 mod internal;
 mod public;

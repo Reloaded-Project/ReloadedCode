@@ -3,11 +3,31 @@
 use crate::error::{ToolError, ToolResult};
 use crate::tool_metadata::webfetch as webfetch_meta;
 use crate::util::MIN_TIMEOUT_MS;
+#[cfg(all(feature = "blocking", not(feature = "tokio")))]
+pub use blocking_impl::fetch_url;
 use html_to_markdown_rs::{
     convert, ConversionOptions, ConversionResult, PreprocessingOptions, PreprocessingPreset,
 };
 use serde::Deserialize;
 use serde_json::Value;
+#[cfg(feature = "tokio")]
+pub use tokio_impl::fetch_url;
+
+#[cfg(all(feature = "blocking", not(feature = "tokio")))]
+mod blocking_impl;
+#[cfg(feature = "tokio")]
+mod tokio_impl;
+
+/// Result from URL fetch operation.
+#[derive(Debug, Clone)]
+pub struct WebFetchOutput {
+    /// The processed content (HTML converted to markdown, JSON prettified).
+    pub content: String,
+    /// The Content-Type header value.
+    pub content_type: String,
+    /// Original byte length before processing.
+    pub byte_length: usize,
+}
 
 /// Serde-friendly webfetch request owned by the core crate.
 #[derive(Debug, Clone, Deserialize)]
@@ -17,17 +37,6 @@ pub struct WebFetchRequest {
     /// Timeout in milliseconds. If omitted, uses the tool's default timeout.
     #[serde(default)]
     pub timeout_ms: Option<u32>,
-}
-
-impl WebFetchRequest {
-    /// Parses a raw JSON tool payload into a webfetch request.
-    ///
-    /// # Errors
-    /// - Returns [`ToolError::Json`] when the JSON payload cannot be deserialized
-    ///   into a [`WebFetchRequest`] (e.g., missing `url` field or invalid field types).
-    pub fn parse(args: Value) -> ToolResult<Self> {
-        serde_json::from_value(args).map_err(ToolError::from)
-    }
 }
 
 /// Runtime settings applied to webfetch requests.
@@ -44,9 +53,14 @@ pub struct WebFetchSettings {
     max_response_size: usize,
 }
 
-impl Default for WebFetchSettings {
-    fn default() -> Self {
-        Self::new()
+impl WebFetchRequest {
+    /// Parses a raw JSON tool payload into a webfetch request.
+    ///
+    /// # Errors
+    /// - Returns [`ToolError::Json`] when the JSON payload cannot be deserialized
+    ///   into a [`WebFetchRequest`] (e.g., missing `url` field or invalid field types).
+    pub fn parse(args: Value) -> ToolResult<Self> {
+        serde_json::from_value(args).map_err(ToolError::from)
     }
 }
 
@@ -152,50 +166,53 @@ impl WebFetchSettings {
     }
 }
 
-fn ensure_timeouts(default_timeout_ms: u32, max_timeout_ms: u32) -> ToolResult<()> {
-    if default_timeout_ms < MIN_TIMEOUT_MS {
-        return Err(ToolError::validation_for(
-            "default_timeout_ms",
-            format!("default_timeout_ms must be >= {}", MIN_TIMEOUT_MS),
-        ));
+impl Default for WebFetchSettings {
+    fn default() -> Self {
+        Self::new()
     }
-    if max_timeout_ms < MIN_TIMEOUT_MS {
-        return Err(ToolError::validation_for(
-            "max_timeout_ms",
-            format!("max_timeout_ms must be >= {}", MIN_TIMEOUT_MS),
-        ));
-    }
-    if default_timeout_ms > max_timeout_ms {
-        return Err(ToolError::validation_for(
-            "default_timeout_ms",
-            format!(
-                "default_timeout_ms ({default_timeout_ms}) must be <= max_timeout_ms ({max_timeout_ms})"
-            ),
-        ));
-    }
-    Ok(())
 }
 
-/// Result from URL fetch operation.
-#[derive(Debug, Clone)]
-pub struct WebFetchOutput {
-    /// The processed content (HTML converted to markdown, JSON prettified).
-    pub content: String,
-    /// The Content-Type header value.
-    pub content_type: String,
-    /// Original byte length before processing.
-    pub byte_length: usize,
+/// Formats JSON content for readability.
+///
+/// Invalid JSON is returned unchanged.
+///
+/// # Arguments
+/// - `json_str`: JSON text to pretty-print.
+pub fn format_json(json_str: &str) -> String {
+    match serde_json::from_str::<serde_json::Value>(json_str) {
+        Ok(value) => serde_json::to_string_pretty(&value).unwrap_or_else(|_| json_str.to_string()),
+        Err(_) => json_str.to_string(),
+    }
 }
 
-/// Processes raw response content based on content type.
-pub(crate) fn process_content(raw_content: &str, content_type: &str) -> String {
-    if content_type.contains("text/html") {
-        html_to_markdown(raw_content)
-    } else if content_type.contains("application/json") {
-        format_json(raw_content)
-    } else {
-        raw_content.to_owned()
-    }
+/// Converts HTML to markdown for LLM-friendly output.
+///
+/// Unparseable input is returned unchanged.
+///
+/// # Arguments
+/// - `html`: HTML source to convert.
+pub fn html_to_markdown(html: &str) -> String {
+    let options = ConversionOptions {
+        preprocessing: PreprocessingOptions {
+            enabled: true,
+            preset: PreprocessingPreset::Aggressive,
+            remove_navigation: true,
+            remove_forms: true,
+        },
+        strip_tags: vec![
+            "img".into(),
+            "svg".into(),
+            "script".into(),
+            "style".into(),
+            "noscript".into(),
+        ],
+        ..Default::default()
+    };
+
+    convert(html, Some(options))
+        .ok()
+        .and_then(|result: ConversionResult| result.content)
+        .unwrap_or_else(|| html.to_string())
 }
 
 /// Categorises reqwest errors into appropriate [`ToolError`] variants.
@@ -223,48 +240,40 @@ pub(crate) fn check_size(len: usize, url: &str, max_size: usize) -> ToolResult<(
     Ok(())
 }
 
-/// Converts HTML to markdown for LLM-friendly output.
-pub fn html_to_markdown(html: &str) -> String {
-    let options = ConversionOptions {
-        preprocessing: PreprocessingOptions {
-            enabled: true,
-            preset: PreprocessingPreset::Aggressive,
-            remove_navigation: true,
-            remove_forms: true,
-        },
-        strip_tags: vec![
-            "img".into(),
-            "svg".into(),
-            "script".into(),
-            "style".into(),
-            "noscript".into(),
-        ],
-        ..Default::default()
-    };
-
-    convert(html, Some(options))
-        .ok()
-        .and_then(|result: ConversionResult| result.content)
-        .unwrap_or_else(|| html.to_string())
-}
-
-/// Formats JSON content for readability.
-pub fn format_json(json_str: &str) -> String {
-    match serde_json::from_str::<serde_json::Value>(json_str) {
-        Ok(value) => serde_json::to_string_pretty(&value).unwrap_or_else(|_| json_str.to_string()),
-        Err(_) => json_str.to_string(),
+/// Processes raw response content based on content type.
+pub(crate) fn process_content(raw_content: &str, content_type: &str) -> String {
+    if content_type.contains("text/html") {
+        html_to_markdown(raw_content)
+    } else if content_type.contains("application/json") {
+        format_json(raw_content)
+    } else {
+        raw_content.to_owned()
     }
 }
 
-#[cfg(feature = "tokio")]
-mod tokio_impl;
-#[cfg(feature = "tokio")]
-pub use tokio_impl::fetch_url;
-
-#[cfg(all(feature = "blocking", not(feature = "tokio")))]
-mod blocking_impl;
-#[cfg(all(feature = "blocking", not(feature = "tokio")))]
-pub use blocking_impl::fetch_url;
+fn ensure_timeouts(default_timeout_ms: u32, max_timeout_ms: u32) -> ToolResult<()> {
+    if default_timeout_ms < MIN_TIMEOUT_MS {
+        return Err(ToolError::validation_for(
+            "default_timeout_ms",
+            format!("default_timeout_ms must be >= {}", MIN_TIMEOUT_MS),
+        ));
+    }
+    if max_timeout_ms < MIN_TIMEOUT_MS {
+        return Err(ToolError::validation_for(
+            "max_timeout_ms",
+            format!("max_timeout_ms must be >= {}", MIN_TIMEOUT_MS),
+        ));
+    }
+    if default_timeout_ms > max_timeout_ms {
+        return Err(ToolError::validation_for(
+            "default_timeout_ms",
+            format!(
+                "default_timeout_ms ({default_timeout_ms}) must be <= max_timeout_ms ({max_timeout_ms})"
+            ),
+        ));
+    }
+    Ok(())
+}
 
 #[cfg(test)]
 mod tests {

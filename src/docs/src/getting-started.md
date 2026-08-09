@@ -153,7 +153,7 @@ a Rust project and an LLM API key (e.g. `OPENAI_API_KEY`).
     [serdesai-basic](https://github.com/Reloaded-Project/ReloadedCode/blob/main/src/reloaded-code-serdesai/examples/serdesai-basic.rs)
     (without agent files) and
     [serdesai-agents](https://github.com/Reloaded-Project/ReloadedCode/blob/main/src/reloaded-code-serdesai/examples/serdesai-agents.rs)
-    (with agent files). See [Examples](examples.md) for the full list.
+    (with agent files). See [Examples] for the full list.
 
 ## Custom tools
 
@@ -224,7 +224,7 @@ cargo run --example serdesai-agents -p reloaded-code-serdesai
 cargo run --example serdesai-task -p reloaded-code-serdesai
 ```
 
-See [Examples](examples.md) for the full list with descriptions and
+See [Examples] for the full list with descriptions and
 source links.
 
 ## Sandboxing for production
@@ -242,10 +242,10 @@ to isolate shell execution. See [Sandboxing](sandboxing.md) for the full guide.
 ### Common deployment profiles
 
 - **Discord bot / chat bot** - Use the Public Bot sandbox profile
-  (restrictive; see [Sandboxing](sandboxing.md#the-two-profiles)) and
+  (restrictive; see [Sandboxing]) and
   `AllowedPathResolver` to limit what the LLM can do with user-provided prompts.
 - **CI/CD pipeline** - Use the Trusted Maintenance profile
-  (permissive; see [Sandboxing](sandboxing.md#the-two-profiles)) for build jobs
+  (permissive; see [Sandboxing]) for build jobs
   where you control the inputs. Explicitly mount the cache directories so that
   build artifacts persist between runs.
 
@@ -274,3 +274,5 @@ reloaded-code-core = { version = "0.2", default-features = false, features = ["b
 [`ToolContext`]: https://docs.rs/reloaded-code-core/latest/reloaded_code_core/trait.ToolContext.html
 [`CustomTool`]: https://docs.rs/reloaded-code-core/latest/reloaded_code_core/trait.CustomTool.html
 [`ToolFactory`]: https://docs.rs/reloaded-code-core/latest/reloaded_code_core/trait.ToolFactory.html
+[Examples]: examples.md
+[Sandboxing]: sandboxing.md#the-two-profiles

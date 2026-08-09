@@ -44,6 +44,8 @@ use crate::error::CatalogResult;
 use serde::Deserialize;
 use std::collections::HashMap;
 
+/// A provider entry from the models.dev API: `npm` package, API base URL, env
+/// var names, and the provider's model map.
 #[derive(Debug, Deserialize)]
 pub(crate) struct ApiProviderEntry {
     #[serde(default)]
@@ -56,6 +58,7 @@ pub(crate) struct ApiProviderEntry {
     pub(crate) models: HashMap<String, ApiModelEntry>,
 }
 
+/// A model entry with optional token limits and directional modalities.
 #[derive(Debug, Deserialize)]
 pub(crate) struct ApiModelEntry {
     #[serde(default)]
@@ -64,14 +67,7 @@ pub(crate) struct ApiModelEntry {
     pub(crate) modalities: Option<ApiModelModalities>,
 }
 
-#[derive(Debug, Deserialize)]
-pub(crate) struct ApiModelModalities {
-    #[serde(default)]
-    pub(crate) input: Vec<String>,
-    #[serde(default)]
-    pub(crate) output: Vec<String>,
-}
-
+/// Token limits for a model: `context`, `input`, and `output`.
 #[derive(Debug, Deserialize)]
 pub(crate) struct ApiModelLimit {
     #[serde(default)]
@@ -80,6 +76,15 @@ pub(crate) struct ApiModelLimit {
     pub(crate) input: u32,
     #[serde(default)]
     pub(crate) output: u32,
+}
+
+/// Directional modality lists: supported `input` and `output` modalities.
+#[derive(Debug, Deserialize)]
+pub(crate) struct ApiModelModalities {
+    #[serde(default)]
+    pub(crate) input: Vec<String>,
+    #[serde(default)]
+    pub(crate) output: Vec<String>,
 }
 
 /// Parses upstream `api.json` bytes into a provider map.

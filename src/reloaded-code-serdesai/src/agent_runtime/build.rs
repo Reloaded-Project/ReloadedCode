@@ -18,6 +18,8 @@ use reloaded_code_agents::{
     AgentRuntime, AgentToolSettings, ModelResolutionError, PermissionRule, TaskTargetSummary,
     build_resolver_for_tool,
 };
+#[cfg(all(feature = "linux-bubblewrap", target_os = "linux"))]
+use reloaded_code_bubblewrap::Profile;
 use reloaded_code_core::context::ToolPrompt;
 use reloaded_code_core::permissions::Ruleset;
 use reloaded_code_core::tool_context::ToolBuildContext;
@@ -36,13 +38,6 @@ use serdes_ai::AgentBuilder;
 use serdes_ai_models::BoxedModel;
 use std::path::Path;
 use std::sync::Arc;
-
-#[cfg(all(feature = "linux-bubblewrap", target_os = "linux"))]
-use reloaded_code_bubblewrap::Profile;
-
-#[cfg(not(all(feature = "linux-bubblewrap", target_os = "linux")))]
-/// Placeholder type so [`attach_standard_tools`] compiles without the feature.
-pub(super) struct Profile;
 
 /// Error returned when a build cannot produce a SerdesAI agent.
 #[derive(Debug, thiserror::Error)]
@@ -127,58 +122,16 @@ pub(super) struct PreparedBuild<'a> {
     permission_config: &'a IndexMap<String, PermissionRule>,
 }
 
+#[cfg(not(all(feature = "linux-bubblewrap", target_os = "linux")))]
+/// Placeholder type so [`attach_standard_tools`] compiles without the feature.
+pub(super) struct Profile;
+
 impl PreparedBuild<'_> {
     /// Returns the resolved SerdesAI model for builder construction.
     #[inline]
     pub(super) fn model(&self) -> &BoxedModel {
         &self.model
     }
-}
-
-/// Resolves model configuration and collects build parameters for an agent.
-pub(super) fn prepare_build<'a, C>(
-    runtime: &'a AgentRuntime,
-    name: &str,
-    model_catalog: &ModelCatalog,
-    credentials: &C,
-    with_summaries: bool,
-) -> Result<PreparedBuild<'a>, AgentBuildError>
-where
-    C: CredentialLookup,
-{
-    let agent = runtime
-        .catalog()
-        .by_name(name)
-        .ok_or_else(|| AgentBuildError::UnknownAgent { name: name.into() })?;
-    let resolved = resolve_model(model_catalog, runtime.defaults(), agent)?;
-    let serdes_model = build_serdes_model(model_catalog, &resolved, credentials)?;
-    let tools = runtime.allowed_tools(name).to_vec();
-    let callable_target_summaries = if with_summaries {
-        runtime.summarize_callable_targets(name).to_vec()
-    } else {
-        Vec::new()
-    };
-
-    let permission = runtime
-        .permission_ruleset(name)
-        .filter(|ruleset| !ruleset.is_empty());
-
-    Ok(PreparedBuild {
-        agent_name: agent.name.clone(),
-        model: serdes_model.model,
-        model_spec: serdes_model.spec,
-        prompt: agent.prompt.clone(),
-        temperature: agent
-            .temperature
-            .or(runtime.defaults().temperature)
-            .map(f64::from),
-        top_p: agent.top_p.or(runtime.defaults().top_p).map(f64::from),
-        tools,
-        tool_settings: agent.tool_settings.clone(),
-        callable_target_summaries,
-        permission,
-        permission_config: &agent.permission,
-    })
 }
 
 /// Attaches the standard runtime tools and prompt contexts without finalizing the builder.
@@ -361,14 +314,58 @@ where
     Ok((builder, prompt_builder))
 }
 
-fn build_read_settings(
-    settings: &reloaded_code_agents::ReadToolSettings,
-) -> Result<ReadSettings, AgentBuildError> {
-    ReadSettings::new()
-        .with_limits(settings.limit, settings.limit)
-        .and_then(|value| value.with_max_line_length(settings.max_line_length))
-        .map(|value| value.with_line_numbers(settings.line_numbers))
-        .with_tool(read_meta::NAME)
+/// Resolves model configuration and collects build parameters for an agent.
+pub(super) fn prepare_build<'a, C>(
+    runtime: &'a AgentRuntime,
+    name: &str,
+    model_catalog: &ModelCatalog,
+    credentials: &C,
+    with_summaries: bool,
+) -> Result<PreparedBuild<'a>, AgentBuildError>
+where
+    C: CredentialLookup,
+{
+    let agent = runtime
+        .catalog()
+        .by_name(name)
+        .ok_or_else(|| AgentBuildError::UnknownAgent { name: name.into() })?;
+    let resolved = resolve_model(model_catalog, runtime.defaults(), agent)?;
+    let serdes_model = build_serdes_model(model_catalog, &resolved, credentials)?;
+    let tools = runtime.allowed_tools(name).to_vec();
+    let callable_target_summaries = if with_summaries {
+        runtime.summarize_callable_targets(name).to_vec()
+    } else {
+        Vec::new()
+    };
+
+    let permission = runtime
+        .permission_ruleset(name)
+        .filter(|ruleset| !ruleset.is_empty());
+
+    Ok(PreparedBuild {
+        agent_name: agent.name.clone(),
+        model: serdes_model.model,
+        model_spec: serdes_model.spec,
+        prompt: agent.prompt.clone(),
+        temperature: agent
+            .temperature
+            .or(runtime.defaults().temperature)
+            .map(f64::from),
+        top_p: agent.top_p.or(runtime.defaults().top_p).map(f64::from),
+        tools,
+        tool_settings: agent.tool_settings.clone(),
+        callable_target_summaries,
+        permission,
+        permission_config: &agent.permission,
+    })
+}
+
+fn build_glob_settings(
+    settings: &reloaded_code_agents::GlobToolSettings,
+) -> Result<GlobSettings, AgentBuildError> {
+    GlobSettings::new()
+        .with_limit(settings.limit)
+        .with_tool(glob_meta::NAME)
 }
 
 fn build_grep_settings(
@@ -386,12 +383,14 @@ fn build_grep_settings(
     Ok((search_settings, formatting_settings))
 }
 
-fn build_glob_settings(
-    settings: &reloaded_code_agents::GlobToolSettings,
-) -> Result<GlobSettings, AgentBuildError> {
-    GlobSettings::new()
-        .with_limit(settings.limit)
-        .with_tool(glob_meta::NAME)
+fn build_read_settings(
+    settings: &reloaded_code_agents::ReadToolSettings,
+) -> Result<ReadSettings, AgentBuildError> {
+    ReadSettings::new()
+        .with_limits(settings.limit, settings.limit)
+        .and_then(|value| value.with_max_line_length(settings.max_line_length))
+        .map(|value| value.with_line_numbers(settings.line_numbers))
+        .with_tool(read_meta::NAME)
 }
 
 fn build_webfetch_settings(

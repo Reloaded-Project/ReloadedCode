@@ -8,27 +8,6 @@ use reloaded_code_agents::TaskTargetSummary;
 use reloaded_code_core::tool_metadata::task as task_meta;
 use serdes_ai::tools::{SchemaBuilder, ToolDefinition};
 
-/// Renders callable target summaries in a stable, user-facing format.
-pub(crate) fn render_task_targets(targets: &[TaskTargetSummary]) -> String {
-    if targets.is_empty() {
-        return "No callable subagents are available.".to_string();
-    }
-
-    let mut ordered: Vec<_> = targets.iter().collect();
-    ordered.sort_unstable_by(|left, right| left.name.as_ref().cmp(right.name.as_ref()));
-
-    let mut rendered = String::with_capacity(32 + ordered.len() * 64);
-    rendered.push_str("Available subagents:\n");
-    for target in ordered {
-        rendered.push_str("- ");
-        rendered.push_str(target.name.as_ref());
-        rendered.push_str(": ");
-        rendered.push_str(target.description.as_ref());
-        rendered.push('\n');
-    }
-    rendered
-}
-
 /// Builds a SerdesAI Task definition using the shared target summaries.
 pub(crate) fn task_tool_definition(targets: &[TaskTargetSummary]) -> ToolDefinition {
     let rendered_targets = render_task_targets(targets);
@@ -68,6 +47,27 @@ pub(crate) fn task_tool_definition(targets: &[TaskTargetSummary]) -> ToolDefinit
         strict: None,
         outer_typed_dict_key: None,
     }
+}
+
+/// Renders callable target summaries in a stable, user-facing format.
+pub(crate) fn render_task_targets(targets: &[TaskTargetSummary]) -> String {
+    if targets.is_empty() {
+        return "No callable subagents are available.".to_string();
+    }
+
+    let mut ordered: Vec<_> = targets.iter().collect();
+    ordered.sort_unstable_by(|left, right| left.name.as_ref().cmp(right.name.as_ref()));
+
+    let mut rendered = String::with_capacity(32 + ordered.len() * 64);
+    rendered.push_str("Available subagents:\n");
+    for target in ordered {
+        rendered.push_str("- ");
+        rendered.push_str(target.name.as_ref());
+        rendered.push_str(": ");
+        rendered.push_str(target.description.as_ref());
+        rendered.push('\n');
+    }
+    rendered
 }
 
 #[cfg(test)]

@@ -3,21 +3,19 @@
 //! # Public API
 //! - [`AgentBuildContext`] - Reusable shared inputs for building runnable agents.
 
+#[cfg(not(all(feature = "linux-bubblewrap", target_os = "linux")))]
+use super::build::Profile;
 use super::build::{AgentBuildError, attach_standard_tools, prepare_build};
 use crate::task::TaskHandle;
 use reloaded_code_agents::AgentRuntime;
+#[cfg(all(feature = "linux-bubblewrap", target_os = "linux"))]
+use reloaded_code_bubblewrap::{CreateSandboxError, Preset, Profile, TempSandboxDirs};
 use reloaded_code_core::{CredentialLookup, CredentialResolver, models::ModelCatalog};
 use serdes_ai::{Agent, AgentBuilder};
 #[cfg(any(test, feature = "mock"))]
 use serdes_ai_models::BoxedModel;
 use std::path::Path;
 use std::sync::Arc;
-
-#[cfg(all(feature = "linux-bubblewrap", target_os = "linux"))]
-use reloaded_code_bubblewrap::{CreateSandboxError, Preset, Profile, TempSandboxDirs};
-
-#[cfg(not(all(feature = "linux-bubblewrap", target_os = "linux")))]
-use super::build::Profile;
 
 /// Reusable shared inputs for building runnable SerdesAI agents.
 ///
@@ -30,18 +28,36 @@ pub struct AgentBuildContext<C: CredentialLookup + Send + Sync + 'static = Crede
     context: Arc<TaskBuildContext<C>>,
 }
 
+/// Shared owned state for builds that may happen later during Task delegation.
+#[derive(Clone)]
+pub(crate) struct TaskBuildContext<C: CredentialLookup + Send + Sync + ?Sized = CredentialResolver>
+{
+    runtime: Arc<AgentRuntime>,
+    model_catalog: Arc<ModelCatalog>,
+    credentials: Arc<C>,
+    workspace_root: Arc<Path>,
+    #[cfg(any(test, feature = "mock"))]
+    model_override: Option<BoxedModel>,
+    #[cfg(all(feature = "linux-bubblewrap", target_os = "linux"))]
+    bash_sandbox: Option<Arc<Profile>>,
+    #[cfg(all(feature = "linux-bubblewrap", target_os = "linux"))]
+    _sandbox_tmpdir: Option<Arc<TempSandboxDirs>>,
+}
+
 impl<C> AgentBuildContext<C>
 where
     C: CredentialLookup + Send + Sync + 'static,
 {
     /// Creates a shared build context without a sandbox.
     ///
-    /// [`BashTool`](crate::BashTool) will run commands directly on the host.
+    /// [`BashTool`] will run commands directly on the host.
     ///
     /// # Platform
     ///
     /// For sandboxed builds on Linux with the `linux-bubblewrap` feature, use
     /// `new_with_sandbox` or `new_with_temp_sandbox` instead.
+    ///
+    /// [`BashTool`]: crate::BashTool
     ///
     /// # Arguments
     /// - `runtime`: Shared agent runtime holding the catalog and defaults.
@@ -222,22 +238,6 @@ where
             .model_override = Some(Arc::new(model));
         self
     }
-}
-
-/// Shared owned state for builds that may happen later during Task delegation.
-#[derive(Clone)]
-pub(crate) struct TaskBuildContext<C: CredentialLookup + Send + Sync + ?Sized = CredentialResolver>
-{
-    runtime: Arc<AgentRuntime>,
-    model_catalog: Arc<ModelCatalog>,
-    credentials: Arc<C>,
-    workspace_root: Arc<Path>,
-    #[cfg(any(test, feature = "mock"))]
-    model_override: Option<BoxedModel>,
-    #[cfg(all(feature = "linux-bubblewrap", target_os = "linux"))]
-    bash_sandbox: Option<Arc<Profile>>,
-    #[cfg(all(feature = "linux-bubblewrap", target_os = "linux"))]
-    _sandbox_tmpdir: Option<Arc<TempSandboxDirs>>,
 }
 
 impl<C> TaskBuildContext<C>

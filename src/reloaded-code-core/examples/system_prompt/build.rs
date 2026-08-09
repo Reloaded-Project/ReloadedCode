@@ -1,9 +1,12 @@
+use super::{definitions, mock_tools, report, PromptArtifacts, PromptCase};
 use reloaded_code_core::context;
 use reloaded_code_core::{AllowedPathResolver, SystemPromptBuilder};
 
-use super::{definitions, mock_tools, report, PromptArtifacts, PromptCase};
-
 /// Renders one example case and its matching tool-definition payload.
+///
+/// # Arguments
+///
+/// - `case`: the example case to render.
 pub fn build_case(case: PromptCase) -> PromptArtifacts {
     let system_prompt = build_system_prompt(case);
     let tool_definitions = definitions::tool_definitions_for_case(case);

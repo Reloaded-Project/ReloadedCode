@@ -1,11 +1,20 @@
 use super::{sort_sizes_desc, PromptArtifacts};
 
 /// Approximates token count from character count.
+///
+/// # Arguments
+///
+/// - `chars`: the number of characters to estimate tokens for.
 pub fn estimate_tokens(chars: usize) -> usize {
     chars.div_ceil(4)
 }
 
 /// Prints the total static request footprint for one example case.
+///
+/// # Arguments
+///
+/// - `label`: the label to print for the case.
+/// - `artifacts`: the rendered prompt artifacts to measure.
 pub fn print_footprint(label: &str, artifacts: &PromptArtifacts) {
     println!("{label}:");
     println!(
@@ -28,6 +37,11 @@ pub fn print_footprint(label: &str, artifacts: &PromptArtifacts) {
 }
 
 /// Prints a sorted size breakdown.
+///
+/// # Arguments
+///
+/// - `title`: the heading to print above the breakdown.
+/// - `sizes`: `(name, chars)` entries to print, already sorted.
 pub fn print_ranked_sizes(title: &str, sizes: &[(String, usize)]) {
     println!("\n{title}");
     for (name, chars) in sizes {
@@ -38,13 +52,11 @@ pub fn print_ranked_sizes(title: &str, sizes: &[(String, usize)]) {
     }
 }
 
-/// Returns rendered tool-guideline section sizes sorted from largest to smallest.
-pub fn section_sizes(artifacts: &PromptArtifacts) -> Vec<(String, usize)> {
-    let mut sections = artifacts.guideline_sections.clone();
-    sort_sizes_desc(&mut sections);
-    sections
-}
-
+/// Prints the pretty-printed tool definitions for one example case.
+///
+/// # Arguments
+///
+/// - `artifacts`: the rendered prompt artifacts whose tool definitions to print.
 pub fn print_tool_definitions(artifacts: &super::PromptArtifacts) {
     println!("\n{}", "=".repeat(60));
     println!("Tool Definitions:");
@@ -55,6 +67,23 @@ pub fn print_tool_definitions(artifacts: &super::PromptArtifacts) {
     }
 }
 
+/// Returns rendered tool-guideline section sizes sorted from largest to smallest.
+///
+/// # Arguments
+///
+/// - `artifacts`: the rendered prompt artifacts to measure.
+pub fn section_sizes(artifacts: &PromptArtifacts) -> Vec<(String, usize)> {
+    let mut sections = artifacts.guideline_sections.clone();
+    sort_sizes_desc(&mut sections);
+    sections
+}
+
+/// Collects `## <name> Tool` sections from a rendered guideline prompt as
+/// `(name, byte length)` pairs.
+///
+/// # Arguments
+///
+/// - `prompt`: the rendered system prompt to scan for guideline sections.
 pub(super) fn collect_guideline_sections(prompt: &str) -> Vec<(String, usize)> {
     let mut in_guidelines = false;
     let mut current_name: Option<String> = None;

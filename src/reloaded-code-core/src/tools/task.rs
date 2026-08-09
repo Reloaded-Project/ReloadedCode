@@ -9,6 +9,28 @@
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
+/// Input for task execution.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TaskInput {
+    /// Short description (3-5 words) of the task.
+    pub description: String,
+    /// The prompt/task for the agent to perform.
+    pub prompt: String,
+    /// The subagent type/name to invoke.
+    pub subagent_type: String,
+    /// Optional command that triggered this task (for context).
+    pub command: Option<String>,
+}
+
+/// Output from task execution.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TaskOutput {
+    /// The text summary/response from the agent.
+    pub summary: String,
+    /// Optional metadata from the execution.
+    pub metadata: Option<Value>,
+}
+
 /// Shared runtime settings for Task delegation.
 ///
 /// # Delegation depth
@@ -18,7 +40,7 @@ use serde_json::Value;
 /// delegated hops are allowed before Task must stop delegating further.
 ///
 /// | `current_depth` | Allowed? |
-/// |-----------------|----------|
+/// | --------------- | -------- |
 /// | `0`             | yes      |
 /// | `1`             | yes      |
 /// | `2`             | yes      |
@@ -32,12 +54,21 @@ pub struct TaskSettings {
     max_depth: u8,
 }
 
-impl Default for TaskSettings {
+impl TaskOutput {
+    /// Creates a new task output with just a summary.
     #[inline]
-    fn default() -> Self {
+    pub fn new(summary: impl Into<String>) -> Self {
         Self {
-            max_depth: Self::DEFAULT_MAX_DEPTH,
+            summary: summary.into(),
+            metadata: None,
         }
+    }
+
+    /// Sets metadata.
+    #[inline]
+    pub fn with_metadata(mut self, metadata: serde_json::Value) -> Self {
+        self.metadata = Some(metadata);
+        self
     }
 }
 
@@ -66,43 +97,12 @@ impl TaskSettings {
     }
 }
 
-/// Input for task execution.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct TaskInput {
-    /// Short description (3-5 words) of the task.
-    pub description: String,
-    /// The prompt/task for the agent to perform.
-    pub prompt: String,
-    /// The subagent type/name to invoke.
-    pub subagent_type: String,
-    /// Optional command that triggered this task (for context).
-    pub command: Option<String>,
-}
-
-/// Output from task execution.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct TaskOutput {
-    /// The text summary/response from the agent.
-    pub summary: String,
-    /// Optional metadata from the execution.
-    pub metadata: Option<Value>,
-}
-
-impl TaskOutput {
-    /// Creates a new task output with just a summary.
+impl Default for TaskSettings {
     #[inline]
-    pub fn new(summary: impl Into<String>) -> Self {
+    fn default() -> Self {
         Self {
-            summary: summary.into(),
-            metadata: None,
+            max_depth: Self::DEFAULT_MAX_DEPTH,
         }
-    }
-
-    /// Sets metadata.
-    #[inline]
-    pub fn with_metadata(mut self, metadata: serde_json::Value) -> Self {
-        self.metadata = Some(metadata);
-        self
     }
 }
 

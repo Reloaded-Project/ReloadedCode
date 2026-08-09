@@ -106,11 +106,18 @@ pub struct Builder {
     pub(crate) read_only_host_rootfs: bool,
     /// Controls whether the sandbox has network access.
     pub(crate) network_policy: NetworkPolicy,
-    /// When `true`, inherited env vars are cleared before applying [`default_env`](Self::default_env) and [`extra_env`](Self::extra_env).
+    /// When `true`, inherited env vars are cleared before applying [`default_env`] and [`extra_env`].
+    ///
+    /// [`default_env`]: Self::default_env
+    /// [`extra_env`]: Self::extra_env
     pub(crate) clear_env: bool,
-    /// Env vars always set (applied before [`extra_env`](Self::extra_env)).
+    /// Env vars always set (applied before [`extra_env`]).
+    ///
+    /// [`extra_env`]: Self::extra_env
     pub(crate) default_env: Arc<[EnvVar]>,
-    /// Additional env vars set on top of [`default_env`](Self::default_env).
+    /// Additional env vars set on top of [`default_env`].
+    ///
+    /// [`default_env`]: Self::default_env
     pub(crate) extra_env: Arc<[EnvVar]>,
     /// Tracks whether `bwrap` is usable (checked during [`build`](Self::build)).
     pub(crate) availability: Availability,
@@ -332,105 +339,6 @@ impl Builder {
     }
 }
 
-fn validate_builder(builder: &Builder) -> Result<(), LinuxBwrapError> {
-    validate_directory_path(builder.workspace.as_ref(), "workspace host directory")?;
-    validate_directory_path(
-        builder.synthetic_home.as_ref(),
-        "synthetic home host directory",
-    )?;
-    validate_absolute_path(builder.cache_root.as_ref(), "cache root host path")?;
-    if builder.mount_cache_root {
-        validate_directory_path(builder.cache_root.as_ref(), "cache root host directory")?;
-    }
-
-    validate_absolute_path(builder.workspace_dest.as_ref(), "workspace destination")?;
-    validate_absolute_path(
-        builder.synthetic_home_dest.as_ref(),
-        "synthetic home destination",
-    )?;
-    validate_tmp_backing(&builder.tmp_backing)?;
-    validate_mount_paths(&builder.read_only_mounts, "read-only mount source")?;
-    validate_mount_paths(&builder.read_write_mounts, "read-write mount source")?;
-    validate_tmpfs_overlays(&builder.tmpfs_overlays)?;
-    validate_file_overlays(&builder.file_overlays)?;
-    validate_symlinks(&builder.compat_symlinks)?;
-    validate_env_vars(builder.default_env.as_ref(), "default")?;
-    validate_env_vars(builder.extra_env.as_ref(), "extra")?;
-    validate_credential_file_mounts(builder)?;
-    Ok(())
-}
-
-fn validate_credential_file_mounts(builder: &Builder) -> Result<(), LinuxBwrapError> {
-    for mount in builder.credential_file_mounts.iter() {
-        validate_absolute_path(mount.source(), "credential file source")?;
-        validate_absolute_path(mount.dest(), "credential file destination")?;
-
-        let metadata = fs::metadata(mount.source()).map_err(|error| {
-            LinuxBwrapError::InvalidPath(format!(
-                "credential file source must exist and be readable: {} ({error})",
-                mount.source().display()
-            ))
-        })?;
-        if !metadata.is_file() {
-            return Err(LinuxBwrapError::InvalidPath(format!(
-                "credential file source must be a regular file: {}",
-                mount.source().display()
-            )));
-        }
-        if !credential_dest_is_allowed(builder, mount.dest()) {
-            return Err(LinuxBwrapError::InvalidPath(format!(
-                "credential file destination must stay within the synthetic home, workspace, or cache root: {}",
-                mount.dest().display()
-            )));
-        }
-    }
-
-    Ok(())
-}
-
-fn credential_dest_is_allowed(builder: &Builder, dest: &Path) -> bool {
-    dest.starts_with(builder.synthetic_home_dest.as_ref())
-        || dest.starts_with(builder.workspace_dest.as_ref())
-        || (builder.mount_cache_root && dest.starts_with(builder.cache_root.as_ref()))
-}
-
-fn resolve_shell_for_builder(builder: &Builder) -> Result<Box<Path>, LinuxBwrapError> {
-    let layout = builder_sandbox_layout(builder);
-    if let Some((_host_shell, sandbox_path)) = first_shell_candidate_with(|shell| {
-        layout.classify(shell).map(|mapping| match mapping {
-            PathMapping::SamePath => shell.to_path_buf(),
-            PathMapping::Remap {
-                dest_prefix,
-                relative,
-            } => join_mapped_path(dest_prefix, relative).into_owned(),
-        })
-    }) {
-        return Ok(sandbox_path.into_boxed_path());
-    }
-
-    Err(LinuxBwrapError::Execution(
-        "no usable host shell is visible inside the linux sandbox; expected a system `bash` or `sh` mounted by the selected profile"
-            .to_string(),
-    ))
-}
-
-fn builder_sandbox_layout(builder: &Builder) -> SandboxLayout<'_> {
-    SandboxLayout {
-        workspace: builder.workspace.as_ref(),
-        workspace_dest: builder.workspace_dest.as_ref(),
-        synthetic_home: builder.synthetic_home.as_ref(),
-        synthetic_home_dest: builder.synthetic_home_dest.as_ref(),
-        cache_root: builder.cache_root.as_ref(),
-        mount_cache_root: builder.mount_cache_root,
-        tmp_backing: &builder.tmp_backing,
-        read_only_host_rootfs: builder.read_only_host_rootfs,
-        tmpfs_overlays: builder.tmpfs_overlays.as_ref(),
-        file_overlays: builder.file_overlays.as_ref(),
-        read_only_mounts: builder.read_only_mounts.as_ref(),
-        read_write_mounts: builder.read_write_mounts.as_ref(),
-    }
-}
-
 fn build_static_args(builder: &Builder) -> Arc<[OsString]> {
     let mut args = Vec::with_capacity(arg_capacity_for(builder));
 
@@ -490,6 +398,54 @@ fn build_static_args(builder: &Builder) -> Arc<[OsString]> {
     Arc::from(args)
 }
 
+fn resolve_shell_for_builder(builder: &Builder) -> Result<Box<Path>, LinuxBwrapError> {
+    let layout = builder_sandbox_layout(builder);
+    if let Some((_host_shell, sandbox_path)) = first_shell_candidate_with(|shell| {
+        layout.classify(shell).map(|mapping| match mapping {
+            PathMapping::SamePath => shell.to_path_buf(),
+            PathMapping::Remap {
+                dest_prefix,
+                relative,
+            } => join_mapped_path(dest_prefix, relative).into_owned(),
+        })
+    }) {
+        return Ok(sandbox_path.into_boxed_path());
+    }
+
+    Err(LinuxBwrapError::Execution(
+        "no usable host shell is visible inside the linux sandbox; expected a system `bash` or `sh` mounted by the selected profile"
+            .to_string(),
+    ))
+}
+
+fn validate_builder(builder: &Builder) -> Result<(), LinuxBwrapError> {
+    validate_directory_path(builder.workspace.as_ref(), "workspace host directory")?;
+    validate_directory_path(
+        builder.synthetic_home.as_ref(),
+        "synthetic home host directory",
+    )?;
+    validate_absolute_path(builder.cache_root.as_ref(), "cache root host path")?;
+    if builder.mount_cache_root {
+        validate_directory_path(builder.cache_root.as_ref(), "cache root host directory")?;
+    }
+
+    validate_absolute_path(builder.workspace_dest.as_ref(), "workspace destination")?;
+    validate_absolute_path(
+        builder.synthetic_home_dest.as_ref(),
+        "synthetic home destination",
+    )?;
+    validate_tmp_backing(&builder.tmp_backing)?;
+    validate_mount_paths(&builder.read_only_mounts, "read-only mount source")?;
+    validate_mount_paths(&builder.read_write_mounts, "read-write mount source")?;
+    validate_tmpfs_overlays(&builder.tmpfs_overlays)?;
+    validate_file_overlays(&builder.file_overlays)?;
+    validate_symlinks(&builder.compat_symlinks)?;
+    validate_env_vars(builder.default_env.as_ref(), "default")?;
+    validate_env_vars(builder.extra_env.as_ref(), "extra")?;
+    validate_credential_file_mounts(builder)?;
+    Ok(())
+}
+
 fn arg_capacity_for(builder: &Builder) -> usize {
     let env_count = builder.default_env.len() + builder.extra_env.len();
     let ro_slots = if builder.read_only_host_rootfs {
@@ -515,17 +471,20 @@ fn arg_capacity_for(builder: &Builder) -> usize {
     fixed_slots + env_count * 3 + mount_slots + tmp_slots
 }
 
-fn push_bind(args: &mut Vec<OsString>, flag: &str, source: &Path, dest: &Path) {
-    args.push(OsString::from(flag));
-    args.push(source.as_os_str().into());
-    args.push(dest.as_os_str().into());
-}
-
-fn push_symlinks(args: &mut Vec<OsString>, symlinks: &[Symlink]) {
-    for symlink in symlinks {
-        args.push(OsString::from("--symlink"));
-        args.push(OsString::from(symlink.target()));
-        args.push(symlink.link_path().as_os_str().into());
+fn builder_sandbox_layout(builder: &Builder) -> SandboxLayout<'_> {
+    SandboxLayout {
+        workspace: builder.workspace.as_ref(),
+        workspace_dest: builder.workspace_dest.as_ref(),
+        synthetic_home: builder.synthetic_home.as_ref(),
+        synthetic_home_dest: builder.synthetic_home_dest.as_ref(),
+        cache_root: builder.cache_root.as_ref(),
+        mount_cache_root: builder.mount_cache_root,
+        tmp_backing: &builder.tmp_backing,
+        read_only_host_rootfs: builder.read_only_host_rootfs,
+        tmpfs_overlays: builder.tmpfs_overlays.as_ref(),
+        file_overlays: builder.file_overlays.as_ref(),
+        read_only_mounts: builder.read_only_mounts.as_ref(),
+        read_write_mounts: builder.read_write_mounts.as_ref(),
     }
 }
 
@@ -537,10 +496,16 @@ fn push_env_args(args: &mut Vec<OsString>, env_vars: &[EnvVar]) {
     }
 }
 
-fn push_same_path_bind(args: &mut Vec<OsString>, flag: &str, path: &Path) {
-    args.push(OsString::from(flag));
-    args.push(path.as_os_str().into());
-    args.push(path.as_os_str().into());
+fn push_file_mounts(args: &mut Vec<OsString>, mounts: &[FileMount]) {
+    for mount in mounts {
+        push_bind(args, "--ro-bind", mount.source(), mount.dest());
+    }
+}
+
+fn push_file_overlay_mounts(args: &mut Vec<OsString>, overlays: &[FileOverlay]) {
+    for overlay in overlays {
+        push_bind(args, "--ro-bind", overlay.source(), overlay.dest());
+    }
 }
 
 fn push_same_path_binds(args: &mut Vec<OsString>, flag: &str, paths: &[Box<Path>]) {
@@ -549,16 +514,11 @@ fn push_same_path_binds(args: &mut Vec<OsString>, flag: &str, paths: &[Box<Path>
     }
 }
 
-fn push_tmpfs_mounts(args: &mut Vec<OsString>, paths: &[Box<Path>]) {
-    for path in paths {
-        args.push(OsString::from("--tmpfs"));
-        args.push(path.as_os_str().into());
-    }
-}
-
-fn push_file_overlay_mounts(args: &mut Vec<OsString>, overlays: &[FileOverlay]) {
-    for overlay in overlays {
-        push_bind(args, "--ro-bind", overlay.source(), overlay.dest());
+fn push_symlinks(args: &mut Vec<OsString>, symlinks: &[Symlink]) {
+    for symlink in symlinks {
+        args.push(OsString::from("--symlink"));
+        args.push(OsString::from(symlink.target()));
+        args.push(symlink.link_path().as_os_str().into());
     }
 }
 
@@ -572,10 +532,57 @@ fn push_tmp_mount(args: &mut Vec<OsString>, tmp_backing: &TmpBacking) {
     }
 }
 
-fn push_file_mounts(args: &mut Vec<OsString>, mounts: &[FileMount]) {
-    for mount in mounts {
-        push_bind(args, "--ro-bind", mount.source(), mount.dest());
+fn push_tmpfs_mounts(args: &mut Vec<OsString>, paths: &[Box<Path>]) {
+    for path in paths {
+        args.push(OsString::from("--tmpfs"));
+        args.push(path.as_os_str().into());
     }
+}
+
+fn validate_credential_file_mounts(builder: &Builder) -> Result<(), LinuxBwrapError> {
+    for mount in builder.credential_file_mounts.iter() {
+        validate_absolute_path(mount.source(), "credential file source")?;
+        validate_absolute_path(mount.dest(), "credential file destination")?;
+
+        let metadata = fs::metadata(mount.source()).map_err(|error| {
+            LinuxBwrapError::InvalidPath(format!(
+                "credential file source must exist and be readable: {} ({error})",
+                mount.source().display()
+            ))
+        })?;
+        if !metadata.is_file() {
+            return Err(LinuxBwrapError::InvalidPath(format!(
+                "credential file source must be a regular file: {}",
+                mount.source().display()
+            )));
+        }
+        if !credential_dest_is_allowed(builder, mount.dest()) {
+            return Err(LinuxBwrapError::InvalidPath(format!(
+                "credential file destination must stay within the synthetic home, workspace, or cache root: {}",
+                mount.dest().display()
+            )));
+        }
+    }
+
+    Ok(())
+}
+
+fn credential_dest_is_allowed(builder: &Builder, dest: &Path) -> bool {
+    dest.starts_with(builder.synthetic_home_dest.as_ref())
+        || dest.starts_with(builder.workspace_dest.as_ref())
+        || (builder.mount_cache_root && dest.starts_with(builder.cache_root.as_ref()))
+}
+
+fn push_bind(args: &mut Vec<OsString>, flag: &str, source: &Path, dest: &Path) {
+    args.push(OsString::from(flag));
+    args.push(source.as_os_str().into());
+    args.push(dest.as_os_str().into());
+}
+
+fn push_same_path_bind(args: &mut Vec<OsString>, flag: &str, path: &Path) {
+    args.push(OsString::from(flag));
+    args.push(path.as_os_str().into());
+    args.push(path.as_os_str().into());
 }
 
 #[cfg(test)]

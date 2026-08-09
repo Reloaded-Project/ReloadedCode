@@ -54,104 +54,6 @@ pub(crate) fn ensure_cache_root_subdirs(
     Ok(())
 }
 
-/// Validates that `path` is absolute.
-pub(crate) fn validate_absolute_path(path: &Path, label: &str) -> Result<(), LinuxBwrapError> {
-    if path.is_absolute() {
-        Ok(())
-    } else {
-        Err(LinuxBwrapError::InvalidPath(format!(
-            "{label} must be an absolute path: {}",
-            path.display()
-        )))
-    }
-}
-
-/// Validates that an optional directory path is absolute, exists, and is a directory.
-pub(crate) fn validate_optional_directory_path(
-    path: Option<&Path>,
-    label: &str,
-) -> Result<(), LinuxBwrapError> {
-    match path {
-        Some(path) => validate_directory_path(path, label),
-        None => Ok(()),
-    }
-}
-
-/// Validates that `path` is an absolute existing directory.
-pub(crate) fn validate_directory_path(path: &Path, label: &str) -> Result<(), LinuxBwrapError> {
-    validate_absolute_path(path, label)?;
-    let metadata = fs::metadata(path).map_err(|_| {
-        LinuxBwrapError::InvalidPath(format!("{label} does not exist: {}", path.display()))
-    })?;
-    if metadata.is_dir() {
-        Ok(())
-    } else {
-        Err(LinuxBwrapError::InvalidPath(format!(
-            "{label} is not a directory: {}",
-            path.display()
-        )))
-    }
-}
-
-/// Validates that `path` is an absolute existing path.
-pub(crate) fn validate_existing_path(path: &Path, label: &str) -> Result<(), LinuxBwrapError> {
-    validate_absolute_path(path, label)?;
-    fs::metadata(path).map_err(|_| {
-        LinuxBwrapError::InvalidPath(format!("{label} does not exist: {}", path.display()))
-    })?;
-    Ok(())
-}
-
-/// Validates mount source paths.
-pub(crate) fn validate_mount_paths(
-    mounts: &[Box<Path>],
-    label: &str,
-) -> Result<(), LinuxBwrapError> {
-    for mount in mounts {
-        validate_existing_path(mount, label)?;
-    }
-    Ok(())
-}
-
-/// Validates tmpfs overlay destinations.
-pub(crate) fn validate_tmpfs_overlays(overlays: &[Box<Path>]) -> Result<(), LinuxBwrapError> {
-    for overlay in overlays {
-        validate_absolute_path(overlay, "tmpfs overlay path")?;
-    }
-    Ok(())
-}
-
-/// Validates file overlay entries.
-///
-/// The source must be an absolute path that exists on the host. The destination
-/// must be an absolute path.
-pub(crate) fn validate_file_overlays(overlays: &[FileOverlay]) -> Result<(), LinuxBwrapError> {
-    for overlay in overlays {
-        validate_existing_path(overlay.source(), "file overlay source")?;
-        validate_absolute_path(overlay.dest(), "file overlay destination")?;
-    }
-    Ok(())
-}
-
-/// Checks that every symlink has a non-empty target and an absolute link path.
-///
-/// # Errors
-///
-/// Returns [`LinuxBwrapError::InvalidPath`] for empty targets or non-absolute
-/// link paths.
-pub(crate) fn validate_symlinks(symlinks: &[Symlink]) -> Result<(), LinuxBwrapError> {
-    for symlink in symlinks {
-        if symlink.target().is_empty() {
-            return Err(LinuxBwrapError::InvalidPath(format!(
-                "compat symlink target must not be empty: {}",
-                symlink.link_path().display()
-            )));
-        }
-        validate_absolute_path(symlink.link_path(), "compat symlink path")?;
-    }
-    Ok(())
-}
-
 /// Checks that variable names are non-empty, contain no `=`, and neither
 /// names nor values contain NUL bytes.
 ///
@@ -191,6 +93,59 @@ pub(crate) fn validate_env_vars(vars: &[EnvVar], label: &str) -> Result<(), Linu
     Ok(())
 }
 
+/// Validates file overlay entries.
+///
+/// The source must be an absolute path that exists on the host. The destination
+/// must be an absolute path.
+pub(crate) fn validate_file_overlays(overlays: &[FileOverlay]) -> Result<(), LinuxBwrapError> {
+    for overlay in overlays {
+        validate_existing_path(overlay.source(), "file overlay source")?;
+        validate_absolute_path(overlay.dest(), "file overlay destination")?;
+    }
+    Ok(())
+}
+
+/// Validates mount source paths.
+pub(crate) fn validate_mount_paths(
+    mounts: &[Box<Path>],
+    label: &str,
+) -> Result<(), LinuxBwrapError> {
+    for mount in mounts {
+        validate_existing_path(mount, label)?;
+    }
+    Ok(())
+}
+
+/// Validates that an optional directory path is absolute, exists, and is a directory.
+pub(crate) fn validate_optional_directory_path(
+    path: Option<&Path>,
+    label: &str,
+) -> Result<(), LinuxBwrapError> {
+    match path {
+        Some(path) => validate_directory_path(path, label),
+        None => Ok(()),
+    }
+}
+
+/// Checks that every symlink has a non-empty target and an absolute link path.
+///
+/// # Errors
+///
+/// Returns [`LinuxBwrapError::InvalidPath`] for empty targets or non-absolute
+/// link paths.
+pub(crate) fn validate_symlinks(symlinks: &[Symlink]) -> Result<(), LinuxBwrapError> {
+    for symlink in symlinks {
+        if symlink.target().is_empty() {
+            return Err(LinuxBwrapError::InvalidPath(format!(
+                "compat symlink target must not be empty: {}",
+                symlink.link_path().display()
+            )));
+        }
+        validate_absolute_path(symlink.link_path(), "compat symlink path")?;
+    }
+    Ok(())
+}
+
 /// Validates that bind-backed `/tmp` targets an existing directory other than
 /// the host `/tmp` itself. [`TmpBacking::Tmpfs`] always passes.
 ///
@@ -213,5 +168,50 @@ pub(crate) fn validate_tmp_backing(tmp_backing: &TmpBacking) -> Result<(), Linux
             }
             Ok(())
         }
+    }
+}
+
+/// Validates tmpfs overlay destinations.
+pub(crate) fn validate_tmpfs_overlays(overlays: &[Box<Path>]) -> Result<(), LinuxBwrapError> {
+    for overlay in overlays {
+        validate_absolute_path(overlay, "tmpfs overlay path")?;
+    }
+    Ok(())
+}
+
+/// Validates that `path` is an absolute existing directory.
+pub(crate) fn validate_directory_path(path: &Path, label: &str) -> Result<(), LinuxBwrapError> {
+    validate_absolute_path(path, label)?;
+    let metadata = fs::metadata(path).map_err(|_| {
+        LinuxBwrapError::InvalidPath(format!("{label} does not exist: {}", path.display()))
+    })?;
+    if metadata.is_dir() {
+        Ok(())
+    } else {
+        Err(LinuxBwrapError::InvalidPath(format!(
+            "{label} is not a directory: {}",
+            path.display()
+        )))
+    }
+}
+
+/// Validates that `path` is an absolute existing path.
+pub(crate) fn validate_existing_path(path: &Path, label: &str) -> Result<(), LinuxBwrapError> {
+    validate_absolute_path(path, label)?;
+    fs::metadata(path).map_err(|_| {
+        LinuxBwrapError::InvalidPath(format!("{label} does not exist: {}", path.display()))
+    })?;
+    Ok(())
+}
+
+/// Validates that `path` is absolute.
+pub(crate) fn validate_absolute_path(path: &Path, label: &str) -> Result<(), LinuxBwrapError> {
+    if path.is_absolute() {
+        Ok(())
+    } else {
+        Err(LinuxBwrapError::InvalidPath(format!(
+            "{label} must be an absolute path: {}",
+            path.display()
+        )))
     }
 }

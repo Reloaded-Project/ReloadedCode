@@ -9,6 +9,7 @@
 //!
 //! [`Tool`]: serdes_ai::tools::Tool
 
+use crate::convert::core_error_to_serdes;
 use async_trait::async_trait;
 use reloaded_code_core::ToolContext;
 use reloaded_code_core::context::{PathMode, ToolPrompt};
@@ -16,8 +17,6 @@ use reloaded_code_core::path::PathResolver;
 use reloaded_code_core::tool_metadata::edit as edit_meta;
 use reloaded_code_core::tools::{EditRequest, EditSettings, edit_file};
 use serdes_ai::tools::{RunContext, SchemaBuilder, Tool, ToolDefinition, ToolResult, ToolReturn};
-
-use crate::convert::core_error_to_serdes;
 
 /// Tool for making exact string replacements in files.
 ///

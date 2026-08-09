@@ -1,5 +1,12 @@
 use std::io::{BufRead, Write};
 
+/// A response for the mock HTTP server to serve to the fetch request.
+///
+/// Variants exercise the different `fetch_catalog` outcomes:
+/// - `Ok` - a full 200 response with an ETag and body
+/// - `PartialOk` - a 200 whose declared `Content-Length` differs from the body
+/// - `NotModified` - a 304 echoing the provided ETag
+/// - `Status` - an arbitrary status code with a reason phrase
 pub enum MockResponse {
     Ok {
         etag: &'static str,
@@ -19,6 +26,8 @@ pub enum MockResponse {
     },
 }
 
+/// Sample `api.json` payload bytes matching the models.dev schema, used as the
+/// body for mock catalog responses.
 pub fn sample_api_json() -> &'static [u8] {
     br#"
         {
@@ -45,6 +54,13 @@ pub fn sample_api_json() -> &'static [u8] {
         "#
 }
 
+/// Starts a threaded mock HTTP server that serves a single request for `/api.json`.
+///
+/// Returns the server thread's join handle and the base URL to fetch from.
+///
+/// # Arguments
+///
+/// - `response` - the [`MockResponse`] the server should send.
 pub fn start_mock_server(response: MockResponse) -> (std::thread::JoinHandle<()>, String) {
     let listener = std::net::TcpListener::bind("127.0.0.1:0").expect("bind");
     let port = listener.local_addr().unwrap().port();

@@ -9,6 +9,7 @@
 //! - [`create_todo_tools`] - create a linked read/write pair with shared state
 //! - [`Todo`], [`TodoPriority`], [`TodoStatus`], [`TodoState`] - core types
 
+use crate::convert::{core_error_to_serdes, to_serdes_result};
 use async_trait::async_trait;
 use reloaded_code_core::ToolOutput;
 use reloaded_code_core::context::{ToolContext, ToolPrompt};
@@ -17,56 +18,19 @@ use reloaded_code_core::tool_metadata::{
 };
 use reloaded_code_core::tools::{TodoReadRequest, TodoWriteRequest, read_todos, write_todos};
 use serdes_ai::tools::{RunContext, SchemaBuilder, Tool, ToolDefinition, ToolResult, ToolReturn};
-
-use crate::convert::{core_error_to_serdes, to_serdes_result};
-
 // Re-export core types
 pub use reloaded_code_core::{Todo, TodoPriority, TodoState, TodoStatus};
 
-/// Tool for writing/replacing the todo list.
+/// Tool for reading the current task list.
 #[derive(Debug, Clone)]
-pub struct TodoWriteTool {
+pub struct TodoReadTool {
     definition: ToolDefinition,
     state: TodoState,
 }
 
-impl TodoWriteTool {
-    /// Creates a new todo write tool with the given state.
-    pub fn new(state: TodoState) -> Self {
-        Self {
-            definition: build_todo_write_definition(),
-            state,
-        }
-    }
-}
-
-#[async_trait]
-impl<Deps: Send + Sync> Tool<Deps> for TodoWriteTool {
-    fn definition(&self) -> ToolDefinition {
-        self.definition.clone()
-    }
-
-    async fn call(&self, _ctx: &RunContext<Deps>, args: serde_json::Value) -> ToolResult {
-        let args = TodoWriteRequest::parse(args)
-            .map_err(|e| core_error_to_serdes(todo_write_meta::NAME, e))?;
-        let result = write_todos(&self.state, args);
-        to_serdes_result(todo_write_meta::NAME, result.map(ToolOutput::new))
-    }
-}
-
-impl ToolContext for TodoWriteTool {
-    fn name(&self) -> &'static str {
-        todo_write_meta::NAME
-    }
-
-    fn context(&self) -> ToolPrompt {
-        ToolPrompt::TodoWrite
-    }
-}
-
-/// Tool for reading the current todo list.
+/// Tool for writing/replacing the task list.
 #[derive(Debug, Clone)]
-pub struct TodoReadTool {
+pub struct TodoWriteTool {
     definition: ToolDefinition,
     state: TodoState,
 }
@@ -76,6 +40,16 @@ impl TodoReadTool {
     pub fn new(state: TodoState) -> Self {
         Self {
             definition: build_todo_read_definition(),
+            state,
+        }
+    }
+}
+
+impl TodoWriteTool {
+    /// Creates a new todo write tool with the given state.
+    pub fn new(state: TodoState) -> Self {
+        Self {
+            definition: build_todo_write_definition(),
             state,
         }
     }
@@ -105,7 +79,31 @@ impl ToolContext for TodoReadTool {
     }
 }
 
-/// Creates a pair of todo tools with shared state.
+#[async_trait]
+impl<Deps: Send + Sync> Tool<Deps> for TodoWriteTool {
+    fn definition(&self) -> ToolDefinition {
+        self.definition.clone()
+    }
+
+    async fn call(&self, _ctx: &RunContext<Deps>, args: serde_json::Value) -> ToolResult {
+        let args = TodoWriteRequest::parse(args)
+            .map_err(|e| core_error_to_serdes(todo_write_meta::NAME, e))?;
+        let result = write_todos(&self.state, args);
+        to_serdes_result(todo_write_meta::NAME, result.map(ToolOutput::new))
+    }
+}
+
+impl ToolContext for TodoWriteTool {
+    fn name(&self) -> &'static str {
+        todo_write_meta::NAME
+    }
+
+    fn context(&self) -> ToolPrompt {
+        ToolPrompt::TodoWrite
+    }
+}
+
+/// Creates a linked read/write pair of tools with shared state.
 ///
 /// Returns `(TodoReadTool, TodoWriteTool, TodoState)` for cases where
 /// the caller needs access to the underlying state.
@@ -116,6 +114,18 @@ pub fn create_todo_tools() -> (TodoReadTool, TodoWriteTool, TodoState) {
         TodoWriteTool::new(state.clone()),
         state,
     )
+}
+
+fn build_todo_read_definition() -> ToolDefinition {
+    ToolDefinition {
+        name: todo_read_meta::NAME.to_owned(),
+        description: todo_read_meta::DESCRIPTION.to_owned(),
+        parameters_json_schema: SchemaBuilder::new()
+            .build()
+            .expect("schema serialization should never fail"),
+        strict: None,
+        outer_typed_dict_key: None,
+    }
 }
 
 fn build_todo_write_definition() -> ToolDefinition {
@@ -154,18 +164,6 @@ fn build_todo_write_definition() -> ToolDefinition {
                 }),
                 todo_write_meta::param::TODOS.required,
             )
-            .build()
-            .expect("schema serialization should never fail"),
-        strict: None,
-        outer_typed_dict_key: None,
-    }
-}
-
-fn build_todo_read_definition() -> ToolDefinition {
-    ToolDefinition {
-        name: todo_read_meta::NAME.to_owned(),
-        description: todo_read_meta::DESCRIPTION.to_owned(),
-        parameters_json_schema: SchemaBuilder::new()
             .build()
             .expect("schema serialization should never fail"),
         strict: None,

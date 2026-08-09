@@ -5,6 +5,10 @@
 //! Cases cover exact matches, wildcard permission keys, wildcard subject
 //! patterns, and longer rulesets where the winning rule is near the end.
 
+criterion_group!(benches, bench_ruleset_evaluate, bench_check_permission);
+
+criterion_main!(benches);
+
 use core::hint::black_box;
 use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion, Throughput};
 use reloaded_code_core::permissions::{PermissionAction, Rule, Ruleset};
@@ -19,6 +23,49 @@ struct PermissionCase {
     tool_name: &'static str,
     subject: &'static str,
     ruleset: Ruleset,
+}
+
+/// Benchmark [`OptionRulesetExt::check`] (ruleset lookup plus optional default
+/// fallthrough) across all [`benchmark_cases`].
+fn bench_check_permission(c: &mut Criterion) {
+    let mut group = c.benchmark_group("permissions/check_permission");
+    let cases = benchmark_cases();
+
+    group.throughput(Throughput::Elements(1));
+
+    for case in &cases {
+        group.bench_with_input(BenchmarkId::new("ruleset", case.name), case, |b, case| {
+            b.iter(|| {
+                Some(black_box(&case.ruleset))
+                    .check(black_box(case.tool_name), black_box(case.subject))
+                    .expect("benchmark fixture should be allowed");
+                black_box(())
+            })
+        });
+    }
+
+    group.finish();
+}
+
+/// Benchmark [`Ruleset::evaluate`] across all [`benchmark_cases`].
+fn bench_ruleset_evaluate(c: &mut Criterion) {
+    let mut group = c.benchmark_group("permissions/evaluate");
+    let cases = benchmark_cases();
+
+    group.throughput(Throughput::Elements(1));
+
+    for case in &cases {
+        group.bench_with_input(BenchmarkId::new("ruleset", case.name), case, |b, case| {
+            b.iter(|| {
+                black_box(
+                    case.ruleset
+                        .evaluate(black_box(case.tool_name), black_box(case.subject)),
+                )
+            })
+        });
+    }
+
+    group.finish();
 }
 
 /// Build a [`Ruleset`] with `rule_count - 1` deny rules followed by one
@@ -104,49 +151,3 @@ fn benchmark_cases() -> Vec<PermissionCase> {
         },
     ]
 }
-
-/// Benchmark [`Ruleset::evaluate`] across all [`benchmark_cases`].
-fn bench_ruleset_evaluate(c: &mut Criterion) {
-    let mut group = c.benchmark_group("permissions/evaluate");
-    let cases = benchmark_cases();
-
-    group.throughput(Throughput::Elements(1));
-
-    for case in &cases {
-        group.bench_with_input(BenchmarkId::new("ruleset", case.name), case, |b, case| {
-            b.iter(|| {
-                black_box(
-                    case.ruleset
-                        .evaluate(black_box(case.tool_name), black_box(case.subject)),
-                )
-            })
-        });
-    }
-
-    group.finish();
-}
-
-/// Benchmark [`OptionRulesetExt::check`] (ruleset lookup plus optional default
-/// fallthrough) across all [`benchmark_cases`].
-fn bench_check_permission(c: &mut Criterion) {
-    let mut group = c.benchmark_group("permissions/check_permission");
-    let cases = benchmark_cases();
-
-    group.throughput(Throughput::Elements(1));
-
-    for case in &cases {
-        group.bench_with_input(BenchmarkId::new("ruleset", case.name), case, |b, case| {
-            b.iter(|| {
-                Some(black_box(&case.ruleset))
-                    .check(black_box(case.tool_name), black_box(case.subject))
-                    .expect("benchmark fixture should be allowed");
-                black_box(())
-            })
-        });
-    }
-
-    group.finish();
-}
-
-criterion_group!(benches, bench_ruleset_evaluate, bench_check_permission);
-criterion_main!(benches);

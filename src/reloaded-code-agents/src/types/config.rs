@@ -46,62 +46,6 @@ use indexmap::IndexMap;
 use reloaded_code_core::permissions::PermissionAction;
 use serde::{Deserialize, Serialize};
 
-/// Agent execution mode.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
-#[serde(rename_all = "lowercase")]
-pub enum AgentMode {
-    /// Available in both contexts.
-    #[default]
-    All,
-    /// Can be selected as primary agent for conversations.
-    Primary,
-    /// Only available as subagent via Task tool.
-    Subagent,
-}
-
-/// Permission rule: simple action or pattern-based map.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(untagged)]
-pub enum PermissionRule {
-    /// Simple allow/deny for all.
-    Action(PermissionAction),
-    /// Pattern-based rules (e.g., `{"orchestrator-*": "deny", "*": "allow"}`).
-    Pattern(IndexMap<String, PermissionAction>),
-}
-
-impl Default for PermissionRule {
-    fn default() -> Self {
-        Self::Action(PermissionAction::default())
-    }
-}
-
-/// Raw frontmatter data (intermediate deserialization target).
-#[derive(Debug, Clone, Deserialize)]
-pub(crate) struct RawFrontmatter {
-    #[serde(default)]
-    pub name: Option<Box<str>>,
-    #[serde(default)]
-    pub mode: AgentMode,
-    pub description: Box<str>,
-    #[serde(default)]
-    pub model: Option<Box<str>>,
-    /// Legacy visibility flag accepted for compatibility only.
-    ///
-    /// Runtime behaviour in headless mode ignores this field.
-    #[serde(default)]
-    pub hidden: bool,
-    #[serde(default)]
-    pub temperature: Option<f32>,
-    #[serde(default)]
-    pub top_p: Option<f32>,
-    #[serde(default)]
-    pub permission: IndexMap<String, PermissionRule>,
-    #[serde(default, deserialize_with = "deserialize_non_null_tool_settings")]
-    pub tool_settings: AgentToolSettings,
-    #[serde(default)]
-    pub options: AHashMap<String, serde_json::Value>,
-}
-
 /// Agent configuration loaded from a markdown file.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AgentConfig {
@@ -149,6 +93,56 @@ pub struct AgentConfig {
     pub prompt: Box<str>,
 }
 
+/// Raw frontmatter data (intermediate deserialization target).
+#[derive(Debug, Clone, Deserialize)]
+pub(crate) struct RawFrontmatter {
+    #[serde(default)]
+    pub name: Option<Box<str>>,
+    #[serde(default)]
+    pub mode: AgentMode,
+    pub description: Box<str>,
+    #[serde(default)]
+    pub model: Option<Box<str>>,
+    /// Legacy visibility flag accepted for compatibility only.
+    ///
+    /// Runtime behaviour in headless mode ignores this field.
+    #[serde(default)]
+    pub hidden: bool,
+    #[serde(default)]
+    pub temperature: Option<f32>,
+    #[serde(default)]
+    pub top_p: Option<f32>,
+    #[serde(default)]
+    pub permission: IndexMap<String, PermissionRule>,
+    #[serde(default, deserialize_with = "deserialize_non_null_tool_settings")]
+    pub tool_settings: AgentToolSettings,
+    #[serde(default)]
+    pub options: AHashMap<String, serde_json::Value>,
+}
+
+/// Agent execution mode.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum AgentMode {
+    /// Available in both contexts.
+    #[default]
+    All,
+    /// Can be selected as primary agent for conversations.
+    Primary,
+    /// Only available as subagent via Task tool.
+    Subagent,
+}
+
+/// Permission rule: simple action or pattern-based map.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(untagged)]
+pub enum PermissionRule {
+    /// Simple allow/deny for all.
+    Action(PermissionAction),
+    /// Pattern-based rules (e.g., `{"orchestrator-*": "deny", "*": "allow"}`).
+    Pattern(IndexMap<String, PermissionAction>),
+}
+
 impl AgentConfig {
     /// Returns the provider and model identifier from [`AgentConfig::model`].
     ///
@@ -191,7 +185,18 @@ impl AgentConfig {
     }
 }
 
+impl Default for PermissionRule {
+    fn default() -> Self {
+        Self::Action(PermissionAction::default())
+    }
+}
+
 /// Parses a model identifier string into `(provider, model)` parts.
+///
+/// # Arguments
+///
+/// - `value` - the model identifier string to parse, expected in `"provider/model-id"`
+///   form (e.g., `"openai/gpt-4"`, `"synthetic/hf:moonshotai/Kimi-K2.5"`).
 ///
 /// ## Expected Format
 /// `"provider/model-id"` (e.g., `"openai/gpt-4"`, `"synthetic/hf:moonshotai/Kimi-K2.5"`).

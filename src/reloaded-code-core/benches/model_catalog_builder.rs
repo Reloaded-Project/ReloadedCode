@@ -1,5 +1,9 @@
 //! Benchmarks for batch model-catalog construction.
 
+criterion_group!(benches, benchmark_builder_construction);
+
+criterion_main!(benches);
+
 use core::hint::black_box;
 use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion, Throughput};
 use reloaded_code_core::models::{
@@ -7,15 +11,15 @@ use reloaded_code_core::models::{
     ProviderSource, ProviderType,
 };
 
+struct Dataset {
+    providers: Vec<ProviderSource>,
+    provider_models: Vec<ProviderModelSpec>,
+}
+
 struct ProviderModelSpec {
     provider_idx: ProviderIdx,
     model_key: String,
     model: ModelInfo,
-}
-
-struct Dataset {
-    providers: Vec<ProviderSource>,
-    provider_models: Vec<ProviderModelSpec>,
 }
 
 impl Dataset {
@@ -30,6 +34,42 @@ impl Dataset {
         }
         sources
     }
+}
+
+fn benchmark_builder_construction(c: &mut Criterion) {
+    let mut group = c.benchmark_group("model_catalog_builder_construct");
+
+    for (name, provider_count, model_count, with_env_vars) in [
+        ("models_dev_snapshot", 96usize, 3031usize, true),
+        ("max", 16384usize, 65535usize, false),
+    ] {
+        let dataset = make_dataset(provider_count, model_count, with_env_vars);
+        let provider_model_sources = dataset.provider_model_sources();
+        group.throughput(Throughput::Elements(
+            (provider_count + dataset.provider_models.len()) as u64,
+        ));
+
+        group.bench_with_input(BenchmarkId::new("batch", name), &dataset, |b, input| {
+            b.iter(|| {
+                construct_batch(
+                    black_box(&input.providers),
+                    black_box(&provider_model_sources),
+                )
+            })
+        });
+    }
+
+    group.finish();
+}
+
+fn construct_batch(providers: &[ProviderSource], provider_models: &[ProviderModelSource<'_>]) {
+    let catalog = ModelCatalog::build(providers, provider_models).expect("batch build");
+
+    black_box((
+        catalog.provider_count(),
+        catalog.provider_model_count(),
+        catalog.model_config_count(),
+    ));
 }
 
 fn make_dataset(provider_count: usize, model_count: usize, with_env_vars: bool) -> Dataset {
@@ -89,42 +129,3 @@ fn make_dataset(provider_count: usize, model_count: usize, with_env_vars: bool) 
         provider_models,
     }
 }
-
-fn construct_batch(providers: &[ProviderSource], provider_models: &[ProviderModelSource<'_>]) {
-    let catalog = ModelCatalog::build(providers, provider_models).expect("batch build");
-
-    black_box((
-        catalog.provider_count(),
-        catalog.provider_model_count(),
-        catalog.model_config_count(),
-    ));
-}
-
-fn benchmark_builder_construction(c: &mut Criterion) {
-    let mut group = c.benchmark_group("model_catalog_builder_construct");
-
-    for (name, provider_count, model_count, with_env_vars) in [
-        ("models_dev_snapshot", 96usize, 3031usize, true),
-        ("max", 16384usize, 65535usize, false),
-    ] {
-        let dataset = make_dataset(provider_count, model_count, with_env_vars);
-        let provider_model_sources = dataset.provider_model_sources();
-        group.throughput(Throughput::Elements(
-            (provider_count + dataset.provider_models.len()) as u64,
-        ));
-
-        group.bench_with_input(BenchmarkId::new("batch", name), &dataset, |b, input| {
-            b.iter(|| {
-                construct_batch(
-                    black_box(&input.providers),
-                    black_box(&provider_model_sources),
-                )
-            })
-        });
-    }
-
-    group.finish();
-}
-
-criterion_group!(benches, benchmark_builder_construction);
-criterion_main!(benches);

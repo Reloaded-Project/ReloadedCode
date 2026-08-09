@@ -5,7 +5,6 @@
 use std::collections::HashMap;
 use std::sync::atomic::AtomicI64;
 use std::sync::atomic::Ordering;
-
 use codex_core::protocol::Event;
 use mcp_types::JSONRPC_VERSION;
 use mcp_types::JSONRPCError;
@@ -21,7 +20,6 @@ use tokio::sync::Mutex;
 use tokio::sync::mpsc;
 use tokio::sync::oneshot;
 use tracing::warn;
-
 use crate::error_code::INTERNAL_ERROR_CODE;
 
 /// Sends messages to the client and manages request callbacks.
@@ -29,6 +27,65 @@ pub(crate) struct OutgoingMessageSender {
     next_request_id: AtomicI64,
     sender: mpsc::UnboundedSender<OutgoingMessage>,
     request_id_to_callback: Mutex<HashMap<RequestId, oneshot::Sender<Result>>>,
+}
+
+/// Parameters carried by an outgoing notification to the client.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+pub(crate) struct OutgoingNotificationParams {
+    #[serde(rename = "_meta", default, skip_serializing_if = "Option::is_none")]
+    pub meta: Option<OutgoingNotificationMeta>,
+
+    #[serde(flatten)]
+    pub event: serde_json::Value,
+}
+
+/// Outgoing message from the server to the client.
+pub(crate) enum OutgoingMessage {
+    Request(OutgoingRequest),
+    Notification(OutgoingNotification),
+    Response(OutgoingResponse),
+    Error(OutgoingError),
+}
+
+// Additional mcp-specific data to be added to a [`codex_core::protocol::Event`] as notification.params._meta
+// MCP Spec: https://modelcontextprotocol.io/specification/2025-06-18/basic#meta
+// Typescript Schema: https://github.com/modelcontextprotocol/modelcontextprotocol/blob/0695a497eb50a804fc0e88c18a93a21a675d6b3e/schema/2025-06-18/schema.ts
+/// Additional MCP-specific data attached to a notification's `_meta` parameter.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct OutgoingNotificationMeta {
+    pub request_id: Option<RequestId>,
+}
+
+/// An error response sent from the server to the client.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+pub(crate) struct OutgoingError {
+    pub error: JSONRPCErrorError,
+    pub id: RequestId,
+}
+
+/// A notification message sent from the server to the client.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+pub(crate) struct OutgoingNotification {
+    pub method: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub params: Option<serde_json::Value>,
+}
+
+/// A request message sent from the server to the client.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+pub(crate) struct OutgoingRequest {
+    pub id: RequestId,
+    pub method: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub params: Option<serde_json::Value>,
+}
+
+/// A response message sent from the server to the client.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+pub(crate) struct OutgoingResponse {
+    pub id: RequestId,
+    pub result: Result,
 }
 
 impl OutgoingMessageSender {
@@ -139,12 +196,10 @@ impl OutgoingMessageSender {
     }
 }
 
-/// Outgoing message from the server to the client.
-pub(crate) enum OutgoingMessage {
-    Request(OutgoingRequest),
-    Notification(OutgoingNotification),
-    Response(OutgoingResponse),
-    Error(OutgoingError),
+impl OutgoingNotificationMeta {
+    pub(crate) fn new(request_id: Option<RequestId>) -> Self {
+        Self { request_id }
+    }
 }
 
 impl From<OutgoingMessage> for JSONRPCMessage {
@@ -180,57 +235,6 @@ impl From<OutgoingMessage> for JSONRPCMessage {
             }),
         }
     }
-}
-
-#[derive(Debug, Clone, PartialEq, Serialize)]
-pub(crate) struct OutgoingRequest {
-    pub id: RequestId,
-    pub method: String,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub params: Option<serde_json::Value>,
-}
-
-#[derive(Debug, Clone, PartialEq, Serialize)]
-pub(crate) struct OutgoingNotification {
-    pub method: String,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub params: Option<serde_json::Value>,
-}
-
-#[derive(Debug, Clone, PartialEq, Serialize)]
-pub(crate) struct OutgoingNotificationParams {
-    #[serde(rename = "_meta", default, skip_serializing_if = "Option::is_none")]
-    pub meta: Option<OutgoingNotificationMeta>,
-
-    #[serde(flatten)]
-    pub event: serde_json::Value,
-}
-
-// Additional mcp-specific data to be added to a [`codex_core::protocol::Event`] as notification.params._meta
-// MCP Spec: https://modelcontextprotocol.io/specification/2025-06-18/basic#meta
-// Typescript Schema: https://github.com/modelcontextprotocol/modelcontextprotocol/blob/0695a497eb50a804fc0e88c18a93a21a675d6b3e/schema/2025-06-18/schema.ts
-#[derive(Debug, Clone, PartialEq, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub(crate) struct OutgoingNotificationMeta {
-    pub request_id: Option<RequestId>,
-}
-
-impl OutgoingNotificationMeta {
-    pub(crate) fn new(request_id: Option<RequestId>) -> Self {
-        Self { request_id }
-    }
-}
-
-#[derive(Debug, Clone, PartialEq, Serialize)]
-pub(crate) struct OutgoingResponse {
-    pub id: RequestId,
-    pub result: Result,
-}
-
-#[derive(Debug, Clone, PartialEq, Serialize)]
-pub(crate) struct OutgoingError {
-    pub error: JSONRPCErrorError,
-    pub id: RequestId,
 }
 
 #[cfg(test)]
