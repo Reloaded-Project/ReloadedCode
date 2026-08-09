@@ -1,0 +1,36 @@
+name: Tidy
+
+# Applies rust-llm-tidy fixes to PR-changed .rs/.md files in place and, on a
+# pull request, commits + pushes them back to the PR branch (mode: apply).
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - "src/**"
+      - "**/*.md"
+      - "**/*.MD"
+  workflow_dispatch:
+
+jobs:
+  tidy:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write # apply: commit + push fixes to the PR branch
+      pull-requests: write # post a report comment on success/failure
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          # Check out the PR branch head, not the auto-generated merge ref:
+          # apply-mode commits on top of HEAD and pushes back to this branch,
+          # which would be a non-fast-forward from the merge commit.
+          ref: ${{ github.head_ref }}
+          # Full history so the PR base diff is resolvable for changed-files.
+          fetch-depth: 0
+
+      - name: Apply tidy fixes to changed files
+        uses: Sewer56/rust-llm-tidy-action@v1
+        with:
+          rust-project-path: "."
+          changed-files: "true"
+          mode: "apply"
