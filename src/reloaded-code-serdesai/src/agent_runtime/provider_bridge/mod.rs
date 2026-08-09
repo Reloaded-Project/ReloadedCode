@@ -10,6 +10,9 @@ use reloaded_code_core::{
 use serdes_ai_models::{BoxedModel, Model as SerdesModel, ModelError};
 use std::sync::Arc;
 
+#[cfg(test)]
+mod tests;
+
 const AWS_ACCESS_KEY_ID_ENV_VAR: &str = "AWS_ACCESS_KEY_ID";
 const AWS_DEFAULT_REGION_ENV_VAR: &str = "AWS_DEFAULT_REGION";
 const AWS_REGION_ENV_VAR: &str = "AWS_REGION";
@@ -1010,6 +1013,3 @@ fn normalize_azure_endpoint(endpoint: &str) -> String {
         trimmed.to_owned()
     }
 }
-
-#[cfg(test)]
-mod tests;

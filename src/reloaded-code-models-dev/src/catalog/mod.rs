@@ -13,6 +13,8 @@ use std::path::Path;
 mod load_cache;
 mod load_result;
 mod sync;
+#[cfg(test)]
+mod test_utils;
 
 /// Entry point for loading models.dev catalogs.
 ///
@@ -150,8 +152,6 @@ impl ModelsDevCatalog {
     }
 }
 
-#[cfg(test)]
-mod test_utils;
 #[cfg(test)]
 mod tests {
     use super::*;
