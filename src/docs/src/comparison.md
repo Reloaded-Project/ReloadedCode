@@ -40,11 +40,11 @@ reloaded-code is for embedding agent tools into your own applications.
 - **Agent markdown format** - both use a similar YAML frontmatter schema
   (`name`, `mode`, `description`, `model`, `permission`, `tool_settings`).
   Agent files written for [OpenCode] are drop-in compatible (add
-  explicit permissions). See [Agents](agents.md) for the full format
+  explicit permissions). See [Agents] for the full format
   reference and [Migrating from OpenCode] for the differences.
 
 - **Core tools** - both provide `read`, `write`, `edit`, `glob`, `grep`,
-  `bash`, and `webfetch`. See [Tools](tools.md) for the complete tool
+  `bash`, and `webfetch`. See [Tools] for the complete tool
   reference.
 
 - **[models.dev]** - both support the models.dev catalog for provider/model
@@ -66,7 +66,7 @@ explicitly allow it in the agent frontmatter. There is no interactive approval
 flow because there is no user to prompt - the agent runs unattended.
 
 See [Migrating from OpenCode] for a side-by-side YAML example,
-a [portable default-deny configuration](migration.md#portable-default-deny),
+a [portable default-deny configuration],
 and a migration checklist.
 
 ### Interface
@@ -77,10 +77,10 @@ with no UI. You build the interface or API layer yourself.
 
 ### Framework
 
-[OpenCode] is built on the [Vercel AI SDK](https://sdk.vercel.ai) (TypeScript). reloaded-code uses
+[OpenCode] is built on the [Vercel AI SDK] (TypeScript). reloaded-code uses
 [SerdesAI] for the ready-to-use integration, but the core is
 framework-agnostic so you can bring your own LLM framework. See
-[Custom Framework Integration](guides/custom-framework.md) for details.
+[Custom Framework Integration] for details.
 
 ### Sandboxing
 
@@ -93,18 +93,18 @@ Two layers are available:
 
 - **Path resolvers** - restrict which paths the file tools
   (`read`, `write`, `edit`, `glob`, `grep`) can access.
-  See [Path resolvers](tools.md#path-resolvers) for the resolver types
+  See [Path resolvers] for the resolver types
   and configuration.
 
 - **Shell sandboxing** (Linux only) - sandbox `bash` commands with
   [bubblewrap] using kernel-level filesystem, network, and process
   isolation. Two profiles are available:
-  [Public Bot](sandboxing.md#public-bot) (untrusted input) and
-  [Trusted Maintenance](sandboxing.md#trusted-maintenance)
+  [Public Bot] (untrusted input) and
+  [Trusted Maintenance]
   (trusted automation).
 
 Because sandboxing is per-tool, each agent or client can use a different
-configuration. See [Sandboxing](sandboxing.md) for the full guide.
+configuration. See [Sandboxing] for the full guide.
 
 ### Features unique to OpenCode
 
@@ -122,7 +122,7 @@ configuration. See [Sandboxing](sandboxing.md) for the full guide.
 
 ---
 
-Ready to get started? See [Getting Started](getting-started.md) or
+Ready to get started? See [Getting Started] or
 [Migrating from OpenCode].
 
 [OpenCode]: https://opencode.ai/
@@ -132,3 +132,13 @@ Ready to get started? See [Getting Started](getting-started.md) or
 [Bun]: https://bun.sh
 [tokio]: https://tokio.rs
 [Migrating from OpenCode]: migration.md
+[Agents]: agents.md
+[Tools]: tools.md
+[portable default-deny configuration]: migration.md#portable-default-deny
+[Vercel AI SDK]: https://sdk.vercel.ai
+[Custom Framework Integration]: guides/custom-framework.md
+[Path resolvers]: tools.md#path-resolvers
+[Public Bot]: sandboxing.md#public-bot
+[Trusted Maintenance]: sandboxing.md#trusted-maintenance
+[Sandboxing]: sandboxing.md
+[Getting Started]: getting-started.md

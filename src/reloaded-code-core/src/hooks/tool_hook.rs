@@ -23,9 +23,11 @@ pub type ToolHookFuture<'a> = Pin<Box<dyn Future<Output = ToolResult<ToolOutput>
 
 /// Managed trampoline to the next hook or real tool.
 ///
-/// `ToolOriginal` is consumed by [`call`](Self::call), so normal hooks call
+/// `ToolOriginal` is consumed by [`call`], so normal hooks call
 /// the continuation once. Hooks that intentionally retry can clone the
 /// request before calling and perform retries around one continuation call.
+///
+/// [`call`]: Self::call
 pub struct ToolOriginal<'a> {
     chain: &'a [Arc<dyn ToolHook>],
     index: usize,

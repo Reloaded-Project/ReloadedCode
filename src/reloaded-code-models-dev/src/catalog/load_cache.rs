@@ -2,7 +2,9 @@
 //!
 //! This module handles the offline half of catalog loading: it decompresses the
 //! stored payload, decodes the serialized rows, and rebuilds a
-//! [`ModelCatalog`](reloaded_code_core::models::ModelCatalog).
+//! [`ModelCatalog`].
+//!
+//! [`ModelCatalog`]: reloaded_code_core::models::ModelCatalog
 
 use crate::cache::format::CacheFileData;
 use crate::cache::payload::{catalog_from_cache_payload, decode_cache_payload};

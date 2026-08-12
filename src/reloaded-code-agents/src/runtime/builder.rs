@@ -71,9 +71,12 @@ impl AgentRuntimeBuilder {
 
     /// Registers a custom tool factory.
     ///
-    /// The factory's name (via [`ToolContext::name`](reloaded_code_core::ToolContext::name))
+    /// The factory's name (via [`ToolContext::name`])
     /// must match the `name` field of the corresponding [`ToolCatalogEntry`] with kind
-    /// [`ToolCatalogKind::Custom`](reloaded_code_core::ToolCatalogKind::Custom).
+    /// [`ToolCatalogKind::Custom`].
+    ///
+    /// [`ToolContext::name`]: reloaded_code_core::ToolContext::name
+    /// [`ToolCatalogKind::Custom`]: reloaded_code_core::ToolCatalogKind::Custom
     pub fn custom_tool(mut self, factory: impl ToolFactory + 'static) -> Self {
         self.custom_tool_registry.insert(factory);
         self

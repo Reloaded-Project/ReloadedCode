@@ -3,8 +3,8 @@
 !!! info "reloaded-code supports loading agent definitions from markdown files with YAML frontmatter."
 
 The agent file format mirrors [OpenCode]'s schema, similar enough that many
-files are drop-in compatible, but [not identical](migration.md). See
-[Migrating from OpenCode](migration.md) for details.
+files are drop-in compatible, but [not identical]. See
+[Migrating from OpenCode] for details.
 
 ## Agent file format
 
@@ -90,12 +90,12 @@ Evaluation uses **last-match-wins**: the final matching rule takes effect.
 | `?`     | Exactly one character         |
 
 For the full rule table and examples, see
-[Tools > Permission rules](tools.md#permission-rules).
+[Tools > Permission rules].
 
 #### Custom tool permissions
 
 Custom tools are referenced in the `permission` map by name, same as built-in tools.
-See [Custom tools](tools.md#custom-tools) for registration.
+See [Custom tools] for registration.
 
 ```yaml
 permission:
@@ -121,14 +121,20 @@ Model names are validated against the [models.dev] catalog at runtime; an
 unrecognized name will produce a load error.
 
 Load the catalog before resolving agents. See
-[Models Catalog](models-catalog.md) for setup instructions and the
+[Models Catalog] for setup instructions and the
 `reloaded-code-models-dev` crate API.
 
 ### Tool settings
 
 Per-tool configuration that overrides defaults. For the full reference with
-types, ranges, and validation rules, see [Tools > Tool Settings](tools.md#tool-settings).
+types, ranges, and validation rules, see [Tools > Tool Settings].
 
 [SerdesAI]: https://crates.io/crates/serdes-ai
 [OpenCode]: https://opencode.ai/
 [models.dev]: https://models.dev
+[not identical]: migration.md
+[Migrating from OpenCode]: migration.md
+[Tools > Permission rules]: tools.md#permission-rules
+[Custom tools]: tools.md#custom-tools
+[Models Catalog]: models-catalog.md
+[Tools > Tool Settings]: tools.md#tool-settings

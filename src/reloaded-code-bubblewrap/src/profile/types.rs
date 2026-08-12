@@ -15,7 +15,9 @@ use std::sync::Arc;
 
 /// A validated bubblewrap profile ready for repeated command wrapping.
 ///
-/// Build this with [`crate::profile::Builder::build`](crate::profile::Builder::build).
+/// Build this with [`crate::profile::Builder::build`].
+///
+/// [`crate::profile::Builder::build`]: crate::profile::Builder::build
 ///
 /// The build step validates profile-owned paths, resolves the `bwrap` binary,
 /// picks a visible host shell, and precomputes the static `bwrap` argv prefix.

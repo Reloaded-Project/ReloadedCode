@@ -2,7 +2,7 @@
 
 Detailed mount tables, environment variables, and design rationale for the two
 built-in sandbox profiles. For profile descriptions, comparison, and setup
-instructions, see [Sandboxing](sandboxing.md).
+instructions, see [Sandboxing].
 
 ## Profile details
 
@@ -165,3 +165,4 @@ sandbox profiles documented here, or disable shell execution entirely.
 [apr]: https://docs.rs/reloaded-code-core/latest/reloaded_code_core/struct.AllowedPathResolver.html
 [NixOS]: https://nixos.org
 [Nix]: https://nixos.org
+[Sandboxing]: sandboxing.md

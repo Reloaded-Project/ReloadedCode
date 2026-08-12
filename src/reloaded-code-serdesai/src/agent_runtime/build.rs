@@ -1,8 +1,10 @@
 //! Shared SerdesAI agent build helpers.
 //!
-//! [`AgentBuildContext`](crate::agent_runtime::AgentBuildContext) and Task delegation
+//! [`AgentBuildContext`] and Task delegation
 //! internals reuse these helpers to resolve models, permissions, and tool
 //! attachments.
+//!
+//! [`AgentBuildContext`]: crate::agent_runtime::AgentBuildContext
 
 use super::model::resolve_model;
 use super::provider_bridge::build_serdes_model;

@@ -140,7 +140,7 @@ per-user profile directories from the inherited `PATH`.
 still drops entries under directories hidden by the profile.
 
 For more details on sandbox profiles and trade-offs, see
-[Extra Sandboxing Notes](https://reloaded-project.github.io/ReloadedCode/extra_sandboxing_notes/).
+[Extra Sandboxing Notes].
 
 ## Builder Lists
 
@@ -154,7 +154,7 @@ That keeps the builder state easy to read.
 - Invalid profile-owned paths and invalid credential mounts are rejected at build time.
 - Invalid per-command working directories are rejected before spawn.
 
-For the internal architecture and module layout, see [ARCHITECTURE.md](ARCHITECTURE.md).
+For the internal architecture and module layout, see [ARCHITECTURE.md].
 
 [`Availability::detect`]: crate::Availability::detect
 [`Profile`]: crate::Profile
@@ -164,3 +164,5 @@ For the internal architecture and module layout, see [ARCHITECTURE.md](ARCHITECT
 [Nix]: https://nixos.org
 [Documentation]: https://reloaded-project.github.io/ReloadedCode/sandboxing
 [API Reference]: https://docs.rs/reloaded-code-bubblewrap
+[Extra Sandboxing Notes]: https://reloaded-project.github.io/ReloadedCode/extra_sandboxing_notes/
+[ARCHITECTURE.md]: ARCHITECTURE.md

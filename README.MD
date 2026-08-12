@@ -4,9 +4,9 @@
 
 **Production-grade coding agent tools in Rust. <abbr title="~10 MiB PSS on release build, all providers enabled.&#10;  • Code &amp; read-only data: ~6.5 MiB&#10;  • Heap (runtime state): ~2.5 MiB&#10;  • Shared libraries (glibc, libm): ~2.3 MiB&#10;  • Thread stacks: ~0.1 MiB (34 threads)&#10;  Private ~2.5 MiB · RSS ~13 MiB.">~10 MiB</abbr>. No TUI. Embed it anywhere.**
 
-[![CI](https://github.com/Reloaded-Project/ReloadedCode/actions/workflows/rust.yml/badge.svg)](https://github.com/Reloaded-Project/ReloadedCode/actions) [![crates.io](https://img.shields.io/crates/v/reloaded-code-core.svg)](https://crates.io/crates/reloaded-code-core) [![docs.rs](https://img.shields.io/docsrs/reloaded-code-core)](https://docs.rs/reloaded-code-core) [![License](https://img.shields.io/crates/l/reloaded-code-core)](./LICENSE)
+[![CI]][ci-page] [![crates.io]][crates-io] [![docs.rs]][docs-rs] [![License]][license-page]
 
-[Get Started](#quick-start) · [Documentation](https://reloaded-project.github.io/ReloadedCode/) · [API Reference](https://docs.rs/reloaded-code-core) · [Examples](#examples)
+[Get Started] · [Documentation] · [API Reference] · [Examples]
 
 </div>
 
@@ -40,7 +40,7 @@ Shell sandboxing. Default-deny permissions. ~10 MiB footprint.
 - **Multi-agent delegation** - orchestrator pattern with depth-limited task chains
 - **Linux sandboxing** - bubblewrap profiles for shell isolation (Public Bot + Trusted Maintenance)
 - **Path security** - restrict file access with allowed directories and glob-based rules
-- **Model catalog** - sync [models.dev](https://models.dev) with ETag caching (~3000 models, ~24 KiB cache)
+- **Model catalog** - sync [models.dev] with ETag caching (~3000 models, ~24 KiB cache)
 - **Permissions** - default-deny with last-match-wins rules and wildcard patterns
 - **Optimized system prompt** - auto-generated, ~2000 tokens full / ~560 search-only
 - **Async + Sync** - every tool compiles as tokio async or blocking. Zero overhead.
@@ -114,14 +114,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
 ## Crate Map
 
-| Crate                                                                     | Version | Description                                                                                |
-| ------------------------------------------------------------------------- | ------- | ------------------------------------------------------------------------------------------ |
-| [**reloaded-code-core**](./src/reloaded-code-core/)                       | 0.2     | Framework-agnostic tool implementations, path resolvers, permissions, custom tool registry |
-| [**reloaded-code-agents**](./src/reloaded-code-agents/)                   | 0.1     | agent markdown loader similar to [OpenCode], typed catalog, runtime builder                |
-| [**reloaded-code-serdesai**](./src/reloaded-code-serdesai/)               | 0.2     | SerdesAI framework integration, tool adapters, 15 provider bridges, task delegation        |
-| [**reloaded-code-bubblewrap**](./src/reloaded-code-bubblewrap/)           | 0.1     | Linux bubblewrap sandbox profiles (Public Bot + Trusted Maintenance)                       |
-| [**reloaded-code-models-dev**](./src/reloaded-code-models-dev/)           | 0.1     | models.dev catalog sync with ETag caching and offline fallback                             |
-| [**reloaded-code-provider-config**](./src/reloaded-code-provider-config/) | 0.1     | Provider configuration loading and provider catalog overrides                              |
+| Crate                               | Version | Description                                                                                |
+| ----------------------------------- | ------- | ------------------------------------------------------------------------------------------ |
+| [**reloaded-code-core**]            | 0.2     | Framework-agnostic tool implementations, path resolvers, permissions, custom tool registry |
+| [**reloaded-code-agents**]          | 0.1     | agent markdown loader similar to [OpenCode], typed catalog, runtime builder                |
+| [**reloaded-code-serdesai**]        | 0.2     | SerdesAI framework integration, tool adapters, 15 provider bridges, task delegation        |
+| [**reloaded-code-bubblewrap**]      | 0.1     | Linux bubblewrap sandbox profiles (Public Bot + Trusted Maintenance)                       |
+| [**reloaded-code-models-dev**]      | 0.1     | models.dev catalog sync with ETag caching and offline fallback                             |
+| [**reloaded-code-provider-config**] | 0.1     | Provider configuration loading and provider catalog overrides                              |
 
 ## Examples
 
@@ -144,14 +144,14 @@ cargo run --example serdesai-task -p reloaded-code-serdesai
 
 ## Documentation
 
-- **[Documentation Site](https://reloaded-project.github.io/ReloadedCode/)** - guides, architecture, examples
-- [reloaded-code-core README](./src/reloaded-code-core/README.md)
-- [reloaded-code-agents README](./src/reloaded-code-agents/README.md)
-- [reloaded-code-serdesai README](./src/reloaded-code-serdesai/README.md)
-- [reloaded-code-bubblewrap README](./src/reloaded-code-bubblewrap/README.md)
-- [reloaded-code-models-dev README](./src/reloaded-code-models-dev/README.md)
-- [Sandbox profiles and operator checklist](https://reloaded-project.github.io/ReloadedCode/extra_sandboxing_notes/)
-- [API Reference (docs.rs)](https://docs.rs/reloaded-code-core)
+- **[Documentation Site]** - guides, architecture, examples
+- [reloaded-code-core README]
+- [reloaded-code-agents README]
+- [reloaded-code-serdesai README]
+- [reloaded-code-bubblewrap README]
+- [reloaded-code-models-dev README]
+- [Sandbox profiles and operator checklist]
+- [API Reference (docs.rs)]
 
 ## Contributing
 
@@ -160,5 +160,34 @@ our guidelines.
 
 ## License
 
-Licensed under [Apache 2.0](./LICENSE).
+Licensed under [Apache 2.0].
+
 [OpenCode]: https://opencode.ai
+[ci-page]: https://github.com/Reloaded-Project/ReloadedCode/actions
+[crates-io]: https://crates.io/crates/reloaded-code-core
+[docs-rs]: https://docs.rs/reloaded-code-core
+[license-page]: ./LICENSE
+[Get Started]: #quick-start
+[Documentation]: https://reloaded-project.github.io/ReloadedCode/
+[API Reference]: https://docs.rs/reloaded-code-core
+[Examples]: #examples
+[models.dev]: https://models.dev
+[**reloaded-code-core**]: ./src/reloaded-code-core/
+[**reloaded-code-agents**]: ./src/reloaded-code-agents/
+[**reloaded-code-serdesai**]: ./src/reloaded-code-serdesai/
+[**reloaded-code-bubblewrap**]: ./src/reloaded-code-bubblewrap/
+[**reloaded-code-models-dev**]: ./src/reloaded-code-models-dev/
+[**reloaded-code-provider-config**]: ./src/reloaded-code-provider-config/
+[Documentation Site]: https://reloaded-project.github.io/ReloadedCode/
+[reloaded-code-core README]: ./src/reloaded-code-core/README.md
+[reloaded-code-agents README]: ./src/reloaded-code-agents/README.md
+[reloaded-code-serdesai README]: ./src/reloaded-code-serdesai/README.md
+[reloaded-code-bubblewrap README]: ./src/reloaded-code-bubblewrap/README.md
+[reloaded-code-models-dev README]: ./src/reloaded-code-models-dev/README.md
+[Sandbox profiles and operator checklist]: https://reloaded-project.github.io/ReloadedCode/extra_sandboxing_notes/
+[API Reference (docs.rs)]: https://docs.rs/reloaded-code-core
+[Apache 2.0]: ./LICENSE
+[CI]: https://github.com/Reloaded-Project/ReloadedCode/actions/workflows/rust.yml/badge.svg
+[crates.io]: https://img.shields.io/crates/v/reloaded-code-core.svg
+[docs.rs]: https://img.shields.io/docsrs/reloaded-code-core
+[License]: https://img.shields.io/crates/l/reloaded-code-core

@@ -55,7 +55,9 @@ use std::sync::Arc;
 ///
 /// This resolver only restricts the structured file operations (`read`, `write`, `edit`,
 /// `glob`, `grep`). It does not make shell execution safe.
-/// See the [Sandboxing docs](https://reloaded-project.github.io/ReloadedCode/sandboxing/) for details on sandboxing on Linux.
+/// See the [Sandboxing docs] for details on sandboxing on Linux.
+///
+/// [Sandboxing docs]: https://reloaded-project.github.io/ReloadedCode/sandboxing/
 #[derive(Debug, Clone)]
 pub struct AllowedPathResolver {
     /// Canonicalized allowed base directories.

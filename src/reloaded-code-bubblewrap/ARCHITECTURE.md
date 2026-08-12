@@ -3,7 +3,7 @@
 Linux-only library that builds [bubblewrap] sandbox profiles, probes host
 capabilities, and produces wrapped command lines.
 
-For the security model, see [Extra Sandboxing Notes](https://reloaded-project.github.io/ReloadedCode/extra-sandboxing-notes/).
+For the security model, see [Extra Sandboxing Notes].
 
 ## File Map
 
@@ -157,3 +157,4 @@ that touch `$PATH` run `#[serial]` to avoid cache contamination. No real
 bubblewrap installation needed.
 
 [bubblewrap]: https://github.com/containers/bubblewrap
+[Extra Sandboxing Notes]: https://reloaded-project.github.io/ReloadedCode/extra-sandboxing-notes/

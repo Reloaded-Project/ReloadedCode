@@ -215,8 +215,10 @@ impl Ruleset {
 
     /// Checks if a permission is allowed for the given subject.
     ///
-    /// Convenience method that returns `true` if [`evaluate`](Self::evaluate)
+    /// Convenience method that returns `true` if [`evaluate`]
     /// returns [`PermissionAction::Allow`].
+    ///
+    /// [`evaluate`]: Self::evaluate
     #[inline]
     pub fn is_allowed(&self, permission: &str, subject: &str) -> bool {
         self.evaluate(permission, subject) == PermissionAction::Allow

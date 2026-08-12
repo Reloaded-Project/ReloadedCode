@@ -8,22 +8,22 @@ bash, webfetch, todo) and Linux [bubblewrap] sandboxing. This document focuses
 on the **agent runtime** subsystem.
 
 For the foundation crate, see
-[reloaded-code-agents/ARCHITECTURE.md](https://github.com/Reloaded-Project/ReloadedCode/blob/main/src/reloaded-code-agents/ARCHITECTURE.md).
+[reloaded-code-agents/ARCHITECTURE.md].
 
 ## Table of Contents
 
-- [Quick Start](#quick-start)
-- [Phase 1: Building Agents](#phase-1-building-agents)
-  - [Building the Context (Setup)](#building-the-context-setup)
-  - [Building a SerdesAI Agent (Runtime)](#building-a-serdesai-agent-runtime)
-  - [Shared: prepare_build()](#shared-prepare_build)
-    - [Model Resolution: `resolve_model_with_catalog`](#model-resolution-resolve_model_with_catalog)
-    - [Provider Bridge: `build_serdes_model`](#provider-bridge-build_serdes_model)
-- [Task Delegation](#task-delegation)
-  - [Depth Guard](#depth-guard)
-- [Reference](#reference)
-  - [Error Model](#error-model)
-  - [File Map](#file-map)
+- [Quick Start]
+- [Phase 1: Building Agents]
+  - [Building the Context (Setup)]
+  - [Building a SerdesAI Agent (Runtime)]
+  - [Shared: prepare_build()]
+    - [Model Resolution: `resolve_model_with_catalog`]
+    - [Provider Bridge: `build_serdes_model`]
+- [Task Delegation]
+  - [Depth Guard]
+- [Reference]
+  - [Error Model]
+  - [File Map]
 
 ## Quick Start
 
@@ -305,3 +305,16 @@ reloaded-code-serdesai/src/
 
 [SerdesAI]: https://crates.io/crates/serdes-ai
 [bubblewrap]: https://github.com/containers/bubblewrap
+[reloaded-code-agents/ARCHITECTURE.md]: https://github.com/Reloaded-Project/ReloadedCode/blob/main/src/reloaded-code-agents/ARCHITECTURE.md
+[Quick Start]: #quick-start
+[Phase 1: Building Agents]: #phase-1-building-agents
+[Building the Context (Setup)]: #building-the-context-setup
+[Building a SerdesAI Agent (Runtime)]: #building-a-serdesai-agent-runtime
+[Shared: prepare_build()]: #shared-prepare_build
+[Model Resolution: `resolve_model_with_catalog`]: #model-resolution-resolve_model_with_catalog
+[Provider Bridge: `build_serdes_model`]: #provider-bridge-build_serdes_model
+[Task Delegation]: #task-delegation
+[Depth Guard]: #depth-guard
+[Reference]: #reference
+[Error Model]: #error-model
+[File Map]: #file-map

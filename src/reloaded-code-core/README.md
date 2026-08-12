@@ -1,6 +1,6 @@
 # reloaded-code-core
 
-[![Crates.io](https://img.shields.io/crates/v/reloaded-code-core.svg)](https://crates.io/crates/reloaded-code-core) [![Docs.rs](https://docs.rs/reloaded-code-core/badge.svg)](https://docs.rs/reloaded-code-core)
+[![Crates.io]][crates-io] [![Docs.rs]][docs-rs]
 
 Framework-agnostic core tools for building coding agents - file operations,
 search, shell execution, sandboxing, permissions, custom tool registries, and
@@ -12,20 +12,20 @@ Headless, TUI, or anything in between. Production-grade implementations with min
 
 ## Table of contents
 
-- [reloaded-code-core](#reloaded-code-core)
-  - [Table of contents](#table-of-contents)
-  - [Install](#install)
-  - [Feature flags](#feature-flags)
-  - [Tools, context, and integration](#tools-context-and-integration)
-    - [Standard tools](#standard-tools)
-    - [Path safety and sandboxing](#path-safety-and-sandboxing)
-      - [Linux shell sandboxing](#linux-shell-sandboxing)
-    - [Context and wrapper mapping](#context-and-wrapper-mapping)
-  - [System prompt builder](#system-prompt-builder)
-    - [Typical wrapper integration (serdesAI)](#typical-wrapper-integration-serdesai)
-  - [Custom tool registry](#custom-tool-registry)
-  - [Permissions](#permissions)
-  - [Credentials](#credentials)
+- [reloaded-code-core]
+  - [Table of contents]
+  - [Install]
+  - [Feature flags]
+  - [Tools, context, and integration]
+    - [Standard tools]
+    - [Path safety and sandboxing]
+      - [Linux shell sandboxing]
+    - [Context and wrapper mapping]
+  - [System prompt builder]
+    - [Typical wrapper integration (serdesAI)]
+  - [Custom tool registry]
+  - [Permissions]
+  - [Credentials]
 
 ## Install
 
@@ -139,8 +139,7 @@ Two profiles are available:
 We default to the **Public Bot** profile when sandboxing is enabled. In either
 case, evaluate whether the chosen profile fits your security needs.
 
-See [Sandboxing docs](https://reloaded-project.github.io/ReloadedCode/sandboxing/) for the full operator
-guide and checklist.
+See [Sandboxing docs] for the full operator guide and checklist.
 
 ### Context and wrapper mapping
 
@@ -405,3 +404,22 @@ let key = resolver.resolve("OPENAI_API_KEY");
 [SerdesAI]: https://crates.io/crates/serdes-ai
 [Documentation]: https://reloaded-project.github.io/ReloadedCode/
 [API Reference]: https://docs.rs/reloaded-code-core
+[crates-io]: https://crates.io/crates/reloaded-code-core
+[docs-rs]: https://docs.rs/reloaded-code-core
+[reloaded-code-core]: #reloaded-code-core
+[Table of contents]: #table-of-contents
+[Install]: #install
+[Feature flags]: #feature-flags
+[Tools, context, and integration]: #tools-context-and-integration
+[Standard tools]: #standard-tools
+[Path safety and sandboxing]: #path-safety-and-sandboxing
+[Linux shell sandboxing]: #linux-shell-sandboxing
+[Context and wrapper mapping]: #context-and-wrapper-mapping
+[System prompt builder]: #system-prompt-builder
+[Typical wrapper integration (serdesAI)]: #typical-wrapper-integration-serdesai
+[Custom tool registry]: #custom-tool-registry
+[Permissions]: #permissions
+[Credentials]: #credentials
+[Sandboxing docs]: https://reloaded-project.github.io/ReloadedCode/sandboxing/
+[Crates.io]: https://img.shields.io/crates/v/reloaded-code-core.svg
+[Docs.rs]: https://docs.rs/reloaded-code-core/badge.svg

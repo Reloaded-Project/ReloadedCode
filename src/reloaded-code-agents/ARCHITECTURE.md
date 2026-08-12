@@ -8,24 +8,24 @@ Upstream integrations (e.g. `reloaded-code-serdesai`) consume the
 
 ## Table of Contents
 
-- [Quick Start](#quick-start)
-- [Phase 1: Loading](#phase-1-loading)
-  - [Loading Pipeline](#loading-pipeline)
-  - [File Discovery](#file-discovery)
-  - [YAML Preprocessor](#yaml-preprocessor)
-- [Phase 2: Building](#phase-2-building)
-  - [Building the Runtime](#building-the-runtime)
-  - [AgentDefaults](#agentdefaults)
-  - [Tool Catalog](#tool-catalog)
-  - [Model Resolution](#model-resolution)
-- [Phase 3: Runtime Usage](#phase-3-runtime-usage)
-  - [Permission Filtering](#permission-filtering)
-  - [Allowed Tools](#allowed-tools)
-  - [Callable Targets](#callable-targets)
-- [Reference](#reference)
-  - [Error Model](#error-model)
-  - [Testing](#testing)
-  - [File Map](#file-map)
+- [Quick Start]
+- [Phase 1: Loading]
+  - [Loading Pipeline]
+  - [File Discovery]
+  - [YAML Preprocessor]
+- [Phase 2: Building]
+  - [Building the Runtime]
+  - [AgentDefaults]
+  - [Tool Catalog]
+  - [Model Resolution]
+- [Phase 3: Runtime Usage]
+  - [Permission Filtering]
+  - [Allowed Tools]
+  - [Callable Targets]
+- [Reference]
+  - [Error Model]
+  - [Testing]
+  - [File Map]
 
 ## Quick Start
 
@@ -345,3 +345,21 @@ reloaded-code-agents
 └── benches/
     └── parser.rs           Criterion benchmarks for frontmatter parsing
 ```
+[Quick Start]: #quick-start
+[Phase 1: Loading]: #phase-1-loading
+[Loading Pipeline]: #loading-pipeline
+[File Discovery]: #file-discovery
+[YAML Preprocessor]: #yaml-preprocessor
+[Phase 2: Building]: #phase-2-building
+[Building the Runtime]: #building-the-runtime
+[AgentDefaults]: #agentdefaults
+[Tool Catalog]: #tool-catalog
+[Model Resolution]: #model-resolution
+[Phase 3: Runtime Usage]: #phase-3-runtime-usage
+[Permission Filtering]: #permission-filtering
+[Allowed Tools]: #allowed-tools
+[Callable Targets]: #callable-targets
+[Reference]: #reference
+[Error Model]: #error-model
+[Testing]: #testing
+[File Map]: #file-map

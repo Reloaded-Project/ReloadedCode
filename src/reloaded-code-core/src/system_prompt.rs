@@ -123,7 +123,9 @@ impl SystemPromptBuilder {
     /// # Arguments
     ///
     /// * `name` - Section header (e.g., "Git Workflow", "GitHub CLI")
-    /// * `context` - Context string content (e.g., [`GIT_WORKFLOW`](crate::context::GIT_WORKFLOW))
+    /// * `context` - Context string content (e.g., [`GIT_WORKFLOW`])
+    ///
+    /// [`GIT_WORKFLOW`]: crate::context::GIT_WORKFLOW
     ///
     /// # Examples
     ///

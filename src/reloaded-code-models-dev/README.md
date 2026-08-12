@@ -1,6 +1,6 @@
 # reloaded-code-models-dev
 
-[![Crates.io](https://img.shields.io/crates/v/reloaded-code-models-dev.svg)](https://crates.io/crates/reloaded-code-models-dev) [![Docs.rs](https://docs.rs/reloaded-code-models-dev/badge.svg)](https://docs.rs/reloaded-code-models-dev)
+[![Crates.io]][crates-io] [![Docs.rs]][docs-rs]
 
 Sync the online [models.dev] catalog into a compact `ModelCatalog` with
 ETag caching, zstd compression, and offline fallback. ~3000 models in ~24 KiB.
@@ -158,3 +158,7 @@ Apache-2.0
 [zstd]: https://facebook.github.io/zstd/
 [Documentation]: https://reloaded-project.github.io/ReloadedCode/models-catalog
 [API Reference]: https://docs.rs/reloaded-code-models-dev
+[crates-io]: https://crates.io/crates/reloaded-code-models-dev
+[docs-rs]: https://docs.rs/reloaded-code-models-dev
+[Crates.io]: https://img.shields.io/crates/v/reloaded-code-models-dev.svg
+[Docs.rs]: https://docs.rs/reloaded-code-models-dev/badge.svg

@@ -96,11 +96,13 @@ impl ModelsDevCatalog {
 
     /// Loads the catalog from a specific cache file path.
     ///
-    /// This method provides the same behavior as [`load`](Self::load), but
+    /// This method provides the same behavior as [`load`], but
     /// allows specifying a custom cache file path. This is useful for:
     /// - Testing with temporary cache files
     /// - Custom deployment scenarios
     /// - Isolated cache locations
+    ///
+    /// [`load`]: Self::load
     ///
     /// # Parameters
     ///

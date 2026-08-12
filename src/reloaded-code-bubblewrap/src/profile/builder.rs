@@ -78,11 +78,15 @@ pub struct Builder {
     pub(crate) preset: Option<Preset>,
     /// Host path to the workspace directory.
     pub(crate) workspace: Box<Path>,
-    /// Where the workspace appears inside the sandbox (defaults to [`workspace`](Self::workspace)).
+    /// Where the workspace appears inside the sandbox (defaults to [`workspace`]).
+    ///
+    /// [`workspace`]: Self::workspace
     pub(crate) workspace_dest: Box<Path>,
     /// Host path to the synthetic home directory.
     pub(crate) synthetic_home: Box<Path>,
-    /// Where the synthetic home appears inside the sandbox (defaults to [`synthetic_home`](Self::synthetic_home)).
+    /// Where the synthetic home appears inside the sandbox (defaults to [`synthetic_home`]).
+    ///
+    /// [`synthetic_home`]: Self::synthetic_home
     pub(crate) synthetic_home_dest: Box<Path>,
     /// Host path to the cache root directory.
     pub(crate) cache_root: Box<Path>,
@@ -119,7 +123,9 @@ pub struct Builder {
     ///
     /// [`default_env`]: Self::default_env
     pub(crate) extra_env: Arc<[EnvVar]>,
-    /// Tracks whether `bwrap` is usable (checked during [`build`](Self::build)).
+    /// Tracks whether `bwrap` is usable (checked during [`build`]).
+    ///
+    /// [`build`]: Self::build
     pub(crate) availability: Availability,
 }
 

@@ -83,7 +83,9 @@
 //! `ProviderTable` and `ProviderModelTable` use 48 bits from the 64-bit hash.
 //!
 //! Collision estimates use the birthday-bound approximation described by
-//! [Preshing](https://preshing.com/20110504/hash-collision-probabilities/):
+//! [Preshing]:
+//!
+//! [Preshing]: https://preshing.com/20110504/hash-collision-probabilities/
 //!
 //! `p(at least one collision) ~= 1 - exp(-n * (n - 1) / (2 * 2^48))`
 //!

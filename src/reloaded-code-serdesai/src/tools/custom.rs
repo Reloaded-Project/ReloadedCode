@@ -1,8 +1,10 @@
 //! SerdesAI adapter for portable core custom tools.
 //!
 //! Wraps an [`Arc<dyn CustomTool>`] so it can be used directly with SerdesAI's
-//! [`AgentBuilder`](serdes_ai::AgentBuilder) via
+//! [`AgentBuilder`] via
 //! [`AgentBuilderExt`](crate::agent_ext::AgentBuilderExt).
+//!
+//! [`AgentBuilder`]: serdes_ai::AgentBuilder
 //!
 //! The adapter is also used internally by the agent-runtime build layer, but
 //! it lives here so non-agent users can attach portable custom tools to a plain
@@ -74,11 +76,16 @@ use std::sync::Arc;
 ///
 /// Wraps a [`CustomTool`] trait object and implements the SerdesAI [`Tool`]
 /// trait so it can be registered via
-/// [`AgentBuilderExt::tool`](crate::agent_ext::AgentBuilderExt::tool) or the
-/// dynamic [`AgentBuilderExt::tool_dyn`](crate::agent_ext::AgentBuilderExt::tool_dyn)
+/// [`AgentBuilderExt::tool`] or the
+/// dynamic [`AgentBuilderExt::tool_dyn`]
 /// method.
 ///
-/// See the [module-level documentation](crate::tools) for related tool types.
+/// [`AgentBuilderExt::tool`]: crate::agent_ext::AgentBuilderExt::tool
+/// [`AgentBuilderExt::tool_dyn`]: crate::agent_ext::AgentBuilderExt::tool_dyn
+///
+/// See the [module-level documentation] for related tool types.
+///
+/// [module-level documentation]: crate::tools
 ///
 /// [`AgentBuilderExt`]: crate::agent_ext::AgentBuilderExt
 pub struct CustomToolAdapter {

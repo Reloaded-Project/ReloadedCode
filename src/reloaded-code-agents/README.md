@@ -1,13 +1,13 @@
 # reloaded-code-agents
 
-[![Crates.io](https://img.shields.io/crates/v/reloaded-code-agents.svg)](https://crates.io/crates/reloaded-code-agents) [![Docs.rs](https://docs.rs/reloaded-code-agents/badge.svg)](https://docs.rs/reloaded-code-agents)
+[![Crates.io]][crates-io] [![Docs.rs]][docs-rs]
 
 Load agent markdown files into a typed catalog with runtime defaults and permission evaluation.
 
 [Documentation] · [API Reference]
 
 The agent file format mirrors [OpenCode]'s schema - similar enough that many
-files are drop-in compatible, but [not identical](#differences-from-opencode).
+files are drop-in compatible, but [not identical].
 
 ## Loading agents
 
@@ -354,7 +354,7 @@ accepted and ignored:
   [OpenCode].
 - `hidden` - Accepted for compatibility, but ignored at runtime.
 
-For the internal architecture, see [ARCHITECTURE.md](https://github.com/Reloaded-Project/ReloadedCode/blob/main/src/reloaded-code-agents/ARCHITECTURE.md).
+For the internal architecture, see [ARCHITECTURE.md].
 
 [`mode`]: https://opencode.ai/docs/agents#mode
 [`model`]: https://opencode.ai/docs/agents#model
@@ -367,3 +367,9 @@ For the internal architecture, see [ARCHITECTURE.md](https://github.com/Reloaded
 [API Reference]: https://docs.rs/reloaded-code-agents
 [`ToolFactory`]: https://docs.rs/reloaded_code_core/latest/reloaded_code_core/trait.ToolFactory.html
 [`ToolContext`]: https://docs.rs/reloaded_code_core/latest/reloaded_code_core/trait.ToolContext.html
+[crates-io]: https://crates.io/crates/reloaded-code-agents
+[docs-rs]: https://docs.rs/reloaded-code-agents
+[not identical]: #differences-from-opencode
+[ARCHITECTURE.md]: https://github.com/Reloaded-Project/ReloadedCode/blob/main/src/reloaded-code-agents/ARCHITECTURE.md
+[Crates.io]: https://img.shields.io/crates/v/reloaded-code-agents.svg
+[Docs.rs]: https://docs.rs/reloaded-code-agents/badge.svg

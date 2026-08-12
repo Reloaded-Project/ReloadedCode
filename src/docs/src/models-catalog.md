@@ -116,9 +116,9 @@ Exactly one must be enabled.
 ## Custom providers
 
 You can define additional providers via YAML configuration files that extend
-the models.dev catalog. See [Custom Providers](guides/custom-providers.md) for
-the full schema and API reference.
+the models.dev catalog. See [Custom Providers] for the full schema and API reference.
 
 [models.dev]: https://models.dev
 [tokio]: https://tokio.rs
 [zstd]: https://facebook.github.io/zstd/
+[Custom Providers]: guides/custom-providers.md

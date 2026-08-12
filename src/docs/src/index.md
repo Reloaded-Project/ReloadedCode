@@ -181,7 +181,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 }
 ```
 
-See [Getting Started](getting-started.md) for the full walkthrough with
+See [Getting Started] for the full walkthrough with
 dependency setup and an alternate path without agent files.
 
 ## Crate Map
@@ -245,6 +245,8 @@ TUI: 679 MiB RSS">~305 MiB</abbr></td><td><abbr title="~13 MiB RSS on release bu
 </table>
 </div>
 
-See [Comparison with OpenCode](comparison.md) for a deeper breakdown.
+See [Comparison with OpenCode] for a deeper breakdown.
 
 [OpenCode]: https://opencode.ai/
+[Getting Started]: getting-started.md
+[Comparison with OpenCode]: comparison.md

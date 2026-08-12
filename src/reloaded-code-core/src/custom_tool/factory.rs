@@ -17,8 +17,11 @@ use std::sync::Arc;
 ///
 /// For a complete example that implements [`ToolContext`], [`CustomTool`], and
 /// [`ToolFactory`], then registers the factory with
-/// [`CustomToolRegistry`](super::CustomToolRegistry), see the
-/// [`custom_tool`](super) module documentation.
+/// [`CustomToolRegistry`], see the
+/// [`custom_tool`] module documentation.
+///
+/// [`CustomToolRegistry`]: super::CustomToolRegistry
+/// [`custom_tool`]: super
 pub trait ToolFactory: ToolContext + Send + Sync + 'static {
     /// Creates a tool from build-time context.
     ///
@@ -26,6 +29,8 @@ pub trait ToolFactory: ToolContext + Send + Sync + 'static {
     /// object in their native framework-specific tool type.
     ///
     /// # Errors
-    /// Returns a [`ToolError`](crate::ToolError) when constructing the tool fails.
+    /// Returns a [`ToolError`] when constructing the tool fails.
+    ///
+    /// [`ToolError`]: crate::ToolError
     fn create(&self, ctx: &ToolBuildContext) -> ToolResult<Arc<dyn CustomTool>>;
 }

@@ -62,7 +62,7 @@ permission:
 **The last-match-wins rule** means the system evaluates entries in reverse
 order - named `allow` entries that follow `"*": deny` take precedence.
 For path-level and command-level patterns (`**`, `*` within a tool), see
-[Permission rules](tools.md#permission-rules).
+[Permission rules].
 
 !!! tip "Why portability matters"
 
@@ -133,3 +133,4 @@ permission:
 - [ ] Test with `cargo test` or your integration tests
 
 [OpenCode]: https://opencode.ai/
+[Permission rules]: tools.md#permission-rules

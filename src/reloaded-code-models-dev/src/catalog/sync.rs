@@ -1,10 +1,12 @@
 //! Catalog synchronization against the remote models.dev API.
 //!
 //! This module owns the online-first load path used by
-//! [`ModelsDevCatalog`](crate::catalog::ModelsDevCatalog). It reads any cached
+//! [`ModelsDevCatalog`]. It reads any cached
 //! container in one shot, sends a conditional request with the cached ETag when
 //! available, refreshes the cache on `200 OK`, reuses it on `304 Not Modified`,
 //! and falls back to cached data when the request fails.
+//!
+//! [`ModelsDevCatalog`]: crate::catalog::ModelsDevCatalog
 
 use crate::api::catalog_sources::cache_payload_from_api_json_bytes;
 use crate::cache::format::{read_cache_file, write_cache_file, CacheFileData, CacheWriteInput};

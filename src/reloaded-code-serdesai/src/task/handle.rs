@@ -35,8 +35,10 @@ where
     /// # Params
     ///
     /// - `caller_name` — name of the initiating agent (must exist in the catalog).
-    /// - `input` — task payload including the [`subagent_type`](TaskInput::subagent_type)
+    /// - `input` — task payload including the [`subagent_type`]
     ///   and prompt.
+    ///
+    /// [`subagent_type`]: TaskInput::subagent_type
     ///
     /// # Returns
     ///

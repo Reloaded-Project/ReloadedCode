@@ -58,8 +58,10 @@ pub const GIT_WORKFLOW: &str = include_str!("git_workflow.txt");
 /// Trait for tools that provide guidance for system prompts.
 ///
 /// Implement this trait on tool types to let
-/// [`SystemPromptBuilder`](crate::SystemPromptBuilder) include tool guidance
+/// [`SystemPromptBuilder`] include tool guidance
 /// automatically.
+///
+/// [`SystemPromptBuilder`]: crate::SystemPromptBuilder
 ///
 /// # Example
 ///

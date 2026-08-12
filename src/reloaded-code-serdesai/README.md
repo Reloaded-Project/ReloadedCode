@@ -1,6 +1,6 @@
 # reloaded-code-serdesai
 
-[![Crates.io](https://img.shields.io/crates/v/reloaded-code-serdesai.svg)](https://crates.io/crates/reloaded-code-serdesai) [![Docs.rs](https://docs.rs/reloaded-code-serdesai/badge.svg)](https://docs.rs/reloaded-code-serdesai)
+[![Crates.io]][crates-io] [![Docs.rs]][docs-rs]
 
 Ready-to-use [SerdesAI] integration for [reloaded-code]. Tool adapters,
 agent build context, 15 provider bridges, and multi-agent task delegation.
@@ -54,9 +54,9 @@ println!("{}", response.output());
 # }
 ```
 
-See the [serdesai-basic example](examples/serdesai-basic.rs) for a complete working setup.
+See the [serdesai-basic example] for a complete working setup.
 
-For named agents and subagent Task delegation, see [Build and Run Agents](#build-and-run-agents).
+For named agents and subagent Task delegation, see [Build and Run Agents].
 
 ## File Tools
 
@@ -159,8 +159,8 @@ automatically when callable targets exist and `max_task_depth` allows delegation
 If you already have your own `ModelCatalog`, you can use that instead of
 `ModelsDevCatalog::load()` (for example via a `get_catalog()` helper).
 
-See [examples/serdesai-agents.rs](examples/serdesai-agents.rs) and
-[examples/serdesai-task.rs](examples/serdesai-task.rs).
+See [examples/serdesai-agents.rs] and
+[examples/serdesai-task.rs].
 
 ## Custom tools
 
@@ -324,7 +324,7 @@ We default to **Public Bot** profile when sandboxing is used.
 In either case, trusted or not, please evaluate whether the solution fits your
 security needs. I can make no guarantees.
 
-More info in [Sandboxing docs](https://reloaded-project.github.io/ReloadedCode/sandboxing/).
+More info in [Sandboxing docs].
 
 ## Examples
 
@@ -348,7 +348,7 @@ cargo run --example serdesai-custom-tool -p reloaded-code-serdesai
 cargo run --example serdesai-task -p reloaded-code-serdesai
 ```
 
-For agent runtime architecture, see [AGENTS-ARCHITECTURE.md](AGENTS-ARCHITECTURE.md).
+For agent runtime architecture, see [AGENTS-ARCHITECTURE.md].
 
 ## License
 
@@ -361,3 +361,13 @@ Apache 2.0
 [API Reference]: https://docs.rs/reloaded-code-serdesai
 [`ToolFactory`]: https://docs.rs/reloaded-code-core/latest/reloaded_code_core/trait.ToolFactory.html
 [`CustomTool`]: https://docs.rs/reloaded-code-core/latest/reloaded_code_core/trait.CustomTool.html
+[crates-io]: https://crates.io/crates/reloaded-code-serdesai
+[docs-rs]: https://docs.rs/reloaded-code-serdesai
+[serdesai-basic example]: examples/serdesai-basic.rs
+[Build and Run Agents]: #build-and-run-agents
+[examples/serdesai-agents.rs]: examples/serdesai-agents.rs
+[examples/serdesai-task.rs]: examples/serdesai-task.rs
+[Sandboxing docs]: https://reloaded-project.github.io/ReloadedCode/sandboxing/
+[AGENTS-ARCHITECTURE.md]: AGENTS-ARCHITECTURE.md
+[Crates.io]: https://img.shields.io/crates/v/reloaded-code-serdesai.svg
+[Docs.rs]: https://docs.rs/reloaded-code-serdesai/badge.svg

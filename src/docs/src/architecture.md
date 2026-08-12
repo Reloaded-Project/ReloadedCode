@@ -36,12 +36,12 @@ The foundation. Contains every tool implementation as a plain function
 - **Permission engine** - last-match-wins rules with wildcard patterns
 - **Custom tool registry + catalog** - framework-agnostic `ToolFactory`,
   `CustomToolRegistry`, and `ToolCatalogEntry` types
-- **Credential resolver** - API key lookup with override support ([details](getting-started.md#credential-management))
+- **Credential resolver** - API key lookup with override support ([details])
 - **Model catalog** - compact hash-table-based provider/model lookup
 - **Hook types** - `HookSet`, `HookSetBuilder`, tool hook types
   (`ToolHook`, `ToolOriginal`, `ToolHookFuture`, `ToolExecutor`,
   `ToolCallContext`, `ToolRequest`), and session event types
-  (`SessionContext`, `EndReason`). See [Hooks](hooks).
+  (`SessionContext`, `EndReason`). See [Hooks].
 
 Core is **framework-agnostic**: it has no dependencies on any specific LLM
 framework. Your integration layer wraps these functions into framework-specific
@@ -59,7 +59,7 @@ Loads agent definitions from markdown files with YAML frontmatter. Provides:
   and a `HookSet` (`.hooks(set)`)
 
 The agent file format mirrors [OpenCode]'s schema - similar enough that many
-files are drop-in compatible, but [not identical](migration.md). The most
+files are drop-in compatible, but [not identical]. The most
 notable difference is **default-deny** permissions: tools must be explicitly
 allowed.
 
@@ -85,7 +85,7 @@ isolation. Two presets:
 
 ### reloaded-code-models-dev
 
-Syncs the online [models.dev](https://models.dev) catalog into a compact
+Syncs the online [models.dev] catalog into a compact
 `ModelCatalog`. Features:
 
 - ETag-based conditional HTTP requests
@@ -108,7 +108,7 @@ There are two integration paths:
 **Path B: Bring your own framework** - Depend on `reloaded-code-core`,
 implement your framework's tool trait by calling the core functions, and use
 `SystemPromptBuilder` to generate the system prompt. See
-[Custom Framework](guides/custom-framework.md) for a walkthrough.
+[Custom Framework] for a walkthrough.
 
 ```mermaid
 graph LR
@@ -124,3 +124,8 @@ graph LR
 [OpenCode]: https://opencode.ai/
 [bubblewrap]: https://github.com/containers/bubblewrap
 [zstd]: https://facebook.github.io/zstd/
+[details]: getting-started.md#credential-management
+[Hooks]: hooks
+[not identical]: migration.md
+[models.dev]: https://models.dev
+[Custom Framework]: guides/custom-framework.md

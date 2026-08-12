@@ -1,8 +1,11 @@
 //! Crate-private path utilities for preparing filesystem paths before sandbox use.
 //!
-//! Callers in [`probe`](crate::probe) and [`profile`](crate::profile) use these
+//! Callers in [`probe`] and [`profile`] use these
 //! helpers to normalize paths so that comparisons and bind-mount targets are
 //! consistent regardless of symlinks or relative components.
+//!
+//! [`probe`]: crate::probe
+//! [`profile`]: crate::profile
 
 use std::fs;
 use std::path::Path;

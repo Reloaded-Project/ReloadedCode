@@ -14,8 +14,11 @@
 //! ```
 //!
 //! When using [`crate::AgentBuildContext`], call
-//! [`with_model_override`](crate::AgentBuildContext::with_model_override)
-//! to inject the mock model before calling [`build()`](crate::AgentBuildContext::build).
+//! [`with_model_override`]
+//! to inject the mock model before calling [`build()`].
+//!
+//! [`with_model_override`]: crate::AgentBuildContext::with_model_override
+//! [`build()`]: crate::AgentBuildContext::build
 
 // Re-export upstream mock types so users can still access the raw variants when needed.
 use async_trait::async_trait;
@@ -35,10 +38,14 @@ use serdes_ai_models::{
 // Streamed - wrapper that adds streaming support to any Model
 // ============================================================================
 
-/// Wrapper adding [`request_stream`](ModelTrait::request_stream) support to any [`ModelTrait`] implementation.
+/// Wrapper adding [`request_stream`] support to any [`ModelTrait`] implementation.
 ///
-/// Delegates [`request`](ModelTrait::request) directly to the inner model and converts the non-streaming
+/// [`request_stream`]: ModelTrait::request_stream
+///
+/// Delegates [`request`] directly to the inner model and converts the non-streaming
 /// response into a sequence of [`ModelResponseStreamEvent`]s for streaming callers.
+///
+/// [`request`]: ModelTrait::request
 ///
 /// # Example
 ///
@@ -57,7 +64,9 @@ pub struct Streamed<T> {
 impl<T> Streamed<T> {
     /// Wrap a model to add streaming support.
     ///
-    /// The `name` defaults to the inner model's [`name()`](ModelTrait::name).
+    /// The `name` defaults to the inner model's [`name()`].
+    ///
+    /// [`name()`]: ModelTrait::name
     pub fn new(inner: T) -> Self
     where
         T: ModelTrait,

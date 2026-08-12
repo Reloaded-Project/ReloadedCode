@@ -10,12 +10,14 @@
 //! - [`CustomToolDefinition`] - Framework-neutral name, description, and schema.
 //! - [`ToolRunContext`] - Optional framework metadata passed to tool calls.
 //! - [`ToolFactory`] - Trait for creating custom tools at build time. Extends
-//!   [`ToolContext`](crate::ToolContext) so factories provide name and prompt
+//!   [`ToolContext`] so factories provide name and prompt
 //!   guidance the same way built-in tools do.
 //! - [`ToolBuildContext`] - Context passed to [`ToolFactory::create`]. Built-in
 //!   tools get this too, plus whatever extra dependencies they need.
 //! - [`CustomToolRegistry`] - Registry of custom tool factories.
 //! - [`SharedToolRegistry`] - Shared wrapper around a registry for cheap cloning.
+//!
+//! [`ToolContext`]: crate::ToolContext
 //!
 //! # Usage
 //!

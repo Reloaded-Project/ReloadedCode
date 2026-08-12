@@ -14,21 +14,20 @@ profile and verify your setup before deploying.
 
     The `bash` tool runs unsandboxed unless you configure a bubblewrap profile.
     File tools (`read`, `write`, `edit`, `glob`, `grep`) are sandboxed to the
-    workspace root by default. See [Enabling sandboxing](#enabling-sandboxing).
+    workspace root by default. See [Enabling sandboxing].
 
 For server-side deployments, `reloaded-code` provides two layers of
 protection:
 
 1. **Path resolvers** - restrict which files the file tools (`read`,
    `write`, `edit`, `glob`, `grep`) can access. This does NOT protect against
-   shell execution. See [Path resolvers](tools.md#path-resolvers) for the full
-   resolver types and configuration.
+   shell execution. See [Path resolvers] for the full resolver types and configuration.
 2. **Shell sandboxing** (Linux only) - sandbox the `bash` tool
    with kernel-level filesystem, network, and process isolation.
 
 ## Shell sandboxing
 
-Built on [bubblewrap](https://github.com/containers/bubblewrap), a lightweight
+Built on [bubblewrap], a lightweight
 sandboxing tool that uses Linux kernel namespaces.
 
 - **Feature flag**: `linux-bubblewrap` (see [Feature Flags])
@@ -47,7 +46,7 @@ apply a profile to each tool.
 reloaded-code-serdesai = { version = "0.2", features = ["linux-bubblewrap"] }
 ```
 
-*(Also shown in [Getting Started](getting-started.md) and
+*(Also shown in [Getting Started] and
 [Feature Flags].)*
 
 When you enable sandboxing, start with the **Public Bot** profile.
@@ -61,7 +60,7 @@ When you enable sandboxing, start with the **Public Bot** profile.
     included, but the sandbox isolates bash automatically.
 
     **1.** Create an agent file at `agents/coder.md`
-    (see [Agent file format](agents.md) for all frontmatter fields):
+    (see [Agent file format] for all frontmatter fields):
 
     ```markdown
     ---
@@ -201,7 +200,7 @@ When you enable sandboxing, start with the **Public Bot** profile.
 
     - **Preset choice** is independent of the tab: both paths can use
       `Preset::PublicBot` or `Preset::TrustedMaintenance`. See
-      [The two profiles](#the-two-profiles) for guidance.
+      [The two profiles] for guidance.
 
 ### The two profiles
 
@@ -229,8 +228,7 @@ network exfiltration, credential theft, and host filesystem writes.
 - Commands run via the system `bash` or `sh` (resolved from mounted system
   paths)
 
-See [Profile Reference](extra-sandboxing-notes.md#public-bot) for the full
-mount table, environment variables, and design rationale.
+See [Profile Reference] for the full mount table, environment variables, and design rationale.
 
 #### Trusted Maintenance
 
@@ -329,3 +327,10 @@ and design rationale, see [Profile Reference](extra-sandboxing-notes.md).
 [new_with_temp_sandbox]: https://docs.rs/reloaded-code-serdesai/latest/reloaded_code_serdesai/struct.AgentBuildContext.html#method.new_with_temp_sandbox
 [Preset]: https://docs.rs/reloaded-code-bubblewrap/latest/reloaded_code_bubblewrap/profile/enum.Preset.html
 [Feature Flags]: feature-flags.md
+[Enabling sandboxing]: #enabling-sandboxing
+[Path resolvers]: tools.md#path-resolvers
+[bubblewrap]: https://github.com/containers/bubblewrap
+[Getting Started]: getting-started.md
+[Agent file format]: agents.md
+[The two profiles]: #the-two-profiles
+[Profile Reference]: extra-sandboxing-notes.md#public-bot

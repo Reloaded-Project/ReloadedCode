@@ -6,7 +6,7 @@ Every tool has a plain function implementation in [reloaded-code-core]. Adapter
 implementations that integrate those functions with LLM frameworks live in crates
 like [reloaded-code-serdesai].
 
-Jump to [Tool overview](#tool-overview) for the tool list, or read on for how
+Jump to [Tool overview] for the tool list, or read on for how
 configuration and permissions work.
 
 ## How it fits together
@@ -106,19 +106,19 @@ permission:
 
 ## Tool overview
 
-| Tool                                 | Core function            | What it does                                            |
-| ------------------------------------ | ------------------------ | ------------------------------------------------------- |
-| [**read**](#read)                    | `read_file`              | Read a file with offset/limit and optional line numbers |
-| [**write**](#write)                  | `write_file`             | Create or overwrite a file at a resolved path           |
-| [**edit**](#edit)                    | `edit_file`              | Apply exact text replacements (find-and-replace)        |
-| [**glob**](#glob)                    | `glob_files`             | Match filesystem paths by glob pattern                  |
-| [**grep**](#grep)                    | `grep_search`            | Search file contents by regex with match metadata       |
-| [**bash**](#bash)                    | `execute_command`        | Execute shell commands with timeout and captured output |
-| [**webfetch**](#webfetch)            | `fetch_url`              | Fetch a URL and return content as text or markdown      |
-| [**todoread**](#todoread-todowrite)  | `read_todos`             | Read shared todo list state                             |
-| [**todowrite**](#todoread-todowrite) | `write_todos`            | Update shared todo list state                           |
-| [**task**](#task)                    | `TaskInput`/`TaskOutput` | Delegate work to a named sub-agent                      |
-| [**custom**](#custom-tools)          | `ToolFactory`            | User-defined tool registered by the embedder            |
+| Tool            | Core function            | What it does                                            |
+| --------------- | ------------------------ | ------------------------------------------------------- |
+| [**read**]      | `read_file`              | Read a file with offset/limit and optional line numbers |
+| [**write**]     | `write_file`             | Create or overwrite a file at a resolved path           |
+| [**edit**]      | `edit_file`              | Apply exact text replacements (find-and-replace)        |
+| [**glob**]      | `glob_files`             | Match filesystem paths by glob pattern                  |
+| [**grep**]      | `grep_search`            | Search file contents by regex with match metadata       |
+| [**bash**]      | `execute_command`        | Execute shell commands with timeout and captured output |
+| [**webfetch**]  | `fetch_url`              | Fetch a URL and return content as text or markdown      |
+| [**todoread**]  | `read_todos`             | Read shared todo list state                             |
+| [**todowrite**] | `write_todos`            | Update shared todo list state                           |
+| [**task**]      | `TaskInput`/`TaskOutput` | Delegate work to a named sub-agent                      |
+| [**custom**]    | `ToolFactory`            | User-defined tool registered by the embedder            |
 
 ### Custom tools
 
@@ -200,8 +200,7 @@ Rules:
 - Factory creation failure: `AgentBuildError::CustomToolCreateFailed`.
 - Definition/catalog mismatch: `AgentBuildError::CustomToolNameMismatch`.
 
-See [reloaded-code-core API docs](https://docs.rs/reloaded-code-core/latest)
-for full API details.
+See [reloaded-code-core API docs] for full API details.
 
 ### read
 
@@ -374,7 +373,7 @@ sub-agent with a prompt and receive the result.
 
 **Output:** The delegated agent's response as a text summary.
 
-See [Getting Started](getting-started.md) for the full delegation model.
+See [Getting Started] for the full delegation model.
 
 ## Tool Settings
 
@@ -448,8 +447,8 @@ There are two levels of API depending on how you use the library.
 
 **Agent-level settings** (reloaded-code-agents):
 
-Use [`AgentToolSettings`](https://docs.rs/reloaded-code-agents/latest/reloaded_code_agents/struct.AgentToolSettings.html)
-when building an agent from an [`AgentConfig`](https://docs.rs/reloaded-code-agents/latest/reloaded_code_agents/struct.AgentConfig.html):
+Use [`AgentToolSettings`]
+when building an agent from an [`AgentConfig`]:
 
 ```rust
 use reloaded_code_agents::{AgentToolSettings, ReadToolSettings};
@@ -484,8 +483,7 @@ let tool = BashTool::new()
     .with_timeouts(Some(30_000), Some(120_000));
 ```
 
-See the [API reference](https://docs.rs/reloaded-code-core) for the full
-builder API on each settings type.
+See the [API reference] for the full builder API on each settings type.
 
 ## Path resolvers
 
@@ -509,3 +507,20 @@ For a deeper dive into path security, see [Sandboxing].
 [reloaded-code-serdesai]: https://docs.rs/reloaded-code-serdesai
 [tool settings]: #tool-settings
 [Sandboxing]: sandboxing.md
+[Tool overview]: #tool-overview
+[**read**]: #read
+[**write**]: #write
+[**edit**]: #edit
+[**glob**]: #glob
+[**grep**]: #grep
+[**bash**]: #bash
+[**webfetch**]: #webfetch
+[**todoread**]: #todoread-todowrite
+[**todowrite**]: #todoread-todowrite
+[**task**]: #task
+[**custom**]: #custom-tools
+[reloaded-code-core API docs]: https://docs.rs/reloaded-code-core/latest
+[Getting Started]: getting-started.md
+[`AgentToolSettings`]: https://docs.rs/reloaded-code-agents/latest/reloaded_code_agents/struct.AgentToolSettings.html
+[`AgentConfig`]: https://docs.rs/reloaded-code-agents/latest/reloaded_code_agents/struct.AgentConfig.html
+[API reference]: https://docs.rs/reloaded-code-core

@@ -5,7 +5,7 @@ functions, generate system prompts, and configure path security in three
 steps. You only need this if you're using a framework other than
 [SerdesAI] (an LLM agent framework).
 
-If you're using SerdesAI, see [Getting Started](../getting-started.md)
+If you're using SerdesAI, see [Getting Started]
 instead.
 
 ## The integration pattern
@@ -123,12 +123,11 @@ That means the same custom tool implementation can be registered once through
 !!! tip "Adapter example"
 
     See SerdesAI's
-    [`CustomToolAdapter`](https://github.com/Reloaded-Project/ReloadedCode/blob/main/src/reloaded-code-serdesai/src/tools/custom.rs)
+    [`CustomToolAdapter`]
     for a concrete adapter implementation, plus
-    [`serdesai-custom-tool`](../examples.md#serdesai-integration) for a runnable
+    [`serdesai-custom-tool`] for a runnable
     portable custom tool example using the agent runtime, or
-    [`serdesai-custom-tool-standalone`](../examples.md#serdesai-integration) for a
-    direct `AgentBuilder` example without the runtime.
+    [`serdesai-custom-tool-standalone`] for a direct `AgentBuilder` example without the runtime.
 
 ## Step 3: Choose a path resolver
 
@@ -163,9 +162,9 @@ let glob = AllowedGlobResolver::new(["/workspace/project"])?
 !!! tip "Runnable example"
 
     See
-    [system_prompt_preview](https://github.com/Reloaded-Project/ReloadedCode/blob/main/src/reloaded-code-core/examples/system_prompt_preview.rs)
+    [system_prompt_preview]
     for a working example of prompt building with the core library.
-    See [Examples](../examples.md) for the full list.
+    See [Examples] for the full list.
 
 ## What you get from core
 
@@ -189,6 +188,13 @@ let glob = AllowedGlobResolver::new(["/workspace/project"])?
 | `ModelCatalog`                                 | Compact provider/model hash table                        |
 | `ToolError`                                    | Unified error type for all tools                         |
 
-For the full API reference, see [docs.rs/reloaded-code-core](https://docs.rs/reloaded-code-core).
+For the full API reference, see [docs.rs/reloaded-code-core].
 
 [SerdesAI]: https://crates.io/crates/serdes-ai
+[Getting Started]: ../getting-started.md
+[`CustomToolAdapter`]: https://github.com/Reloaded-Project/ReloadedCode/blob/main/src/reloaded-code-serdesai/src/tools/custom.rs
+[`serdesai-custom-tool`]: ../examples.md#serdesai-integration
+[`serdesai-custom-tool-standalone`]: ../examples.md#serdesai-integration
+[system_prompt_preview]: https://github.com/Reloaded-Project/ReloadedCode/blob/main/src/reloaded-code-core/examples/system_prompt_preview.rs
+[Examples]: ../examples.md
+[docs.rs/reloaded-code-core]: https://docs.rs/reloaded-code-core

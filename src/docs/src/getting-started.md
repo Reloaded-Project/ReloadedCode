@@ -11,7 +11,7 @@ a Rust project and an LLM API key (e.g. `OPENAI_API_KEY`).
     !!! info "Agents are defined as markdown files with YAML frontmatter"
         The agent file format mirrors [OpenCode]'s agent definition format -
         similar enough that many files are drop-in compatible, but
-        [not identical](migration.md).
+        [not identical].
 
     **1.** Create an agent file at `agents/coder.md`:
 
@@ -150,9 +150,9 @@ a Rust project and an LLM API key (e.g. `OPENAI_API_KEY`).
 
 !!! tip "Runnable examples"
     The repository includes complete examples for both paths:
-    [serdesai-basic](https://github.com/Reloaded-Project/ReloadedCode/blob/main/src/reloaded-code-serdesai/examples/serdesai-basic.rs)
+    [serdesai-basic]
     (without agent files) and
-    [serdesai-agents](https://github.com/Reloaded-Project/ReloadedCode/blob/main/src/reloaded-code-serdesai/examples/serdesai-agents.rs)
+    [serdesai-agents]
     (with agent files). See [Examples] for the full list.
 
 ## Custom tools
@@ -184,8 +184,7 @@ let runtime = AgentRuntimeBuilder::new()
     .build()?;
 ```
 
-See [Tools > Custom tools](tools.md#custom-tools) for annotated details
-and error handling.
+See [Tools > Custom tools] for annotated details and error handling.
 
 ## Credential management
 
@@ -249,7 +248,7 @@ to isolate shell execution. See [Sandboxing](sandboxing.md) for the full guide.
   where you control the inputs. Explicitly mount the cache directories so that
   build artifacts persist between runs.
 
-If you use a framework other than SerdesAI, see [Custom Framework](guides/custom-framework.md).
+If you use a framework other than SerdesAI, see [Custom Framework].
 
 ## Blocking mode
 
@@ -264,9 +263,9 @@ reloaded-code-core = { version = "0.2", default-features = false, features = ["b
 
 ## Next steps
 
-- [Tools](tools.md) - every tool's behaviour, inputs, and outputs
-- [Agents](agents.md) - define agents with markdown files and YAML frontmatter
-- [Crate Structure](architecture.md) - understand how the 5 crates fit together
+- [Tools] - every tool's behaviour, inputs, and outputs
+- [Agents] - define agents with markdown files and YAML frontmatter
+- [Crate Structure] - understand how the 5 crates fit together
 
 [SerdesAI]: https://crates.io/crates/serdes-ai
 [OpenCode]: https://opencode.ai/
@@ -276,3 +275,11 @@ reloaded-code-core = { version = "0.2", default-features = false, features = ["b
 [`ToolFactory`]: https://docs.rs/reloaded-code-core/latest/reloaded_code_core/trait.ToolFactory.html
 [Examples]: examples.md
 [Sandboxing]: sandboxing.md#the-two-profiles
+[not identical]: migration.md
+[serdesai-basic]: https://github.com/Reloaded-Project/ReloadedCode/blob/main/src/reloaded-code-serdesai/examples/serdesai-basic.rs
+[serdesai-agents]: https://github.com/Reloaded-Project/ReloadedCode/blob/main/src/reloaded-code-serdesai/examples/serdesai-agents.rs
+[Tools > Custom tools]: tools.md#custom-tools
+[Custom Framework]: guides/custom-framework.md
+[Tools]: tools.md
+[Agents]: agents.md
+[Crate Structure]: architecture.md
