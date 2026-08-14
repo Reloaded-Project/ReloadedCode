@@ -1,4 +1,27 @@
-//! Run hook types -- intercept trait, config, output, and chain trampoline.
+//! Run hook types: intercept trait, config, output, and chain trampoline.
+//!
+//! # What a run is
+//!
+//! One run = one `agent.run()` call, start to finish.
+//! The framework is headless: no persistent conversation, no branching,
+//! no multi-session switching. One API call starts exactly one run.
+//!
+//! A run holds N steps. One step = one LLM request plus the tool calls
+//! it triggers. A run with no tool calls is a single step.
+//!
+//! A run hook wraps that whole boundary. Code before `original` runs
+//! before the first step: inject preamble messages, override the system
+//! prompt or model settings.
+//!
+//! Code after `original` sees the finished [`RunOutput`]. Skipping
+//! `original` skips the run and returns a synthetic result instead.
+//!
+//! Each run carries a `run_id` (see [`HookRunContext`]). Tool hooks
+//! fire inside a run, once per tool call, under the same `run_id`.
+//!
+//! Next: see [`ToolHook`] for the innermost intercept point.
+//!
+//! [`ToolHook`]: crate::hooks::ToolHook
 
 use crate::hooks::session::{EndReason, HookRunContext};
 use crate::ToolError;
@@ -62,7 +85,7 @@ pub struct RunOutput {
     pub usage: RunUsage,
 }
 
-/// Result alias for run hook operations. Re-uses [ToolError].
+/// Result alias for run hook operations. Re-uses [`ToolError`].
 pub type RunResult<T> = Result<T, ToolError>;
 
 /// Role for a preamble message.
@@ -100,7 +123,7 @@ pub trait RunExecutor: Send + Sync {
 ///
 /// `config` is owned (same as `ToolRequest` in `ToolHook`). Each hook
 /// takes ownership, mutates, and passes to `original.call()`. The final
-/// `RunExecutor` consumes it - strings move into the framework's run
+/// [`RunExecutor`] consumes it: strings move into the framework's run
 /// options with zero clones.
 pub trait RunHook: Send + Sync + 'static {
     /// Intercepts a run.
