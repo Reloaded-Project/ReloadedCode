@@ -23,7 +23,6 @@
 //!
 //! [`ToolHook`]: crate::hooks::ToolHook
 
-use crate::hooks::session::{EndReason, HookRunContext};
 use crate::ToolError;
 use std::fmt;
 use std::future::Future;
@@ -54,6 +53,20 @@ pub struct RunOriginal<'a> {
     chain: &'a [Arc<dyn RunHook>],
     index: usize,
     real_run: &'a dyn RunExecutor,
+}
+
+/// Compact event callback. Name preserved - compact is its own concept, distinct from "run".
+pub type SessionCompactFn = for<'a> fn(&'a HookRunContext<'a>);
+
+/// Context given to hook run lifecycle events.
+#[derive(Debug)]
+pub struct HookRunContext<'a> {
+    /// Name of the agent running the hook.
+    pub agent_name: &'a str,
+    /// Unique identifier for the current run.
+    pub run_id: &'a str,
+    /// Name of the model being used for this run.
+    pub model_name: &'a str,
 }
 
 /// Model-level settings that a RunHook can override.
@@ -87,6 +100,17 @@ pub struct RunOutput {
 
 /// Result alias for run hook operations. Re-uses [`ToolError`].
 pub type RunResult<T> = Result<T, ToolError>;
+
+/// Why a run ended.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum EndReason {
+    /// Run completed normally.
+    Completed,
+    /// Run was stopped externally.
+    Stopped,
+    /// Run failed (LLM error, length limit, content filter).
+    Failed,
+}
 
 /// Role for a preamble message.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

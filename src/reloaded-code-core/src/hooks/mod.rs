@@ -17,14 +17,12 @@
 //! - [`RunConfig`] - Mutable config a RunHook can change before calling original
 //! - [`RunOutput`] - Result of a completed run
 //! - [`RunExecutor`] - Final callable used at the end of the run hook chain
+//! - [`HookRunContext`] - Context given to hook run lifecycle events
+//! - [`EndReason`] - Why a run ended
 //!
 //! Notification callbacks e.g. (`on_run_start` / `on_run_end`) are
 //! implemented as lightweight `Hook` wrappers. They participate in the
 //! same hook chain: code before `original` is "start", code after is "end".
-//!
-//! Hook context types:
-//! - [`HookRunContext`] - Context given to hook run lifecycle events
-//! - [`EndReason`] - Why a run ended
 //!
 //! Container:
 //! - [`HookSet`] - Container for registered hooks and lifecycle events
@@ -41,13 +39,11 @@
 pub use self::builder::HookSetBuilder;
 pub use self::hook_set::HookSet;
 pub use self::run_hook::*;
-pub use self::session::*;
 pub use self::tool_hook::*;
 
 mod builder;
 mod hook_set;
 mod run_hook;
-mod session;
 mod tool_hook;
 
 /// Max hooks per point before falling back to heap.

@@ -121,9 +121,8 @@ impl fmt::Debug for HookSet {
 mod tests {
     use super::*;
     use crate::hooks::run_hook::{
-        RunConfig, RunExecutor, RunHook, RunHookFuture, RunOriginal, RunOutput, RunUsage,
+        EndReason, RunConfig, RunExecutor, RunHook, RunHookFuture, RunOriginal, RunOutput, RunUsage,
     };
-    use crate::hooks::session::EndReason;
     use crate::ToolOutput;
     use serde_json::json;
     use std::sync::atomic::{AtomicUsize, Ordering};

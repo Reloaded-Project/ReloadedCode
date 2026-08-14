@@ -149,7 +149,6 @@ impl fmt::Debug for HookSetBuilder {
 mod tests {
     use super::*;
     use crate::hooks::run_hook::{RunConfig, RunHookFuture, RunOriginal};
-    use crate::hooks::session::HookRunContext;
     use crate::hooks::tool_hook::{ToolCallContext, ToolHookFuture, ToolOriginal, ToolRequest};
 
     #[test]
