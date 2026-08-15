@@ -12,8 +12,7 @@ use reloaded_code_core::models::{
 use reloaded_code_core::permissions::PermissionAction;
 use reloaded_code_core::{CredentialResolver, HookSet, resolve_workspace_root};
 use reloaded_code_serdesai::AgentBuildContext;
-use reloaded_code_serdesai::mock::{FunctionModel, Streamed};
-use serdes_ai::core::{FinishReason, ModelResponse, ModelResponsePart, ToolReturnPart};
+use reloaded_code_serdesai::mock::Streamed;
 use serdes_ai_models::MockModel;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -164,71 +163,6 @@ pub fn temp_workspace() -> TempWorkspace {
     }
 }
 
-/// Builds a mock model that scripts two tool calls, then answers with text.
-///
-/// The first turn calls `first`; once its tool return is fed back, the next
-/// turn calls `second`; once both tool returns are in the conversation, the
-/// model answers with `final_text` followed by the real tool returns. This
-/// gives two-step examples the same deterministic shape that
-/// `mock::tool_then_text` gives single-call examples.
-///
-/// # Arguments
-///
-/// - `first` - name and JSON arguments of the tool called on the first turn.
-/// - `second` - name and JSON arguments of the tool called on the second turn.
-/// - `final_text` - text prefix for the closing response; the real tool
-///   returns are appended after it.
-///
-/// # Example
-///
-/// ```rust,no_run
-/// use serde_json::json;
-///
-/// let model = two_tools_then_text(
-///     ("read", json!({"file_path": "service.env"})),
-///     ("write", json!({"file_path": "draft.md", "content": "notes"})),
-///     "Run finished.",
-/// );
-/// ```
-pub fn two_tools_then_text(
-    first: (impl Into<String>, serde_json::Value),
-    second: (impl Into<String>, serde_json::Value),
-    final_text: impl Into<String>,
-) -> Streamed<FunctionModel> {
-    let first_tool: String = first.0.into();
-    let first_args = first.1;
-    let second_tool: String = second.0.into();
-    let second_args = second.1;
-    let final_text = final_text.into();
-
-    let model = FunctionModel::new(move |messages, _settings| {
-        // Each finished tool call adds one tool return to the history, so
-        // their count tells which scripted turn is next.
-        let answered_calls = messages.iter().flat_map(|m| m.tool_returns()).count();
-
-        match answered_calls {
-            0 => tool_call_response(&first_tool, &first_args),
-            1 => tool_call_response(&second_tool, &second_args),
-            _ => {
-                let tool_results: String = messages
-                    .iter()
-                    .flat_map(|m| m.tool_returns())
-                    .map(tool_return_text)
-                    .collect::<Vec<_>>()
-                    .join("\n");
-                let text = if tool_results.is_empty() {
-                    final_text.clone()
-                } else {
-                    format!("{final_text}\n\n{tool_results}")
-                };
-                ModelResponse::text(text)
-            }
-        }
-    });
-
-    Streamed::new(model)
-}
-
 /// Builds an `AgentConfig` fixture.
 ///
 /// # Arguments
@@ -286,29 +220,4 @@ pub fn model_catalog() -> ModelCatalog {
 /// Resolves the repository workspace root.
 pub fn workspace_root() -> Arc<Path> {
     Arc::from(resolve_workspace_root().expect("resolve workspace root"))
-}
-
-/// Emits a tool-call response with the shape `mock::tool_then_text` uses:
-/// a short text part, then the call that triggers the real tool.
-fn tool_call_response(tool_name: &str, args: &serde_json::Value) -> ModelResponse {
-    ModelResponse::with_parts(vec![
-        ModelResponsePart::text(format!("Calling {tool_name}...")),
-        ModelResponsePart::tool_call(tool_name, args.clone()),
-    ])
-    .with_finish_reason(FinishReason::ToolCall)
-}
-
-/// Extracts human-readable text from a tool return part.
-///
-/// Tool returns feed content back as tagged JSON, so round-trip through
-/// `serde_json` and keep the readable payload; tool implementations and
-/// hook-supplied responses both use plain text content.
-fn tool_return_text(part: &ToolReturnPart) -> String {
-    let Ok(value) = serde_json::to_value(&part.content) else {
-        return format!("{:?}", part.content);
-    };
-    if let Some(text) = value.get("content").and_then(|v| v.as_str()) {
-        return text.to_string();
-    }
-    serde_json::to_string_pretty(&value).unwrap_or_else(|_| format!("{:?}", part.content))
 }

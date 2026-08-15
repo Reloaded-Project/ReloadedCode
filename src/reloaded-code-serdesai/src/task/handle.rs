@@ -154,83 +154,15 @@ where
 mod tests {
     use super::*;
     use crate::agent_runtime::TaskBuildContext;
-    use ahash::AHashMap;
-    use indexmap::IndexMap;
+    use crate::agent_runtime::test_stubs::{
+        agent, allow_tools, catalog, credentials, pattern_task, workspace_root,
+    };
     use reloaded_code_agents::{
         AgentCatalog, AgentConfig, AgentDefaults, AgentMode, AgentRuntimeBuilder,
-        AgentToolSettings, PermissionRule,
     };
     use reloaded_code_core::CredentialResolver;
-    use reloaded_code_core::models::{
-        Modality, ModelCatalog, ModelInfo, ProviderIdx, ProviderInfo, ProviderModelSource,
-        ProviderSource, ProviderType,
-    };
-    use reloaded_code_core::permissions::{ExpandError, PermissionAction};
-
-    fn agent(
-        name: &str,
-        mode: AgentMode,
-        permission: IndexMap<String, PermissionRule>,
-    ) -> AgentConfig {
-        AgentConfig {
-            name: name.into(),
-            mode,
-            description: format!("{name} description").into(),
-            model: None,
-            hidden: false,
-            temperature: None,
-            top_p: None,
-            permission,
-            options: AHashMap::new(),
-            tool_settings: AgentToolSettings::default(),
-            prompt: Default::default(),
-        }
-    }
-
-    fn allow_tools(names: &[&str]) -> IndexMap<String, PermissionRule> {
-        names
-            .iter()
-            .map(|n| ((*n).into(), PermissionRule::Action(PermissionAction::Allow)))
-            .collect()
-    }
-
-    fn pattern_task(patterns: &[(&str, PermissionAction)]) -> IndexMap<String, PermissionRule> {
-        let mut map = IndexMap::new();
-        for (pattern, action) in patterns {
-            map.insert(pattern.to_string(), *action);
-        }
-        IndexMap::from([(task_meta::NAME.into(), PermissionRule::Pattern(map))])
-    }
-
-    fn catalog() -> ModelCatalog {
-        let providers = vec![ProviderSource::new(
-            "openrouter",
-            ProviderInfo {
-                api_url: "https://openrouter.ai/api/v1".into(),
-                env_vars: vec!["OPENROUTER_API_KEY".into()],
-                api_type: ProviderType::OpenRouter,
-            },
-        )];
-        let info = ModelInfo {
-            modalities: Modality::TEXT,
-            max_input: 128_000,
-            max_output: 16_384,
-            temperature: Some(1.0),
-            top_p: Some(0.95),
-        };
-        let models: Vec<ProviderModelSource<'_>> =
-            [("openai/gpt-4.1-mini", info), ("openai/gpt-4o", info)]
-                .into_iter()
-                .map(|(key, i)| ProviderModelSource::new(ProviderIdx::new(0), key, i))
-                .collect();
-        ModelCatalog::build(&providers, &models).expect("catalog fixture should build")
-    }
-
-    fn credentials() -> Arc<CredentialResolver<false>> {
-        let mut resolver = CredentialResolver::without_env();
-        resolver.set_override("OPENROUTER_API_KEY", "test-key");
-        Arc::new(resolver)
-    }
+    use reloaded_code_core::permissions::ExpandError;
+    use reloaded_code_core::permissions::PermissionAction;
 
     fn runtime_with_agents(agents: Vec<AgentConfig>) -> AgentRuntimeBuilder {
         AgentRuntimeBuilder::new()
@@ -244,8 +176,8 @@ mod tests {
         Arc::new(TaskBuildContext::new_for_test(
             Arc::new(runtime.expect("test fixture should not fail pattern expansion")),
             Arc::new(catalog()),
-            credentials(),
-            Arc::from(reloaded_code_core::resolve_workspace_root().expect("workspace root")),
+            Arc::new(credentials()),
+            workspace_root(),
         ))
     }
 
@@ -255,6 +187,7 @@ mod tests {
             "caller",
             AgentMode::All,
             allow_tools(&[task_meta::NAME]),
+            "",
         )])
         .build();
         let context = build_test_context(runtime);
@@ -285,8 +218,13 @@ mod tests {
     #[tokio::test]
     async fn validate_target_rejects_primary_target() {
         let runtime = runtime_with_agents(vec![
-            agent("caller", AgentMode::All, allow_tools(&[task_meta::NAME])),
-            agent("primary-agent", AgentMode::Primary, allow_tools(&[])),
+            agent(
+                "caller",
+                AgentMode::All,
+                allow_tools(&[task_meta::NAME]),
+                "",
+            ),
+            agent("primary-agent", AgentMode::Primary, allow_tools(&[]), ""),
         ])
         .build();
         let context = build_test_context(runtime);
@@ -321,8 +259,9 @@ mod tests {
                 "caller",
                 AgentMode::All,
                 pattern_task(&[("*", PermissionAction::Deny)]),
+                "",
             ),
-            agent("target", AgentMode::All, allow_tools(&[])),
+            agent("target", AgentMode::All, allow_tools(&[]), ""),
         ])
         .build();
         let context = build_test_context(runtime);
@@ -355,8 +294,13 @@ mod tests {
         // Defense-in-depth: even if the Task tool were somehow present at max depth,
         // execute() rejects the call.
         let runtime = runtime_with_agents(vec![
-            agent("caller", AgentMode::All, allow_tools(&[task_meta::NAME])),
-            agent("target", AgentMode::All, allow_tools(&[])),
+            agent(
+                "caller",
+                AgentMode::All,
+                allow_tools(&[task_meta::NAME]),
+                "",
+            ),
+            agent("target", AgentMode::All, allow_tools(&[]), ""),
         ])
         .defaults(AgentDefaults::with_model("openrouter/openai/gpt-4.1-mini"))
         .max_task_depth(0)

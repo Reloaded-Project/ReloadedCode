@@ -22,4 +22,4 @@ mod model;
 mod provider_bridge;
 mod task;
 #[cfg(test)]
-mod test_stubs;
+pub(crate) mod test_stubs;

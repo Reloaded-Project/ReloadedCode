@@ -609,28 +609,20 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::mock::{FunctionModel, Streamed};
-    use ahash::AHashMap;
-    use indexmap::IndexMap;
-    use reloaded_code_agents::{
-        AgentCatalog, AgentConfig, AgentDefaults, AgentMode, AgentRuntimeBuilder,
-        AgentToolSettings, PermissionRule,
+    use crate::agent_runtime::test_stubs::{
+        agent, allow_tools, catalog, credentials, pattern_task, workspace_root,
     };
-    use reloaded_code_core::CredentialResolver;
+    use crate::mock::two_tools_then_text;
+    use reloaded_code_agents::{AgentCatalog, AgentDefaults, AgentMode, AgentRuntimeBuilder};
     use reloaded_code_core::ToolOutput;
     use reloaded_code_core::hooks::{
         ToolCallContext, ToolHook, ToolHookFuture, ToolOriginal, ToolRequest,
-    };
-    use reloaded_code_core::models::{
-        Modality, ModelCatalog, ModelInfo, ProviderIdx, ProviderInfo, ProviderModelSource,
-        ProviderSource, ProviderType,
     };
     use reloaded_code_core::permissions::{ExpandError, PermissionAction};
     use reloaded_code_core::tool_metadata::{
         read as read_meta, task as task_meta, write as write_meta,
     };
     use serde_json::json;
-    use serdes_ai::core::{FinishReason, ModelResponse, ModelResponsePart, ToolReturnPart};
     use std::collections::HashSet;
     use std::path::PathBuf;
     use std::sync::Mutex;
@@ -638,79 +630,9 @@ mod tests {
 
     type TestResult = Result<(), ExpandError>;
 
-    fn agent(
-        name: &str,
-        mode: AgentMode,
-        permission: IndexMap<String, PermissionRule>,
-        prompt: &str,
-    ) -> AgentConfig {
-        AgentConfig {
-            name: name.into(),
-            mode,
-            description: format!("{name} description").into(),
-            model: None,
-            hidden: false,
-            temperature: None,
-            top_p: None,
-            permission,
-            options: AHashMap::new(),
-            tool_settings: AgentToolSettings::default(),
-            prompt: prompt.into(),
-        }
-    }
-
-    fn allow_tools(names: &[&str]) -> IndexMap<String, PermissionRule> {
-        names
-            .iter()
-            .map(|n| ((*n).into(), PermissionRule::Action(PermissionAction::Allow)))
-            .collect()
-    }
-
-    fn pattern_task(patterns: &[(&str, PermissionAction)]) -> IndexMap<String, PermissionRule> {
-        let mut map = IndexMap::new();
-        for (pattern, action) in patterns {
-            map.insert(pattern.to_string(), *action);
-        }
-        IndexMap::from([(task_meta::NAME.into(), PermissionRule::Pattern(map))])
-    }
-
-    fn catalog() -> ModelCatalog {
-        let providers = vec![ProviderSource::new(
-            "openrouter",
-            ProviderInfo {
-                api_url: "https://openrouter.ai/api/v1".into(),
-                env_vars: vec!["OPENROUTER_API_KEY".into()],
-                api_type: ProviderType::OpenRouter,
-            },
-        )];
-        let info = ModelInfo {
-            modalities: Modality::TEXT,
-            max_input: 128_000,
-            max_output: 16_384,
-            temperature: Some(1.0),
-            top_p: Some(0.95),
-        };
-        let models: Vec<ProviderModelSource<'_>> =
-            [("openai/gpt-4.1-mini", info), ("openai/gpt-4o", info)]
-                .into_iter()
-                .map(|(key, i)| ProviderModelSource::new(ProviderIdx::new(0), key, i))
-                .collect();
-        ModelCatalog::build(&providers, &models).expect("catalog fixture should build")
-    }
-
-    fn credentials() -> Arc<CredentialResolver<false>> {
-        let mut resolver = CredentialResolver::without_env();
-        resolver.set_override("OPENROUTER_API_KEY", "test-key");
-        Arc::new(resolver)
-    }
-
-    fn workspace_root() -> Arc<Path> {
-        Arc::from(reloaded_code_core::resolve_workspace_root().expect("workspace root"))
-    }
-
     #[test]
     fn build_agent_skips_task_tool_when_no_targets_are_callable() -> TestResult {
-        let credentials = credentials();
+        let credentials = Arc::new(credentials());
         let model_catalog = Arc::new(catalog());
 
         let runtime = AgentRuntimeBuilder::new()
@@ -726,18 +648,12 @@ mod tests {
             .defaults(AgentDefaults::with_model("openrouter/openai/gpt-4.1-mini"))
             .build()?;
 
-        let context = Arc::new(TaskBuildContext {
-            runtime: Arc::new(runtime),
+        let context = Arc::new(TaskBuildContext::new_for_test(
+            Arc::new(runtime),
             model_catalog,
             credentials,
-            workspace_root: workspace_root(),
-            #[cfg(any(test, feature = "mock"))]
-            model_override: None,
-            #[cfg(all(feature = "linux-bubblewrap", target_os = "linux"))]
-            bash_sandbox: None,
-            #[cfg(all(feature = "linux-bubblewrap", target_os = "linux"))]
-            _sandbox_tmpdir: None,
-        });
+            workspace_root(),
+        ));
 
         let agent = build_agent(context, "caller", 0).expect("build should succeed");
         let names: Vec<_> = agent.tools().iter().map(|t| t.name()).collect();
@@ -747,7 +663,7 @@ mod tests {
 
     #[test]
     fn build_agent_attaches_task_when_callable_targets_exist() -> TestResult {
-        let credentials = credentials();
+        let credentials = Arc::new(credentials());
         let model_catalog = Arc::new(catalog());
 
         let runtime = AgentRuntimeBuilder::new()
@@ -768,18 +684,12 @@ mod tests {
             .defaults(AgentDefaults::with_model("openrouter/openai/gpt-4.1-mini"))
             .build()?;
 
-        let context = Arc::new(TaskBuildContext {
-            runtime: Arc::new(runtime),
+        let context = Arc::new(TaskBuildContext::new_for_test(
+            Arc::new(runtime),
             model_catalog,
             credentials,
-            workspace_root: workspace_root(),
-            #[cfg(any(test, feature = "mock"))]
-            model_override: None,
-            #[cfg(all(feature = "linux-bubblewrap", target_os = "linux"))]
-            bash_sandbox: None,
-            #[cfg(all(feature = "linux-bubblewrap", target_os = "linux"))]
-            _sandbox_tmpdir: None,
-        });
+            workspace_root(),
+        ));
 
         let agent = build_agent(context, "caller", 0).expect("build should succeed");
         let names: Vec<_> = agent.tools().iter().map(|t| t.name()).collect();
@@ -789,10 +699,39 @@ mod tests {
     }
 
     #[test]
-    fn build_agent_attaches_task_when_task_permission_is_target_scoped() -> TestResult {
-        let credentials = credentials();
+    fn build_agent_attaches_task_according_to_task_permission() -> TestResult {
+        // Task permission absent: delegation defaults to every non-Primary
+        // target, so the Task tool attaches alongside the allowed `read`.
+        let credentials = Arc::new(credentials());
         let model_catalog = Arc::new(catalog());
 
+        let runtime = AgentRuntimeBuilder::new()
+            .catalog(AgentCatalog::from_entries([
+                agent(
+                    "caller",
+                    AgentMode::Primary,
+                    allow_tools(&[read_meta::NAME]),
+                    "prompt",
+                ),
+                agent("reader", AgentMode::Subagent, allow_tools(&[]), "prompt"),
+            ]))
+            .defaults(AgentDefaults::with_model("openrouter/openai/gpt-4.1-mini"))
+            .build()?;
+
+        let context = Arc::new(TaskBuildContext::new_for_test(
+            Arc::new(runtime),
+            model_catalog.clone(),
+            credentials.clone(),
+            workspace_root(),
+        ));
+
+        let built = build_agent(context, "caller", 0).expect("build should succeed");
+        let names: Vec<_> = built.tools().iter().map(|t| t.name()).collect();
+        assert!(names.contains(&read_meta::NAME));
+        assert!(names.contains(&task_meta::NAME));
+
+        // Pattern-scoped Task permission: only the `reader` target is
+        // callable and no other tool is allowed, so Task attaches alone.
         let runtime = AgentRuntimeBuilder::new()
             .catalog(AgentCatalog::from_entries([
                 agent(
@@ -809,96 +748,22 @@ mod tests {
             .defaults(AgentDefaults::with_model("openrouter/openai/gpt-4.1-mini"))
             .build()?;
 
-        let context = Arc::new(TaskBuildContext {
-            runtime: Arc::new(runtime),
-            model_catalog,
-            credentials,
-            workspace_root: workspace_root(),
-            #[cfg(any(test, feature = "mock"))]
-            model_override: None,
-            #[cfg(all(feature = "linux-bubblewrap", target_os = "linux"))]
-            bash_sandbox: None,
-            #[cfg(all(feature = "linux-bubblewrap", target_os = "linux"))]
-            _sandbox_tmpdir: None,
-        });
+        let context = Arc::new(TaskBuildContext::new_for_test(
+            Arc::new(runtime),
+            model_catalog.clone(),
+            credentials.clone(),
+            workspace_root(),
+        ));
 
-        let agent = build_agent(context, "caller", 0).expect("build should succeed");
-        let names: Vec<_> = agent.tools().iter().map(|t| t.name()).collect();
+        let built = build_agent(context, "caller", 0).expect("build should succeed");
+        let names: Vec<_> = built.tools().iter().map(|t| t.name()).collect();
         assert_eq!(names, vec![task_meta::NAME]);
         Ok(())
     }
 
     #[test]
-    fn build_agent_attaches_task_when_permission_task_is_absent() -> TestResult {
-        let credentials = credentials();
-        let model_catalog = Arc::new(catalog());
-
-        let runtime = AgentRuntimeBuilder::new()
-            .catalog(AgentCatalog::from_entries([
-                agent(
-                    "caller",
-                    AgentMode::Primary,
-                    allow_tools(&[read_meta::NAME]),
-                    "prompt",
-                ),
-                agent("reader", AgentMode::Subagent, allow_tools(&[]), "prompt"),
-            ]))
-            .defaults(AgentDefaults::with_model("openrouter/openai/gpt-4.1-mini"))
-            .build()?;
-
-        let context = Arc::new(TaskBuildContext {
-            runtime: Arc::new(runtime),
-            model_catalog,
-            credentials,
-            workspace_root: workspace_root(),
-            #[cfg(any(test, feature = "mock"))]
-            model_override: None,
-            #[cfg(all(feature = "linux-bubblewrap", target_os = "linux"))]
-            bash_sandbox: None,
-            #[cfg(all(feature = "linux-bubblewrap", target_os = "linux"))]
-            _sandbox_tmpdir: None,
-        });
-
-        let agent = build_agent(context, "caller", 0).expect("build should succeed");
-        let names: Vec<_> = agent.tools().iter().map(|t| t.name()).collect();
-        assert!(names.contains(&read_meta::NAME));
-        assert!(names.contains(&task_meta::NAME));
-        Ok(())
-    }
-
-    #[test]
-    fn agent_build_context_omits_task_tool_when_no_targets_are_callable() -> TestResult {
-        let model_catalog = Arc::new(catalog());
-        let credentials = credentials();
-
-        let runtime = AgentRuntimeBuilder::new()
-            .catalog(AgentCatalog::from_entries([
-                agent(
-                    "caller",
-                    AgentMode::Primary,
-                    allow_tools(&[read_meta::NAME]),
-                    "prompt",
-                ),
-                agent("other", AgentMode::Primary, allow_tools(&[]), "prompt"),
-            ]))
-            .defaults(AgentDefaults::with_model("openrouter/openai/gpt-4.1-mini"))
-            .build()?;
-
-        let context = AgentBuildContext::new(
-            Arc::new(runtime),
-            model_catalog,
-            credentials,
-            workspace_root(),
-        );
-        let agent = context.build("caller").expect("build should succeed");
-        let names: Vec<_> = agent.tools().iter().map(|t| t.name()).collect();
-        assert!(!names.contains(&task_meta::NAME));
-        Ok(())
-    }
-
-    #[test]
     fn build_agent_omits_task_tool_at_max_depth() -> TestResult {
-        let credentials = credentials();
+        let credentials = Arc::new(credentials());
         let model_catalog = Arc::new(catalog());
 
         let runtime = AgentRuntimeBuilder::new()
@@ -920,57 +785,14 @@ mod tests {
             .max_task_depth(1)
             .build()?;
 
-        let context = Arc::new(TaskBuildContext {
-            runtime: Arc::new(runtime),
-            model_catalog,
-            credentials,
-            workspace_root: workspace_root(),
-            #[cfg(any(test, feature = "mock"))]
-            model_override: None,
-            #[cfg(all(feature = "linux-bubblewrap", target_os = "linux"))]
-            bash_sandbox: None,
-            #[cfg(all(feature = "linux-bubblewrap", target_os = "linux"))]
-            _sandbox_tmpdir: None,
-        });
-
-        let agent = build_agent(context, "caller", 1).expect("build should succeed");
-        let names: Vec<_> = agent.tools().iter().map(|t| t.name()).collect();
-        assert!(!names.contains(&task_meta::NAME));
-        assert!(names.contains(&read_meta::NAME));
-        Ok(())
-    }
-
-    #[test]
-    fn agent_build_context_omits_task_tool_when_max_depth_is_zero() -> TestResult {
-        let model_catalog = Arc::new(catalog());
-        let credentials = credentials();
-
-        let runtime = AgentRuntimeBuilder::new()
-            .catalog(AgentCatalog::from_entries([
-                agent(
-                    "caller",
-                    AgentMode::All,
-                    allow_tools(&[task_meta::NAME, read_meta::NAME]),
-                    "prompt",
-                ),
-                agent(
-                    "target",
-                    AgentMode::All,
-                    allow_tools(&[write_meta::NAME]),
-                    "prompt",
-                ),
-            ]))
-            .defaults(AgentDefaults::with_model("openrouter/openai/gpt-4.1-mini"))
-            .max_task_depth(0)
-            .build()?;
-
-        let context = AgentBuildContext::new(
+        let context = Arc::new(TaskBuildContext::new_for_test(
             Arc::new(runtime),
             model_catalog,
             credentials,
             workspace_root(),
-        );
-        let agent = context.build("caller").expect("build should succeed");
+        ));
+
+        let agent = build_agent(context, "caller", 1).expect("build should succeed");
         let names: Vec<_> = agent.tools().iter().map(|t| t.name()).collect();
         assert!(!names.contains(&task_meta::NAME));
         assert!(names.contains(&read_meta::NAME));
@@ -1035,70 +857,6 @@ mod tests {
         }
     }
 
-    /// Scripts two tool calls followed by a text answer, mirroring the
-    /// `mock::tool_then_text` closure pattern: the first turn calls `first`,
-    /// the next turn calls `second`, and once both tool returns are in the
-    /// conversation the model answers with `final_text` followed by the real
-    /// tool returns, so callers can observe what the model received.
-    fn two_tools_then_text(
-        first: (&str, serde_json::Value),
-        second: (&str, serde_json::Value),
-        final_text: &str,
-    ) -> Streamed<FunctionModel> {
-        let first_name = first.0.to_string();
-        let first_args = first.1;
-        let second_name = second.0.to_string();
-        let second_args = second.1;
-        let final_text = final_text.to_string();
-
-        let model = FunctionModel::new(move |messages, _settings| {
-            // Each finished tool call adds one tool return to the history, so
-            // their count tells which scripted turn is next.
-            let answered_calls = messages.iter().flat_map(|m| m.tool_returns()).count();
-
-            match answered_calls {
-                0 => tool_call_response(&first_name, &first_args),
-                1 => tool_call_response(&second_name, &second_args),
-                _ => {
-                    let tool_results: String = messages
-                        .iter()
-                        .flat_map(|m| m.tool_returns())
-                        .map(tool_return_text)
-                        .collect::<Vec<_>>()
-                        .join("\n");
-                    ModelResponse::text(format!("{final_text}\n\n{tool_results}"))
-                }
-            }
-        });
-
-        Streamed::new(model)
-    }
-
-    /// Emits a tool-call response with the shape `mock::tool_then_text` uses:
-    /// a short text part, then the call that triggers the real tool.
-    fn tool_call_response(tool_name: &str, args: &serde_json::Value) -> ModelResponse {
-        ModelResponse::with_parts(vec![
-            ModelResponsePart::text(format!("Calling {tool_name}...")),
-            ModelResponsePart::tool_call(tool_name, args.clone()),
-        ])
-        .with_finish_reason(FinishReason::ToolCall)
-    }
-
-    /// Extracts readable text from a tool return part.
-    ///
-    /// Tool returns carry tagged JSON content, so round-trip through
-    /// `serde_json` and keep the readable payload; real tool results and
-    /// hook-supplied responses both use plain text content.
-    fn tool_return_text(part: &ToolReturnPart) -> String {
-        let Ok(value) = serde_json::to_value(&part.content) else {
-            return format!("{:?}", part.content);
-        };
-        if let Some(text) = value.get("content").and_then(|v| v.as_str()) {
-            return text.to_string();
-        }
-        serde_json::to_string_pretty(&value).unwrap_or_else(|_| format!("{:?}", part.content))
-    }
-
     #[tokio::test]
     async fn tool_hook_denies_write_to_never_read_file_during_agent_run() {
         // Workspace fixture: the model reads `service.env`, then tries to
@@ -1131,7 +889,7 @@ mod tests {
         let context = AgentBuildContext::new(
             Arc::new(runtime),
             Arc::new(catalog()),
-            credentials(),
+            Arc::new(credentials()),
             Arc::from(workspace.path()),
         )
         .with_model_override(two_tools_then_text(

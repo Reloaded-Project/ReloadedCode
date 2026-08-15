@@ -534,7 +534,9 @@ fn build_webfetch_settings(
 
 #[cfg(test)]
 mod tests {
-    use super::{AgentBuildError, attach_standard_tools, prepare_build};
+    use super::AgentBuildError;
+    use super::{attach_standard_tools, prepare_build};
+    use crate::agent_runtime::test_stubs::{agent, allow_tools, catalog, credentials};
     use ahash::AHashMap;
     use indexmap::IndexMap;
     use reloaded_code_agents::{
@@ -542,11 +544,7 @@ mod tests {
         AgentToolSettings, PermissionRule,
     };
     use reloaded_code_core::context::{ToolContext, ToolPrompt};
-    use reloaded_code_core::models::{
-        Modality, ModelCatalog, ModelInfo, ProviderIdx, ProviderInfo, ProviderModelSource,
-        ProviderSource, ProviderType,
-    };
-    use reloaded_code_core::permissions::{ExpandError, PermissionAction};
+    use reloaded_code_core::permissions::ExpandError;
     use reloaded_code_core::tool_metadata::{
         bash as bash_meta, glob as glob_meta, grep as grep_meta, read as read_meta,
     };
@@ -593,27 +591,6 @@ mod tests {
         Ok((agent, prompt))
     }
 
-    /// Creates a minimal agent config with no model or sampling overrides.
-    fn agent(
-        name: &str,
-        permission: IndexMap<String, PermissionRule>,
-        prompt: &str,
-    ) -> AgentConfig {
-        AgentConfig {
-            name: name.into(),
-            mode: AgentMode::Primary,
-            description: format!("{name} description").into(),
-            model: None,
-            hidden: false,
-            temperature: None,
-            top_p: None,
-            permission,
-            options: AHashMap::new(),
-            tool_settings: AgentToolSettings::default(),
-            prompt: prompt.into(),
-        }
-    }
-
     /// Creates an agent config with explicit model and sampling settings.
     fn agent_with_sampling(
         name: &str,
@@ -624,57 +601,12 @@ mod tests {
         prompt: &str,
     ) -> AgentConfig {
         AgentConfig {
-            name: name.into(),
             mode: AgentMode::All,
-            description: format!("{name} description").into(),
             model: Some(model.into()),
-            hidden: false,
             temperature,
             top_p,
-            permission,
-            options: AHashMap::new(),
-            tool_settings: AgentToolSettings::default(),
-            prompt: prompt.into(),
+            ..agent(name, AgentMode::Primary, permission, prompt)
         }
-    }
-
-    /// Creates permission rules that allow the specified tools.
-    fn allow_tools(names: &[&str]) -> IndexMap<String, PermissionRule> {
-        names
-            .iter()
-            .map(|n| ((*n).into(), PermissionRule::Action(PermissionAction::Allow)))
-            .collect()
-    }
-
-    /// Creates a model catalog with two OpenRouter models for testing.
-    fn catalog() -> ModelCatalog {
-        let providers = vec![ProviderSource::new(
-            "openrouter",
-            ProviderInfo {
-                api_url: "https://openrouter.ai/api/v1".into(),
-                env_vars: vec!["OPENROUTER_API_KEY".into()],
-                api_type: ProviderType::OpenRouter,
-            },
-        )];
-        let info = ModelInfo {
-            modalities: Modality::TEXT,
-            max_input: 128_000,
-            max_output: 16_384,
-            temperature: Some(1.0),
-            top_p: Some(0.95),
-        };
-        let models: Vec<ProviderModelSource<'_>> =
-            [("openai/gpt-4.1-mini", info), ("openai/gpt-4o", info)]
-                .into_iter()
-                .map(|(key, i)| ProviderModelSource::new(ProviderIdx::new(0), key, i))
-                .collect();
-        ModelCatalog::build(&providers, &models).expect("catalog fixture should build")
-    }
-
-    fn credentials() -> CredentialResolver<false> {
-        let mut credentials = CredentialResolver::without_env();
-        credentials.set_override("OPENROUTER_API_KEY", "openrouter-key");
-        credentials
     }
 
     /// Builds a test runtime with one custom tool and read permission.
@@ -686,6 +618,7 @@ mod tests {
         AgentRuntimeBuilder::new()
             .catalog(AgentCatalog::from_entries([agent(
                 agent_name,
+                AgentMode::Primary,
                 allow_tools(&[read_meta::NAME, custom_name]),
                 "prompt",
             )]))
@@ -726,10 +659,11 @@ mod tests {
             .catalog(AgentCatalog::from_entries([
                 agent(
                     "with-tools",
+                    AgentMode::Primary,
                     allow_tools(&[read_meta::NAME, bash_meta::NAME]),
                     "prompt",
                 ),
-                agent("no-tools", IndexMap::new(), "prompt"),
+                agent("no-tools", AgentMode::Primary, IndexMap::new(), "prompt"),
             ]))
             .defaults(AgentDefaults::with_model("openrouter/openai/gpt-4.1-mini"))
             .build()?;
@@ -843,6 +777,7 @@ mod tests {
         let runtime_true = AgentRuntimeBuilder::new()
             .catalog(AgentCatalog::from_entries([agent(
                 "numbered",
+                AgentMode::Primary,
                 allow_tools(&[read_meta::NAME, grep_meta::NAME]),
                 "prompt",
             )]))
@@ -915,6 +850,7 @@ mod tests {
         let runtime = AgentRuntimeBuilder::new()
             .catalog(AgentCatalog::from_entries([agent(
                 "tester",
+                AgentMode::Primary,
                 allow_tools(&[read_meta::NAME, "custom_missing"]),
                 "prompt",
             )]))

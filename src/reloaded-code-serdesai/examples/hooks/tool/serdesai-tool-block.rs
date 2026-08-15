@@ -28,6 +28,7 @@ use reloaded_code_agents::AgentCatalog;
 use reloaded_code_core::{
     HookSet, ToolCallContext, ToolHook, ToolHookFuture, ToolOriginal, ToolOutput, ToolRequest,
 };
+use reloaded_code_serdesai::mock::two_tools_then_text;
 use serde_json::json;
 use std::collections::HashSet;
 use std::path::PathBuf;
@@ -117,7 +118,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let build_context =
         shared::build_agent_context_in_workspace(catalog, hooks, workspace.root.clone());
 
-    let model = shared::two_tools_then_text(
+    let model = two_tools_then_text(
         ("read", json!({"file_path": READ_SOURCE})),
         (
             "write",
