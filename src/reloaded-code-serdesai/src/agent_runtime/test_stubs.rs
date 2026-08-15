@@ -141,18 +141,6 @@ pub(crate) fn allow_tools(names: &[&str]) -> IndexMap<String, PermissionRule> {
         .collect()
 }
 
-/// Builds permission rules where the `task` tool dispatches on target-name
-/// patterns; later patterns win, mirroring rule precedence.
-pub(crate) fn pattern_task(
-    patterns: &[(&str, PermissionAction)],
-) -> IndexMap<String, PermissionRule> {
-    let mut map = IndexMap::new();
-    for (pattern, action) in patterns {
-        map.insert(pattern.to_string(), *action);
-    }
-    IndexMap::from([(task_meta::NAME.into(), PermissionRule::Pattern(map))])
-}
-
 /// Builds a two-model OpenRouter catalog fixture.
 pub(crate) fn catalog() -> ModelCatalog {
     let providers = vec![ProviderSource::new(
@@ -183,6 +171,18 @@ pub(crate) fn credentials() -> CredentialResolver<false> {
     let mut resolver = CredentialResolver::without_env();
     resolver.set_override("OPENROUTER_API_KEY", "test-key");
     resolver
+}
+
+/// Builds permission rules where the `task` tool dispatches on target-name
+/// patterns; later patterns win, mirroring rule precedence.
+pub(crate) fn pattern_task(
+    patterns: &[(&str, PermissionAction)],
+) -> IndexMap<String, PermissionRule> {
+    let mut map = IndexMap::new();
+    for (pattern, action) in patterns {
+        map.insert(pattern.to_string(), *action);
+    }
+    IndexMap::from([(task_meta::NAME.into(), PermissionRule::Pattern(map))])
 }
 
 /// Resolves the repository workspace root, wrapped for context structs.

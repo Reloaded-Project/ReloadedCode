@@ -255,16 +255,6 @@ pub fn two_tools_then_text(
     Streamed::new(model)
 }
 
-/// Emits a tool-call response: a short text part, then the call that
-/// triggers the real tool.
-fn tool_call_response(tool_name: &str, args: &serde_json::Value) -> ModelResponse {
-    ModelResponse::with_parts(vec![
-        ModelResponsePart::text(format!("Calling {tool_name}...")),
-        ModelResponsePart::tool_call(tool_name, args.clone()),
-    ])
-    .with_finish_reason(FinishReason::ToolCall)
-}
-
 /// Extract human-readable text from a [`ToolReturnPart`].
 ///
 /// Uses serde JSON round-tripping to avoid depending on the
@@ -315,4 +305,14 @@ fn response_to_stream_events(response: ModelResponse) -> Vec<ModelResponseStream
     }
 
     events
+}
+
+/// Emits a tool-call response: a short text part, then the call that
+/// triggers the real tool.
+fn tool_call_response(tool_name: &str, args: &serde_json::Value) -> ModelResponse {
+    ModelResponse::with_parts(vec![
+        ModelResponsePart::text(format!("Calling {tool_name}...")),
+        ModelResponsePart::tool_call(tool_name, args.clone()),
+    ])
+    .with_finish_reason(FinishReason::ToolCall)
 }
