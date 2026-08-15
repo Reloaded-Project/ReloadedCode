@@ -117,3 +117,18 @@ required-features = ["mock"]
 name = "serdesai-run-event"
 path = "examples/hooks/run/serdesai-run-event.rs"
 required-features = ["mock"]
+
+[[example]]
+name = "serdesai-tool-hook"
+path = "examples/hooks/tool/serdesai-tool-hook.rs"
+required-features = ["mock"]
+
+[[example]]
+name = "serdesai-tool-block"
+path = "examples/hooks/tool/serdesai-tool-block.rs"
+required-features = ["mock"]
+
+[[example]]
+name = "serdesai-tool-chain"
+path = "examples/hooks/tool/serdesai-tool-chain.rs"
+required-features = ["mock"]
