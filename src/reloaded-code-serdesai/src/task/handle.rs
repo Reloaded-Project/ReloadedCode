@@ -38,8 +38,6 @@ where
     /// - `input` — task payload including the [`subagent_type`]
     ///   and prompt.
     ///
-    /// [`subagent_type`]: TaskInput::subagent_type
-    ///
     /// # Returns
     ///
     /// A [`TaskOutput`] wrapping the sub-agent's text response.
@@ -54,6 +52,8 @@ where
     ///
     /// Returns [`ToolError::ExecutionFailed`] when the sub-agent fails to build or
     /// produce a response.
+    ///
+    /// [`subagent_type`]: TaskInput::subagent_type
     pub(crate) async fn execute(
         &self,
         caller_name: &str,

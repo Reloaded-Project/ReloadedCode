@@ -87,8 +87,6 @@ where
     ///
     /// [`BashTool`] will run commands directly on the host.
     ///
-    /// [`BashTool`]: crate::BashTool
-    ///
     /// # Platform
     ///
     /// For sandboxed builds on Linux with the `linux-bubblewrap` feature, use
@@ -99,6 +97,8 @@ where
     /// - `model_catalog`: Available models for agent resolution.
     /// - `credentials`: Credential lookup used to authenticate model requests.
     /// - `workspace_root`: Project directory exposed to tools.
+    ///
+    /// [`BashTool`]: crate::BashTool
     pub fn new(
         runtime: Arc<AgentRuntime>,
         model_catalog: Arc<ModelCatalog>,
@@ -135,11 +135,11 @@ where
     /// - `sandbox_tmpdir`: Optional owning temp directories that keep the
     ///   profile's backing storage alive for the context's lifetime.
     ///
-    /// [`BashTool`]: crate::BashTool
-    ///
     /// # Platform
     ///
     /// Only available on Linux with the `linux-bubblewrap` feature enabled.
+    ///
+    /// [`BashTool`]: crate::BashTool
     #[cfg(all(feature = "linux-bubblewrap", target_os = "linux"))]
     pub fn new_with_sandbox(
         runtime: Arc<AgentRuntime>,

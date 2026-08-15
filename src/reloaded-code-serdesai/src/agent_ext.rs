@@ -116,11 +116,11 @@ pub trait ToolResultExt<T> {
     /// Maps a [`ToolError`] to
     /// [`AgentBuildError::ToolSettingsValidation`].
     ///
-    /// [`ToolError`]: reloaded_code_core::ToolError
-    ///
     /// # Errors
     /// - Returns [`AgentBuildError::ToolSettingsValidation`] when the original result
     ///   contains a [`ToolError`], preserving the tool name and original error.
+    ///
+    /// [`ToolError`]: reloaded_code_core::ToolError
     fn with_tool(self, tool: &'static str) -> Result<T, AgentBuildError>;
 }
 

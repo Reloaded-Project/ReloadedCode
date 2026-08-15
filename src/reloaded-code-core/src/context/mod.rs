@@ -61,8 +61,6 @@ pub const GIT_WORKFLOW: &str = include_str!("git_workflow.txt");
 /// [`SystemPromptBuilder`] include tool guidance
 /// automatically.
 ///
-/// [`SystemPromptBuilder`]: crate::SystemPromptBuilder
-///
 /// # Example
 ///
 /// ```rust
@@ -78,6 +76,8 @@ pub const GIT_WORKFLOW: &str = include_str!("git_workflow.txt");
 ///     }
 /// }
 /// ```
+///
+/// [`SystemPromptBuilder`]: crate::SystemPromptBuilder
 pub trait ToolContext {
     /// Returns the tool name for section headers in generated system prompt.
     ///

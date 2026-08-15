@@ -102,8 +102,6 @@ impl ModelsDevCatalog {
     /// - Custom deployment scenarios
     /// - Isolated cache locations
     ///
-    /// [`load`]: Self::load
-    ///
     /// # Parameters
     ///
     /// * `path` - The path to the cache file. Parent directories will be
@@ -148,6 +146,8 @@ impl ModelsDevCatalog {
     /// # Ok(())
     /// # }
     /// ```
+    ///
+    /// [`load`]: Self::load
     #[maybe_async::maybe_async]
     pub async fn load_at(path: impl AsRef<Path>) -> Result<CatalogLoadResult, CatalogError> {
         sync::load_catalog_at_path(path.as_ref()).await

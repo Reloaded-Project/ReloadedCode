@@ -40,12 +40,8 @@ use serdes_ai_models::{
 
 /// Wrapper adding [`request_stream`] support to any [`ModelTrait`] implementation.
 ///
-/// [`request_stream`]: ModelTrait::request_stream
-///
 /// Delegates [`request`] directly to the inner model and converts the non-streaming
 /// response into a sequence of [`ModelResponseStreamEvent`]s for streaming callers.
-///
-/// [`request`]: ModelTrait::request
 ///
 /// # Example
 ///
@@ -55,6 +51,9 @@ use serdes_ai_models::{
 ///
 /// let model = Streamed::new(FunctionModel::tool_call("glob", json!({"pattern": "*.rs"})));
 /// ```
+///
+/// [`request_stream`]: ModelTrait::request_stream
+/// [`request`]: ModelTrait::request
 #[derive(Clone, Debug)]
 pub struct Streamed<T> {
     inner: T,

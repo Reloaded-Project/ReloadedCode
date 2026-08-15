@@ -85,8 +85,6 @@
 //! Collision estimates use the birthday-bound approximation described by
 //! [Preshing]:
 //!
-//! [Preshing]: https://preshing.com/20110504/hash-collision-probabilities/
-//!
 //! `p(at least one collision) ~= 1 - exp(-n * (n - 1) / (2 * 2^48))`
 //!
 //! where `n` is the number of inserted keys.
@@ -223,6 +221,8 @@
 //! `ProviderModelTable` keys point to shared `model_entries` and optional
 //! `model_config_entries` rows. If multiple provider models share the same
 //! model metadata, the metadata is stored once and reused by index.
+//!
+//! [Preshing]: https://preshing.com/20110504/hash-collision-probabilities/
 
 use crate::internal::hash64::Hash64;
 use crate::models::ProviderType;
