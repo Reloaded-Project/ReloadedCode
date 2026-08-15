@@ -8,7 +8,7 @@
 use reloaded_code_core::{
     CustomToolDefinition, ToolError as CoreError, ToolOutput, ToolResult as CoreResult,
 };
-use serde_json::json;
+use serde_json::{Value as JsonValue, json};
 use serdes_ai::tools::{ToolDefinition, ToolError as SerdesError, ToolReturn};
 
 /// Convert a portable [`CustomToolDefinition`] to a SerdesAI [`ToolDefinition`].
@@ -142,17 +142,87 @@ pub(crate) fn output_to_return(output: ToolOutput) -> ToolReturn {
     }
 }
 
-/// Convert a SerdesAI [`ToolReturn`] to a core [`ToolOutput`].
+/// Placeholder shown to tool hooks when the real tool returned image
+/// content, which the core [`ToolOutput`] text model cannot represent.
+pub(crate) const IMAGE_RETURN_PLACEHOLDER: &str = "[tool returned image content]";
+
+/// Placeholder shown to tool hooks when the real tool returned multiple
+/// items, which the core [`ToolOutput`] text model cannot represent.
+pub(crate) const MULTIPLE_RETURN_PLACEHOLDER: &str = "[tool returned multiple items]";
+
+/// Convert a SerdesAI [`ToolReturn`] reference to a core [`ToolOutput`].
 ///
 /// Used by the tool-hook bridge so the hook chain can consume the real tool
 /// result and transform it before it is converted back to SerdesAI types.
-pub(crate) fn return_to_output(tool_return: ToolReturn) -> ToolOutput {
-    if let Some(text) = tool_return.as_text() {
-        ToolOutput::new(text)
-    } else if let Some(json) = tool_return.as_json() {
-        ToolOutput::new(json.to_string())
-    } else {
-        ToolOutput::new(format!("{tool_return:?}"))
+///
+/// Variant handling:
+/// - Text: content maps directly.
+/// - JSON: `{"content": .., "truncated": true}` maps to a truncated output,
+///   mirroring [`output_to_return`]; any other JSON keeps its serialized form.
+/// - Image and multi-part returns map to placeholder text: the core output is
+///   text-only, and the bridge restores the untouched original afterward.
+/// - Error returns map to a text rendering of the error payload.
+///
+/// [`ToolOutput`]: reloaded_code_core::ToolOutput
+/// [`ToolReturn`]: serdes_ai::tools::ToolReturn
+pub(crate) fn return_to_output(tool_return: &ToolReturn) -> ToolOutput {
+    use serdes_ai::core::messages::ToolReturnContent;
+    match &tool_return.content {
+        ToolReturnContent::Text { content } => ToolOutput::new(content.clone()),
+        ToolReturnContent::Json { content } => {
+            if let Some(output) = truncated_json_to_output(content) {
+                output
+            } else {
+                ToolOutput::new(content.to_string())
+            }
+        }
+        ToolReturnContent::Image { .. } => ToolOutput::new(IMAGE_RETURN_PLACEHOLDER),
+        ToolReturnContent::Error { error } => ToolOutput::new(format!(
+            "[tool error return] {}: {}",
+            error.kind, error.message
+        )),
+        ToolReturnContent::Multiple { .. } => ToolOutput::new(MULTIPLE_RETURN_PLACEHOLDER),
+    }
+}
+
+/// Detects the truncated-marker convention written by [`output_to_return`].
+fn truncated_json_to_output(value: &JsonValue) -> Option<ToolOutput> {
+    let content = value.get("content")?.as_str()?;
+    let truncated = value.get("truncated")?.as_bool()?;
+    truncated.then(|| ToolOutput::truncated(content))
+}
+
+/// Convert a SerdesAI [`ToolError`][serdes] to a core [`ToolError`][core].
+///
+/// Inverse of [`core_error_to_serdes`], used by the tool-hook bridge so hook
+/// chains see structured validation failures instead of flattened strings.
+/// Round-trips exactly when the error is untouched; the bridge also restores
+/// the untouched original error itself, so fidelity here only matters for
+/// hook-modified errors.
+///
+/// [core]: reloaded_code_core::ToolError
+/// [serdes]: serdes_ai::tools::ToolError
+pub(crate) fn serdes_error_to_core(err: &SerdesError) -> CoreError {
+    match err {
+        SerdesError::ValidationFailed { errors, .. } => {
+            let message = if errors.is_empty() {
+                err.to_string()
+            } else {
+                errors
+                    .iter()
+                    .map(|e| match &e.field {
+                        Some(field) => format!("{field}: {}", e.message),
+                        None => e.message.clone(),
+                    })
+                    .collect::<Vec<_>>()
+                    .join("; ")
+            };
+            CoreError::Validation {
+                field: errors.first().and_then(|e| e.field.clone()),
+                message,
+            }
+        }
+        _ => CoreError::Execution(err.to_string()),
     }
 }
 
@@ -177,6 +247,54 @@ mod tests {
         let output = ToolOutput::new("hello world");
         let ret = output_to_return(output);
         assert_eq!(ret.as_text(), Some("hello world"));
+    }
+
+    #[test]
+    fn text_return_round_trips_through_output() {
+        let ret = ToolReturn::text("plain result");
+        let output = return_to_output(&ret);
+        assert_eq!(output.content, "plain result");
+        assert!(!output.truncated);
+    }
+
+    #[test]
+    fn truncated_output_round_trips_through_return() {
+        let output = ToolOutput::truncated("partial");
+        let roundtrip = return_to_output(&output_to_return(output));
+        assert_eq!(roundtrip.content, "partial");
+        assert!(roundtrip.truncated);
+    }
+
+    #[test]
+    fn arbitrary_json_return_keeps_serialized_form() {
+        let ret = ToolReturn::json(json!({"rows": [1, 2]}));
+        let output = return_to_output(&ret);
+        assert!(!output.truncated);
+        assert!(output.content.contains("\"rows\""));
+    }
+
+    #[test]
+    fn image_return_maps_to_placeholder_not_debug_dump() {
+        use serdes_ai::core::messages::ToolReturnContent;
+        let ret = ToolReturn {
+            content: ToolReturnContent::Image {
+                image: serdes_ai::core::messages::ImageContent::Url(
+                    serdes_ai::core::messages::ImageUrl::new("https://example.invalid/x.png"),
+                ),
+            },
+            tool_call_id: None,
+        };
+        let output = return_to_output(&ret);
+        assert_eq!(output.content, IMAGE_RETURN_PLACEHOLDER);
+    }
+
+    #[test]
+    fn serdes_validation_error_maps_to_core_validation() {
+        let serdes_err = SerdesError::validation_error("read", Some("path".into()), "bad path");
+        assert!(matches!(
+            serdes_error_to_core(&serdes_err),
+            CoreError::Validation { .. }
+        ));
     }
 
     #[test]

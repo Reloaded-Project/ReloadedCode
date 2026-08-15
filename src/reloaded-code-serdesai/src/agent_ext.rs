@@ -31,6 +31,17 @@ use serdes_ai::tools::{RunContext as ToolsRunContext, Tool, ToolError, ToolRetur
 use serdes_ai::{AgentBuilder, RunContext as AgentRunContext};
 use std::sync::Arc;
 
+/// Original tool result captured by [`CoreToolBridge`] while the hook chain
+/// runs. Lets [`HookedToolExecutor`] restore the untouched `ToolReturn` or
+/// `ToolError` after dispatch, so JSON shapes, truncated markers, image
+/// content, `tool_call_id`, and structured validation errors reach the model
+/// exactly as the no-hook path would deliver them.
+#[derive(Default)]
+struct CapturedToolResult {
+    return_value: std::sync::Mutex<Option<ToolReturn>>,
+    error: std::sync::Mutex<Option<ToolError>>,
+}
+
 /// Bridges a SerdesAI `ToolExecutor` back to the core `ToolExecutor` trait so
 /// [`HookSet::dispatch_tool`] can call the real tool at the end of the hook chain.
 ///
@@ -38,6 +49,7 @@ use std::sync::Arc;
 struct CoreToolBridge<'a, Deps> {
     inner: &'a dyn serdes_ai::agent::ToolExecutor<Deps>,
     ctx: &'a AgentRunContext<Deps>,
+    captured: &'a CapturedToolResult,
 }
 
 /// Adapter for boxed trait object tools, similar to [`ToolAsExecutor`] but
@@ -165,15 +177,34 @@ impl<'a, Deps: Send + Sync + 'static> CoreToolExecutor for CoreToolBridge<'a, De
     ) -> ToolHookFuture<'b> {
         let inner = self.inner;
         let ctx = self.ctx;
+        let captured = self.captured;
         let args = req.args;
         Box::pin(async move {
-            let tool_return = inner
-                .execute(args, ctx)
-                .await
-                .map_err(|e| reloaded_code_core::ToolError::Execution(e.to_string()))?;
-            Ok(crate::convert::return_to_output(tool_return))
+            match inner.execute(args, ctx).await {
+                Ok(tool_return) => {
+                    // Hooks see the text projection; the original is restored
+                    // after dispatch when the output is untouched.
+                    let output = crate::convert::return_to_output(&tool_return);
+                    *captured.return_value.lock().expect("capture lock") = Some(tool_return);
+                    Ok(output)
+                }
+                Err(err) => {
+                    // Hooks see a core error projection; the original is
+                    // restored after dispatch when the error is untouched.
+                    let core_err = crate::convert::serdes_error_to_core(&err);
+                    *captured.error.lock().expect("capture lock") = Some(err);
+                    Err(core_err)
+                }
+            }
         })
     }
+}
+
+/// True when the hook-chain output is byte-identical to the text projection
+/// of the original tool return, meaning no hook modified it.
+fn output_matches_original(output: &reloaded_code_core::ToolOutput, original: &ToolReturn) -> bool {
+    let projection = crate::convert::return_to_output(original);
+    output.content == projection.content && output.truncated == projection.truncated
 }
 
 #[async_trait]
@@ -227,14 +258,41 @@ impl<Deps: Send + Sync + 'static> serdes_ai::agent::ToolExecutor<Deps>
             run_id: &ctx.run_id,
         };
         let tool_req = ToolRequest::new(args);
+        let captured = CapturedToolResult::default();
         let bridge = CoreToolBridge {
             inner: &*self.inner,
             ctx,
+            captured: &captured,
         };
         let result = self.hooks.dispatch_tool(&tool_ctx, tool_req, &bridge).await;
-        result
-            .map(crate::convert::output_to_return)
-            .map_err(|e| crate::convert::core_error_to_serdes(self.tool_name, e))
+        match result {
+            Ok(output) => {
+                // Untouched pass-through: hand back the original `ToolReturn`
+                // so image content, `tool_call_id`, and exact JSON survive.
+                if let Some(original) = captured.return_value.lock().expect("capture lock").take()
+                    && output_matches_original(&output, &original)
+                {
+                    return Ok(original);
+                }
+                Ok(crate::convert::output_to_return(output))
+            }
+            Err(core_err) => {
+                // Untouched inner failure: hand back the original `ToolError`
+                // so structured validation details survive. Hook-produced
+                // errors (different message) still convert through the core
+                // mapping.
+                if let Some(original) = captured.error.lock().expect("capture lock").take()
+                    && crate::convert::serdes_error_to_core(&original).to_string()
+                        == core_err.to_string()
+                {
+                    return Err(original);
+                }
+                Err(crate::convert::core_error_to_serdes(
+                    self.tool_name,
+                    core_err,
+                ))
+            }
+        }
     }
 }
 

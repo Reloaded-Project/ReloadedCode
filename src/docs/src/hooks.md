@@ -155,9 +155,9 @@ impl ToolHook for AuditHook {
     }
 }
 
-let shared: Arc<dyn ToolHook> = Arc::new(AuditHook("outer"));
+let shared: Arc<dyn ToolHook> = Arc::new(AuditHook("inner"));
 let hooks = HookSet::builder()
-    .tool_hook(AuditHook("inner"))
+    .tool_hook(AuditHook("outer"))
     .shared_tool_hook(shared)
     .build();
 ```
@@ -220,6 +220,12 @@ let hooks = HookSet::builder()
     })
     .build();
 ```
+
+`on_run_end` fires when the wrapped continuation finishes, including
+executor failure: a failed run reports `EndReason::Failed` and the error
+still propagates to the caller. An outer hook that skips `original` never
+reaches the wrapper, so do not rely on `on_run_end` for cleanup that must
+run on every path; register a full `RunHook` for that.
 
 Full example: [serdesai-run-event]
 (`cargo run --example serdesai-run-event -p reloaded-code-serdesai --features mock`).

@@ -2,8 +2,9 @@
 //!
 //! - Turn 1: real `read` of `service.env`.
 //! - Turn 2: `write` to `draft.md`, never read.
-//! - Hook tracks read files in a `Mutex` set; denies unseen writes without
-//!   calling [`ToolOriginal`], so the file never lands on disk.
+//! - Hook tracks read files per run in a `Mutex` set keyed by
+//!   `(run_id, path)`; denies unseen writes without calling
+//!   [`ToolOriginal`], so the file never lands on disk.
 //! - Paths compared raw; real deployments would canonicalize.
 //! - Permission rules cannot depend on earlier calls; stateful hooks can.
 //!
@@ -43,9 +44,11 @@ const READ_SOURCE: &str = "service.env";
 const WRITE_TARGET: &str = "draft.md";
 
 struct ReadBeforeWrite {
-    /// Files the run has read. Interior mutability because the shared hook
-    /// instance fires for every tool call, `read` and `write` alike.
-    read_files: Mutex<HashSet<PathBuf>>,
+    /// Files each run has read, keyed by `(run_id, path)` so a read in one
+    /// run cannot authorize a write in another. Interior mutability because
+    /// the shared hook instance fires for every tool call, `read` and
+    /// `write` alike.
+    read_files: Mutex<HashSet<(String, PathBuf)>>,
 }
 
 impl ToolHook for ReadBeforeWrite {
@@ -69,7 +72,7 @@ impl ToolHook for ReadBeforeWrite {
                     self.read_files
                         .lock()
                         .expect("read_files should not be poisoned")
-                        .insert(path.clone());
+                        .insert((ctx.run_id.to_string(), path.clone()));
                     println!("[ReadBeforeWrite] read recorded: {}", path.display());
                     original.call(ctx, req).await
                 }
@@ -78,7 +81,7 @@ impl ToolHook for ReadBeforeWrite {
                         .read_files
                         .lock()
                         .expect("read_files should not be poisoned")
-                        .contains(&path);
+                        .contains(&(ctx.run_id.to_string(), path.clone()));
                     if was_read {
                         return original.call(ctx, req).await;
                     }

@@ -22,10 +22,10 @@
 //! real tool never runs and the hook's return value becomes the
 //! result.
 //!
-//! [`ToolOriginal`] is consumed by [`ToolOriginal::call`], so a normal
-//! hook continues exactly once. Hooks that intentionally retry can
-//! clone the request before calling and perform retries around one
-//! continuation call.
+//! [`ToolOriginal`] is consumed by [`ToolOriginal::call`], so each hook
+//! can continue the chain at most once. There is no built-in retry: a
+//! hook that wants to block or replace the call returns its own result
+//! without calling the continuation.
 //!
 //! Multiple hooks run in registration order, outer-to-inner: the first
 //! registered hook is outermost, the last one sits directly on the
@@ -58,9 +58,9 @@ pub type ToolHookFuture<'a> = Pin<Box<dyn Future<Output = ToolResult<ToolOutput>
 
 /// Managed trampoline to the next hook or real tool.
 ///
-/// `ToolOriginal` is consumed by [`call`], so normal hooks call
-/// the continuation once. Hooks that intentionally retry can clone the
-/// request before calling and perform retries around one continuation call.
+/// `ToolOriginal` is consumed by [`call`], so each hook can continue
+/// the chain at most once. There is no built-in retry: block or replace
+/// the call by returning a result without invoking the continuation.
 ///
 /// [`call`]: Self::call
 pub struct ToolOriginal<'a> {

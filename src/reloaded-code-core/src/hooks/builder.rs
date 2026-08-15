@@ -70,6 +70,12 @@ impl HookSetBuilder {
     }
 
     /// Registers a run-end observer as a `RunHook` wrapper.
+    ///
+    /// The callback fires when the wrapped continuation finishes, including
+    /// failure: an error from the executor (or an inner hook) reports
+    /// [`EndReason::Failed`] and the error propagates unchanged. An outer
+    /// hook that skips `original` never reaches this wrapper, so the
+    /// callback does not fire in that case.
     #[inline]
     #[must_use]
     pub fn on_run_end(mut self, callback: for<'a> fn(&'a HookRunContext<'a>, EndReason)) -> Self {
@@ -85,9 +91,16 @@ impl HookSetBuilder {
                 original: RunOriginal<'a>,
             ) -> RunHookFuture<'a> {
                 Box::pin(async move {
-                    let output = original.call(ctx, config).await?;
-                    (self.callback)(ctx, output.reason);
-                    Ok(output)
+                    match original.call(ctx, config).await {
+                        Ok(output) => {
+                            (self.callback)(ctx, output.reason);
+                            Ok(output)
+                        }
+                        Err(err) => {
+                            (self.callback)(ctx, EndReason::Failed);
+                            Err(err)
+                        }
+                    }
                 })
             }
         }
@@ -234,6 +247,89 @@ mod tests {
         let hooks = HookSetBuilder::new().on_run_end(|_ctx, _reason| {}).build();
         assert!(!hooks.run_hooks_is_empty());
         assert_eq!(hooks.run_hooks().len(), 1);
+    }
+
+    #[tokio::test]
+    async fn on_run_end_wrapper_reports_failed_reason_on_executor_error() {
+        use crate::hooks::run_hook::RunExecutor;
+        use crate::ToolError;
+        use std::sync::atomic::{AtomicUsize, Ordering};
+
+        struct FailingExecutor;
+        impl RunExecutor for FailingExecutor {
+            fn execute<'a>(
+                &'a self,
+                _ctx: &'a HookRunContext<'a>,
+                _config: RunConfig,
+            ) -> RunHookFuture<'a> {
+                Box::pin(async { Err(ToolError::Execution("boom".into())) })
+            }
+        }
+
+        static REPORTED: AtomicUsize = AtomicUsize::new(0);
+        let hooks = HookSetBuilder::new()
+            .on_run_end(|_ctx, reason| {
+                assert_eq!(reason, EndReason::Failed);
+                REPORTED.fetch_add(1, Ordering::SeqCst);
+            })
+            .build();
+        let ctx = HookRunContext {
+            agent_name: "test",
+            run_id: "r1",
+            model_name: "test-model",
+        };
+        let result = hooks
+            .dispatch_run(&ctx, RunConfig::default(), &FailingExecutor)
+            .await;
+
+        assert!(result.is_err(), "executor error must propagate");
+        assert_eq!(
+            REPORTED.load(Ordering::SeqCst),
+            1,
+            "callback must fire exactly once on failure"
+        );
+    }
+
+    #[tokio::test]
+    async fn on_run_end_wrapper_reports_reason_on_success() {
+        use crate::hooks::run_hook::RunExecutor;
+        use std::sync::atomic::{AtomicUsize, Ordering};
+
+        struct OkExecutor;
+        impl RunExecutor for OkExecutor {
+            fn execute<'a>(
+                &'a self,
+                _ctx: &'a HookRunContext<'a>,
+                _config: RunConfig,
+            ) -> RunHookFuture<'a> {
+                Box::pin(async {
+                    Ok(crate::hooks::RunOutput {
+                        content: String::new(),
+                        reason: EndReason::Completed,
+                        usage: crate::hooks::RunUsage::default(),
+                    })
+                })
+            }
+        }
+
+        static REPORTED: AtomicUsize = AtomicUsize::new(0);
+        let hooks = HookSetBuilder::new()
+            .on_run_end(|_ctx, reason| {
+                assert_eq!(reason, EndReason::Completed);
+                REPORTED.fetch_add(1, Ordering::SeqCst);
+            })
+            .build();
+        let ctx = HookRunContext {
+            agent_name: "test",
+            run_id: "r1",
+            model_name: "test-model",
+        };
+        let result = hooks
+            .dispatch_run(&ctx, RunConfig::default(), &OkExecutor)
+            .await;
+
+        assert!(result.is_ok());
+        assert_eq!(REPORTED.load(Ordering::SeqCst), 1);
     }
 
     #[test]
