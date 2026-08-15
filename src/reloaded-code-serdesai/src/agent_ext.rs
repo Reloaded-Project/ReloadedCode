@@ -31,17 +31,6 @@ use serdes_ai::tools::{RunContext as ToolsRunContext, Tool, ToolError, ToolRetur
 use serdes_ai::{AgentBuilder, RunContext as AgentRunContext};
 use std::sync::Arc;
 
-/// Original tool result captured by [`CoreToolBridge`] while the hook chain
-/// runs. Lets [`HookedToolExecutor`] restore the untouched `ToolReturn` or
-/// `ToolError` after dispatch, so JSON shapes, truncated markers, image
-/// content, `tool_call_id`, and structured validation errors reach the model
-/// exactly as the no-hook path would deliver them.
-#[derive(Default)]
-struct CapturedToolResult {
-    return_value: std::sync::Mutex<Option<ToolReturn>>,
-    error: std::sync::Mutex<Option<ToolError>>,
-}
-
 /// Bridges a SerdesAI `ToolExecutor` back to the core `ToolExecutor` trait so
 /// [`HookSet::dispatch_tool`] can call the real tool at the end of the hook chain.
 ///
@@ -73,6 +62,17 @@ pub(crate) struct HookedToolExecutor<Deps> {
 /// `tools::RunContext`) and `serdes_ai::agent::ToolExecutor` (which uses
 /// `agent::RunContext`).
 pub(crate) struct ToolAsExecutor<T>(T);
+
+/// Original tool result captured by [`CoreToolBridge`] while the hook chain
+/// runs. Lets [`HookedToolExecutor`] restore the untouched `ToolReturn` or
+/// `ToolError` after dispatch, so JSON shapes, truncated markers, image
+/// content, `tool_call_id`, and structured validation errors reach the model
+/// exactly as the no-hook path would deliver them.
+#[derive(Default)]
+struct CapturedToolResult {
+    return_value: std::sync::Mutex<Option<ToolReturn>>,
+    error: std::sync::Mutex<Option<ToolError>>,
+}
 
 /// Extension trait for [`AgentBuilder`] to add tools that implement [`Tool`].
 pub trait AgentBuilderExt<Deps, Output> {
@@ -198,13 +198,6 @@ impl<'a, Deps: Send + Sync + 'static> CoreToolExecutor for CoreToolBridge<'a, De
             }
         })
     }
-}
-
-/// True when the hook-chain output is byte-identical to the text projection
-/// of the original tool return, meaning no hook modified it.
-fn output_matches_original(output: &reloaded_code_core::ToolOutput, original: &ToolReturn) -> bool {
-    let projection = crate::convert::return_to_output(original);
-    output.content == projection.content && output.truncated == projection.truncated
 }
 
 #[async_trait]
@@ -342,4 +335,11 @@ impl<T> ToolResultExt<T> for Result<T, reloaded_code_core::ToolError> {
     fn with_tool(self, tool: &'static str) -> Result<T, AgentBuildError> {
         self.map_err(|source| AgentBuildError::ToolSettingsValidation { tool, source })
     }
+}
+
+/// True when the hook-chain output is byte-identical to the text projection
+/// of the original tool return, meaning no hook modified it.
+fn output_matches_original(output: &reloaded_code_core::ToolOutput, original: &ToolReturn) -> bool {
+    let projection = crate::convert::return_to_output(original);
+    output.content == projection.content && output.truncated == projection.truncated
 }

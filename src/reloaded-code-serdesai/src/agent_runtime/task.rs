@@ -53,18 +53,6 @@ pub struct HookedAgentRunResult {
     content: String,
 }
 
-/// Inner-agent run metadata captured alongside the output so streaming
-/// callers can emit a faithful `RunComplete` event.
-#[derive(Default)]
-struct AgentRunExtras {
-    /// Run identifier assigned by the inner agent, or the wrapper's
-    /// identifier when a hook replaced the run without calling `original`.
-    run_id: String,
-    /// Complete message history from the inner run; empty when a hook
-    /// replaced the run without calling `original`.
-    messages: Vec<ModelRequest>,
-}
-
 /// RunExecutor that calls the inner SerdesAI agent synchronously (non-stream).
 ///
 /// Applies `RunConfig::preamble_messages` and `system_prompt` to the prompt
@@ -76,6 +64,18 @@ struct SerdesRunExecutor<'a> {
     deps: (),
     /// Slot the executor fills with the inner response's run metadata.
     extras: Arc<Mutex<Option<AgentRunExtras>>>,
+}
+
+/// Inner-agent run metadata captured alongside the output so streaming
+/// callers can emit a faithful `RunComplete` event.
+#[derive(Default)]
+struct AgentRunExtras {
+    /// Run identifier assigned by the inner agent, or the wrapper's
+    /// identifier when a hook replaced the run without calling `original`.
+    run_id: String,
+    /// Complete message history from the inner run; empty when a hook
+    /// replaced the run without calling `original`.
+    messages: Vec<ModelRequest>,
 }
 
 /// Shared owned state for builds that may happen later during Task delegation.

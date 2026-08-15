@@ -11,6 +11,13 @@ use reloaded_code_core::{
 use serde_json::{Value as JsonValue, json};
 use serdes_ai::tools::{ToolDefinition, ToolError as SerdesError, ToolReturn};
 
+/// Placeholder shown to tool hooks when the real tool returned image
+/// content, which the core [`ToolOutput`] text model cannot represent.
+pub(crate) const IMAGE_RETURN_PLACEHOLDER: &str = "[tool returned image content]";
+/// Placeholder shown to tool hooks when the real tool returned multiple
+/// items, which the core [`ToolOutput`] text model cannot represent.
+pub(crate) const MULTIPLE_RETURN_PLACEHOLDER: &str = "[tool returned multiple items]";
+
 /// Convert a portable [`CustomToolDefinition`] to a SerdesAI [`ToolDefinition`].
 ///
 /// Fields map 1:1. The SerdesAI `outer_typed_dict_key` field is always `None`
@@ -142,14 +149,6 @@ pub(crate) fn output_to_return(output: ToolOutput) -> ToolReturn {
     }
 }
 
-/// Placeholder shown to tool hooks when the real tool returned image
-/// content, which the core [`ToolOutput`] text model cannot represent.
-pub(crate) const IMAGE_RETURN_PLACEHOLDER: &str = "[tool returned image content]";
-
-/// Placeholder shown to tool hooks when the real tool returned multiple
-/// items, which the core [`ToolOutput`] text model cannot represent.
-pub(crate) const MULTIPLE_RETURN_PLACEHOLDER: &str = "[tool returned multiple items]";
-
 /// Convert a SerdesAI [`ToolReturn`] reference to a core [`ToolOutput`].
 ///
 /// Used by the tool-hook bridge so the hook chain can consume the real tool
@@ -183,13 +182,6 @@ pub(crate) fn return_to_output(tool_return: &ToolReturn) -> ToolOutput {
         )),
         ToolReturnContent::Multiple { .. } => ToolOutput::new(MULTIPLE_RETURN_PLACEHOLDER),
     }
-}
-
-/// Detects the truncated-marker convention written by [`output_to_return`].
-fn truncated_json_to_output(value: &JsonValue) -> Option<ToolOutput> {
-    let content = value.get("content")?.as_str()?;
-    let truncated = value.get("truncated")?.as_bool()?;
-    truncated.then(|| ToolOutput::truncated(content))
 }
 
 /// Convert a SerdesAI [`ToolError`][serdes] to a core [`ToolError`][core].
@@ -234,6 +226,13 @@ fn field_for_out_of_bounds(msg: &str) -> Option<String> {
     } else {
         None
     }
+}
+
+/// Detects the truncated-marker convention written by [`output_to_return`].
+fn truncated_json_to_output(value: &JsonValue) -> Option<ToolOutput> {
+    let content = value.get("content")?.as_str()?;
+    let truncated = value.get("truncated")?.as_bool()?;
+    truncated.then(|| ToolOutput::truncated(content))
 }
 
 #[cfg(test)]

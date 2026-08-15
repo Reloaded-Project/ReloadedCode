@@ -24,4 +24,6 @@ for (key, config) in &loaded.providers {
 }
 ```
 
-See the [project documentation](https://github.com/Reloaded-Project/ReloadedCode) for details.
+See the [project documentation] for details.
+
+[project documentation]: https://github.com/Reloaded-Project/ReloadedCode
