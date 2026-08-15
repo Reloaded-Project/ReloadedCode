@@ -1,20 +1,11 @@
-//! `ToolHook` denying a `write` to a file the run never read.
+//! `ToolHook` denies a `write` to a file the run never read.
 //!
-//! This example registers a stateful `ToolHook` and scripts the mock model
-//! with the two-call helper: the first turn reads `service.env` (the real
-//! `read` executes inside a temp workspace), the second turn attempts a
-//! `write` to `draft.md`, a file the run never read. The hook records
-//! every `read` target in a `Mutex`-guarded set, because the same shared
-//! hook instance fires for every tool call of the run, and denies the
-//! `write` by returning an explanatory result without calling
-//! [`ToolOriginal`] - so the real `write` never executes and `draft.md` is
-//! absent from the workspace afterward. A permission rule can deny all
-//! writes, but it cannot make the decision depend on earlier calls; only
-//! a hook with cross-call state can.
-//!
-//! The path check compares the raw `file_path` strings the model supplied,
-//! keeping the policy deliberately example-local; a real deployment would
-//! canonicalize paths first.
+//! - Turn 1: real `read` of `service.env`.
+//! - Turn 2: `write` to `draft.md`, never read.
+//! - Hook tracks read files in a `Mutex` set; denies unseen writes without
+//!   calling [`ToolOriginal`], so the file never lands on disk.
+//! - Paths compared raw; real deployments would canonicalize.
+//! - Permission rules cannot depend on earlier calls; stateful hooks can.
 //!
 //! Expected output:
 //!   Built agent with 2 tools.

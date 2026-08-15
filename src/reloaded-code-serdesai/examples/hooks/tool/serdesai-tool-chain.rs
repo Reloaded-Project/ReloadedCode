@@ -1,18 +1,10 @@
-//! Multiple `ToolHook`s auditing and hardening one real `bash` call.
+//! Two `ToolHook`s around one real `bash` call.
 //!
-//! This example registers two `ToolHook`s around a single real `bash`
-//! execution: the outer audit hook prints the original arguments and the
-//! run context, and the inner hardening hook, registered via
-//! `shared_tool_hook` so it sits directly on the real tool, clones the
-//! [`ToolRequest`], injects a `timeout_ms` into the arguments, and sends
-//! the hardened clone on. The fixed `echo` command writes nothing, so the
-//! example performs no file I/O and the only subprocess is that one
-//! command. Permission rules can allow or deny a `bash` call, but they
-//! cannot log it or rewrite its arguments; only hooks can.
-//!
-//! The injected timeout never fires: the command finishes long before it,
-//! so the hardening is observable through the printed hardened arguments
-//! plus the one successful execution, not through a timeout.
+//! - Outer audit hook: logs args and run context.
+//! - Inner hardening hook: injects `timeout_ms`, then calls the real tool.
+//! - `echo` writes nothing; no file I/O.
+//! - Timeout never fires; effect shows in printed args plus execution.
+//! - Permission rules allow/deny; only hooks can log or rewrite args.
 //!
 //! Expected output:
 //!   Built agent with 1 tools.

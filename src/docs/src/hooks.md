@@ -2,9 +2,8 @@
 
 Hooks let your code see, change, or stop things the agent does.
 
-!!! warning "Work in progress"
-    Backend wiring is not done yet. Core hooks, run hook types, and container
-    exist. [SerdesAI] dispatch code comes next.
+Tool and run hooks are wired into the [SerdesAI] agent pipeline: registered
+hooks intercept real tool calls and agent runs end to end.
 
 Tool hooks work like game mods.
 Each hook gets an `original` function.
@@ -12,9 +11,17 @@ Each hook gets an `original` function.
 
 This lets you run code before and after the tool call in the same method.
 
-## Example
+## Examples
 
-A hook can modify the request before the tool sees it.
+### Observe and wrap a tool call
+
+A hook can modify the request before the tool sees it, or rewrite the
+result after the real tool runs.
+
+The full example takes the result path: a real `read` runs, and the
+hook scrubs the `API_KEY=` and `TOKEN=` values from the result before
+the model sees them. Permission rules can allow or deny the call; they
+cannot rewrite what the tool returns.
 
 `$HOME` in string arguments expands to the user's home directory:
 
@@ -57,7 +64,17 @@ let hooks = HookSet::builder()
     .build();
 ```
 
+Full example: [serdesai-tool-hook]
+(`cargo run --example serdesai-tool-hook -p reloaded-code-serdesai --features mock`).
+
+### Block a tool call
+
 To block or replace a tool call, do not call `original`.
+
+The full example keeps state across calls: the hook records every file
+the run reads, then denies a `write` to a file that was never read, so
+the real `write` never executes. Permission rules cannot make a
+decision depend on earlier calls.
 
 A common case: prevent credential leaks by blocking read/write access
 to `.env` files.
@@ -97,6 +114,155 @@ let hooks = HookSet::builder()
     .tool_hook(EnvFileGuard)
     .build();
 ```
+
+Full example: [serdesai-tool-block]
+(`cargo run --example serdesai-tool-block -p reloaded-code-serdesai --features mock`).
+
+### Stack tool hooks
+
+Hooks run in registration order. Each hook wraps the next one, so code after
+`original.call(...)` runs in reverse order.
+
+The full example stacks an audit hook that logs the original `bash`
+arguments with a hardening hook that injects a `timeout_ms` before the
+real tool runs.
+
+`tool_hook` takes ownership of the hook. `shared_tool_hook` registers an
+existing `Arc<dyn ToolHook>` when the same instance must be used in several
+hook sets:
+
+```rust
+use std::sync::Arc;
+use reloaded_code_core::{
+    HookSet, ToolCallContext, ToolHook, ToolHookFuture, ToolOriginal, ToolRequest,
+};
+
+struct AuditHook(&'static str);
+
+impl ToolHook for AuditHook {
+    fn hook<'a>(
+        &'a self,
+        ctx: &'a ToolCallContext<'a>,
+        req: ToolRequest,
+        original: ToolOriginal<'a>,
+    ) -> ToolHookFuture<'a> {
+        Box::pin(async move {
+            println!("{}: before {}", self.0, ctx.tool_name);
+            let output = original.call(ctx, req).await?;
+            println!("{}: after {}", self.0, ctx.tool_name);
+            Ok(output)
+        })
+    }
+}
+
+let shared: Arc<dyn ToolHook> = Arc::new(AuditHook("outer"));
+let hooks = HookSet::builder()
+    .tool_hook(AuditHook("inner"))
+    .shared_tool_hook(shared)
+    .build();
+```
+
+Full example: [serdesai-tool-chain]
+(`cargo run --example serdesai-tool-chain -p reloaded-code-serdesai --features mock`).
+
+### Intercept a run
+
+Run hooks wrap the whole agent run. Mutate `RunConfig` to change the system
+prompt, preambles, or parameters, then call `original` to continue:
+
+```rust
+use reloaded_code_core::{
+    HookRunContext, HookSet, PreambleMessage, PreambleRole, RunConfig, RunHook,
+    RunHookFuture, RunOriginal,
+};
+
+struct PreambleInjector;
+
+impl RunHook for PreambleInjector {
+    fn hook<'a>(
+        &'a self,
+        ctx: &'a HookRunContext<'a>,
+        mut config: RunConfig,
+        original: RunOriginal<'a>,
+    ) -> RunHookFuture<'a> {
+        Box::pin(async move {
+            config.preamble_messages.push(PreambleMessage {
+                role: PreambleRole::System,
+                content: "You are a helpful assistant.".into(),
+            });
+            original.call(ctx, config).await
+        })
+    }
+}
+
+let hooks = HookSet::builder()
+    .run_hook(PreambleInjector)
+    .build();
+```
+
+Full example: [serdesai-run-hook]
+(`cargo run --example serdesai-run-hook -p reloaded-code-serdesai --features mock`).
+
+### Observe run start and end
+
+`on_run_start` and `on_run_end` register lightweight observers without
+writing a trait implementation. They cannot modify `RunConfig`:
+
+```rust
+use reloaded_code_core::{EndReason, HookRunContext, HookSet};
+
+let hooks = HookSet::builder()
+    .on_run_start(|ctx: &HookRunContext<'_>| {
+        println!("run starting for {}", ctx.agent_name);
+    })
+    .on_run_end(|ctx: &HookRunContext<'_>, reason: EndReason| {
+        println!("run ended for {} ({:?})", ctx.agent_name, reason);
+    })
+    .build();
+```
+
+Full example: [serdesai-run-event]
+(`cargo run --example serdesai-run-event -p reloaded-code-serdesai --features mock`).
+
+### Stack run hooks
+
+Run hooks nest like tool hooks. Registering A then B gives A-before,
+B-before, executor, B-after, A-after.
+
+`run_hook` takes ownership of the hook; `shared_run_hook` registers an
+existing `Arc<dyn RunHook>`:
+
+```rust
+use reloaded_code_core::{
+    HookRunContext, HookSet, RunConfig, RunHook, RunHookFuture, RunOriginal,
+};
+
+struct TraceHook(&'static str);
+
+impl RunHook for TraceHook {
+    fn hook<'a>(
+        &'a self,
+        ctx: &'a HookRunContext<'a>,
+        config: RunConfig,
+        original: RunOriginal<'a>,
+    ) -> RunHookFuture<'a> {
+        Box::pin(async move {
+            println!("{}: before", self.0);
+            let output = original.call(ctx, config).await?;
+            println!("{}: after", self.0);
+            Ok(output)
+        })
+    }
+}
+
+let hooks = HookSet::builder()
+    .run_hook(TraceHook("first"))
+    .run_hook(TraceHook("second"))
+    .build();
+```
+
+Full example: [serdesai-run-chain]
+(`cargo run --example serdesai-run-chain -p reloaded-code-serdesai --features mock`).
 
 ## Available types
 
@@ -209,3 +375,9 @@ passes `HookSet::default()`.
 [`RunExecutor`]: https://docs.rs/reloaded-code-core/latest/reloaded_code_core/trait.RunExecutor.html
 [`RunUsage`]: https://docs.rs/reloaded-code-core/latest/reloaded_code_core/struct.RunUsage.html
 [SerdesAI]: https://crates.io/crates/serdes-ai
+[serdesai-tool-hook]: https://github.com/Reloaded-Project/ReloadedCode/blob/main/src/reloaded-code-serdesai/examples/hooks/tool/serdesai-tool-hook.rs
+[serdesai-tool-block]: https://github.com/Reloaded-Project/ReloadedCode/blob/main/src/reloaded-code-serdesai/examples/hooks/tool/serdesai-tool-block.rs
+[serdesai-tool-chain]: https://github.com/Reloaded-Project/ReloadedCode/blob/main/src/reloaded-code-serdesai/examples/hooks/tool/serdesai-tool-chain.rs
+[serdesai-run-hook]: https://github.com/Reloaded-Project/ReloadedCode/blob/main/src/reloaded-code-serdesai/examples/hooks/run/serdesai-run-hook.rs
+[serdesai-run-event]: https://github.com/Reloaded-Project/ReloadedCode/blob/main/src/reloaded-code-serdesai/examples/hooks/run/serdesai-run-event.rs
+[serdesai-run-chain]: https://github.com/Reloaded-Project/ReloadedCode/blob/main/src/reloaded-code-serdesai/examples/hooks/run/serdesai-run-chain.rs

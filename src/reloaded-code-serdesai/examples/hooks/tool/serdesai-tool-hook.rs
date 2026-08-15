@@ -1,15 +1,8 @@
-//! Single `ToolHook` scrubbing secret values out of a real `read` result.
+//! `ToolHook` scrubs secrets from a real `read` result.
 //!
-//! This example registers a `ToolHook` via `AgentRuntimeBuilder::hooks()`,
-//! builds an agent whose permission rules allow the `read` standard tool,
-//! and scripts the mock model with `mock::tool_then_text` so the first
-//! model turn reads `service.env`, a fixture containing `API_KEY=` and
-//! `TOKEN=` lines. The real `read` executes inside a temp workspace, the
-//! hook rewrites the tool's result, replacing the secret values with
-//! `[REDACTED]` before the result returns to the model, so the final
-//! output shows the file with secrets scrubbed. A permission rule can
-//! allow or deny the read, but it cannot rewrite the result; only a hook
-//! can.
+//! - Real `read` of `service.env` in a temp workspace.
+//! - Hook rewrites secret values to `[REDACTED]` before the model sees them.
+//! - Permission rules allow/deny; only a hook can rewrite results.
 //!
 //! Expected output:
 //!   Built agent with 1 tools.
