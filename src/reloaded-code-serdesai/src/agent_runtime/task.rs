@@ -609,6 +609,7 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::mock::{FunctionModel, Streamed};
     use ahash::AHashMap;
     use indexmap::IndexMap;
     use reloaded_code_agents::{
@@ -616,6 +617,10 @@ mod tests {
         AgentToolSettings, PermissionRule,
     };
     use reloaded_code_core::CredentialResolver;
+    use reloaded_code_core::ToolOutput;
+    use reloaded_code_core::hooks::{
+        ToolCallContext, ToolHook, ToolHookFuture, ToolOriginal, ToolRequest,
+    };
     use reloaded_code_core::models::{
         Modality, ModelCatalog, ModelInfo, ProviderIdx, ProviderInfo, ProviderModelSource,
         ProviderSource, ProviderType,
@@ -624,6 +629,12 @@ mod tests {
     use reloaded_code_core::tool_metadata::{
         read as read_meta, task as task_meta, write as write_meta,
     };
+    use serde_json::json;
+    use serdes_ai::core::{FinishReason, ModelResponse, ModelResponsePart, ToolReturnPart};
+    use std::collections::HashSet;
+    use std::path::PathBuf;
+    use std::sync::Mutex;
+    use tempfile::TempDir;
 
     type TestResult = Result<(), ExpandError>;
 
@@ -964,5 +975,199 @@ mod tests {
         assert!(!names.contains(&task_meta::NAME));
         assert!(names.contains(&read_meta::NAME));
         Ok(())
+    }
+
+    /// Denies `write` calls to files the run has not `read`.
+    ///
+    /// The shared hook instance fires for every tool call of the run, so the
+    /// set of read files lives behind interior mutability. Reads record their
+    /// target and continue to the real tool; writes to never-read targets get
+    /// an explanatory result without calling `original`, which is what
+    /// short-circuits the real tool.
+    struct ReadBeforeWriteHook {
+        read_files: Mutex<HashSet<PathBuf>>,
+    }
+
+    impl ToolHook for ReadBeforeWriteHook {
+        fn hook<'a>(
+            &'a self,
+            ctx: &'a ToolCallContext<'a>,
+            req: ToolRequest,
+            original: ToolOriginal<'a>,
+        ) -> ToolHookFuture<'a> {
+            Box::pin(async move {
+                let target = req
+                    .args
+                    .get("file_path")
+                    .and_then(|value| value.as_str())
+                    .map(PathBuf::from);
+
+                match (ctx.tool_name, target) {
+                    (read_meta::NAME, Some(path)) => {
+                        // Record the read before continuing so the lock is
+                        // never held across the await.
+                        self.read_files
+                            .lock()
+                            .expect("read_files should not be poisoned")
+                            .insert(path);
+                        original.call(ctx, req).await
+                    }
+                    (write_meta::NAME, Some(path)) => {
+                        let was_read = self
+                            .read_files
+                            .lock()
+                            .expect("read_files should not be poisoned")
+                            .contains(&path);
+                        if was_read {
+                            return original.call(ctx, req).await;
+                        }
+                        // Skipping `original` blocks the call: the real
+                        // `write` sits behind it and is never reached.
+                        Ok(ToolOutput::new(format!(
+                            "[blocked by hook] write to {} denied: no read of that file \
+                             happened this run",
+                            path.display()
+                        )))
+                    }
+                    _ => original.call(ctx, req).await,
+                }
+            })
+        }
+    }
+
+    /// Scripts two tool calls followed by a text answer, mirroring the
+    /// `mock::tool_then_text` closure pattern: the first turn calls `first`,
+    /// the next turn calls `second`, and once both tool returns are in the
+    /// conversation the model answers with `final_text` followed by the real
+    /// tool returns, so callers can observe what the model received.
+    fn two_tools_then_text(
+        first: (&str, serde_json::Value),
+        second: (&str, serde_json::Value),
+        final_text: &str,
+    ) -> Streamed<FunctionModel> {
+        let first_name = first.0.to_string();
+        let first_args = first.1;
+        let second_name = second.0.to_string();
+        let second_args = second.1;
+        let final_text = final_text.to_string();
+
+        let model = FunctionModel::new(move |messages, _settings| {
+            // Each finished tool call adds one tool return to the history, so
+            // their count tells which scripted turn is next.
+            let answered_calls = messages.iter().flat_map(|m| m.tool_returns()).count();
+
+            match answered_calls {
+                0 => tool_call_response(&first_name, &first_args),
+                1 => tool_call_response(&second_name, &second_args),
+                _ => {
+                    let tool_results: String = messages
+                        .iter()
+                        .flat_map(|m| m.tool_returns())
+                        .map(tool_return_text)
+                        .collect::<Vec<_>>()
+                        .join("\n");
+                    ModelResponse::text(format!("{final_text}\n\n{tool_results}"))
+                }
+            }
+        });
+
+        Streamed::new(model)
+    }
+
+    /// Emits a tool-call response with the shape `mock::tool_then_text` uses:
+    /// a short text part, then the call that triggers the real tool.
+    fn tool_call_response(tool_name: &str, args: &serde_json::Value) -> ModelResponse {
+        ModelResponse::with_parts(vec![
+            ModelResponsePart::text(format!("Calling {tool_name}...")),
+            ModelResponsePart::tool_call(tool_name, args.clone()),
+        ])
+        .with_finish_reason(FinishReason::ToolCall)
+    }
+
+    /// Extracts readable text from a tool return part.
+    ///
+    /// Tool returns carry tagged JSON content, so round-trip through
+    /// `serde_json` and keep the readable payload; real tool results and
+    /// hook-supplied responses both use plain text content.
+    fn tool_return_text(part: &ToolReturnPart) -> String {
+        let Ok(value) = serde_json::to_value(&part.content) else {
+            return format!("{:?}", part.content);
+        };
+        if let Some(text) = value.get("content").and_then(|v| v.as_str()) {
+            return text.to_string();
+        }
+        serde_json::to_string_pretty(&value).unwrap_or_else(|_| format!("{:?}", part.content))
+    }
+
+    #[tokio::test]
+    async fn tool_hook_denies_write_to_never_read_file_during_agent_run() {
+        // Workspace fixture: the model reads `service.env`, then tries to
+        // write `draft.md`, a file the run never reads.
+        let workspace = TempDir::new().expect("create temp workspace");
+        let read_file = workspace.path().join("service.env");
+        std::fs::write(&read_file, "LOG_LEVEL=debug\n").expect("write read fixture");
+        let unread_target = workspace.path().join("draft.md");
+
+        let hooks = HookSet::builder()
+            .tool_hook(ReadBeforeWriteHook {
+                read_files: Mutex::new(HashSet::new()),
+            })
+            .build();
+
+        let runtime = AgentRuntimeBuilder::new()
+            .catalog(AgentCatalog::from_entries([agent(
+                "caller",
+                AgentMode::Primary,
+                allow_tools(&[read_meta::NAME, write_meta::NAME]),
+                "prompt",
+            )]))
+            .defaults(AgentDefaults::with_model("openrouter/openai/gpt-4.1-mini"))
+            .hooks(hooks)
+            .build()
+            .expect("runtime should build");
+
+        // Script the model: first turn reads the fixture, second turn writes
+        // the never-read target, final turn echoes the collected tool returns.
+        let context = AgentBuildContext::new(
+            Arc::new(runtime),
+            Arc::new(catalog()),
+            credentials(),
+            Arc::from(workspace.path()),
+        )
+        .with_model_override(two_tools_then_text(
+            (read_meta::NAME, json!({"file_path": "service.env"})),
+            (
+                write_meta::NAME,
+                json!({"file_path": "draft.md", "content": "Draft notes."}),
+            ),
+            "Run finished.",
+        ));
+        let hooked = context.build("caller").expect("build should succeed");
+
+        let result = hooked
+            .run("Read the config, then write the draft.", ())
+            .await
+            .expect("run should complete");
+
+        // The real `read` executed: its result is the only source of the
+        // fixture content in the final answer.
+        assert!(
+            result.output().contains("LOG_LEVEL=debug"),
+            "real read result should reach the model: {}",
+            result.output()
+        );
+
+        // The denied `write` never executed; the hook's response reached the
+        // model in its place and the target file was never created.
+        assert!(
+            result.output().contains("[blocked by hook]"),
+            "hook denial should reach the model: {}",
+            result.output()
+        );
+        assert!(
+            !unread_target.exists(),
+            "the denied write must not create {}",
+            unread_target.display()
+        );
     }
 }
