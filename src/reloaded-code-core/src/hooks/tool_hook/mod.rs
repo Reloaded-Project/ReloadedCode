@@ -17,9 +17,10 @@
 //! [`ToolOriginal::call`] sees the raw [`ToolRequest`]: inspect the
 //! JSON arguments or rewrite them.
 //!
-//! Code after [`ToolOriginal::call`] sees the real tool's result and
-//! can wrap or replace it. Skipping `original` blocks the call: the
-//! real tool never runs and the hook's return value becomes the
+//! Code after [`ToolOriginal::call`] sees the result returned by the
+//! next hook in the chain, or the real tool if none remain: an inner
+//! hook may wrap or replace it. Skipping `original` blocks the call:
+//! the real tool never runs and the hook's return value becomes the
 //! result.
 //!
 //! [`ToolOriginal`] is consumed by [`ToolOriginal::call`], so each hook
