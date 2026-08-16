@@ -118,7 +118,7 @@ let hooks = HookSet::builder()
 Full example: [serdesai-tool-block]
 (`cargo run --example serdesai-tool-block -p reloaded-code-serdesai --features mock`).
 
-### Stack tool hooks
+### Stack hooks
 
 Hooks run in registration order. Each hook wraps the next one, so code after
 `original.call(...)` runs in reverse order.
@@ -205,47 +205,18 @@ Full example: [serdesai-run-hook]
 
 ### Observe run start and end
 
-`on_run_start` and `on_run_end` register lightweight observers without
-writing a trait implementation. They cannot modify `RunConfig`:
-
-```rust
-use reloaded_code_core::{EndReason, HookRunContext, HookSet};
-
-let hooks = HookSet::builder()
-    .on_run_start(|ctx: &HookRunContext<'_>| {
-        println!("run starting for {}", ctx.agent_name);
-    })
-    .on_run_end(|ctx: &HookRunContext<'_>, reason: EndReason| {
-        println!("run ended for {} ({:?})", ctx.agent_name, reason);
-    })
-    .build();
-```
-
-`on_run_end` fires when the wrapped continuation finishes, including
-executor failure: a failed run reports `EndReason::Failed` and the error
-still propagates to the caller. An outer hook that skips `original` never
-reaches the wrapper, so do not rely on `on_run_end` for cleanup that must
-run on every path; register a full `RunHook` for that.
-
-Full example: [serdesai-run-event]
-(`cargo run --example serdesai-run-event -p reloaded-code-serdesai --features mock`).
-
-### Stack run hooks
-
-Run hooks nest like tool hooks. Registering A then B gives A-before,
-B-before, executor, B-after, A-after.
-
-`run_hook` takes ownership of the hook; `shared_run_hook` registers an
-existing `Arc<dyn RunHook>`:
+A `RunHook` observes without changing anything: log before calling
+`original`, inspect the result after:
 
 ```rust
 use reloaded_code_core::{
-    HookRunContext, HookSet, RunConfig, RunHook, RunHookFuture, RunOriginal,
+    EndReason, HookRunContext, HookSet, RunConfig, RunHook, RunHookFuture,
+    RunOriginal,
 };
 
-struct TraceHook(&'static str);
+struct RunObserver;
 
-impl RunHook for TraceHook {
+impl RunHook for RunObserver {
     fn hook<'a>(
         &'a self,
         ctx: &'a HookRunContext<'a>,
@@ -253,22 +224,28 @@ impl RunHook for TraceHook {
         original: RunOriginal<'a>,
     ) -> RunHookFuture<'a> {
         Box::pin(async move {
-            println!("{}: before", self.0);
-            let output = original.call(ctx, config).await?;
-            println!("{}: after", self.0);
-            Ok(output)
+            println!("run starting for {}", ctx.agent_name);
+            let result = original.call(ctx, config).await;
+            let reason = match &result {
+                Ok(output) => output.reason,
+                Err(_) => EndReason::Failed,
+            };
+            println!("run ended for {} ({:?})", ctx.agent_name, reason);
+            result
         })
     }
 }
 
 let hooks = HookSet::builder()
-    .run_hook(TraceHook("first"))
-    .run_hook(TraceHook("second"))
+    .run_hook(RunObserver)
     .build();
 ```
 
-Full example: [serdesai-run-chain]
-(`cargo run --example serdesai-run-chain -p reloaded-code-serdesai --features mock`).
+Code after `original` runs when the wrapped continuation finishes,
+including failure: a failed run reports `EndReason::Failed` and the
+error still propagates to the caller. An outer hook that skips
+`original` never reaches this hook, so do not rely on it for cleanup
+that must run on every path.
 
 ## Available types
 
@@ -350,10 +327,9 @@ passes `HookSet::default()`.
 
 ## Design notes
 
-- **Everything is a hook**: Functions like `on_run_start` / `on_run_end` 
-  are convenience wrappers. They register lightweight hook implementations
-  internally. Code before `original` is "start", code after is "end".
-  They participate in the same hook chain with the same ordering rules.
+- **Everything is a hook**: Observers are plain `RunHook`s. Code before
+  `original` is "start", code after is "end". They participate in the
+  same hook chain with the same ordering rules.
 
 - **Natural unwind order.** Hook code after `original.call(...)` runs in
   reverse order. Later hooks run first after the operation.
@@ -385,5 +361,3 @@ passes `HookSet::default()`.
 [serdesai-tool-block]: https://github.com/Reloaded-Project/ReloadedCode/blob/main/src/reloaded-code-serdesai/examples/hooks/tool/serdesai-tool-block.rs
 [serdesai-tool-chain]: https://github.com/Reloaded-Project/ReloadedCode/blob/main/src/reloaded-code-serdesai/examples/hooks/tool/serdesai-tool-chain.rs
 [serdesai-run-hook]: https://github.com/Reloaded-Project/ReloadedCode/blob/main/src/reloaded-code-serdesai/examples/hooks/run/serdesai-run-hook.rs
-[serdesai-run-event]: https://github.com/Reloaded-Project/ReloadedCode/blob/main/src/reloaded-code-serdesai/examples/hooks/run/serdesai-run-event.rs
-[serdesai-run-chain]: https://github.com/Reloaded-Project/ReloadedCode/blob/main/src/reloaded-code-serdesai/examples/hooks/run/serdesai-run-chain.rs

@@ -46,8 +46,6 @@ impl HookSet {
     }
 
     /// Returns registered run hooks in dispatch order.
-    ///
-    /// Includes wrappers created by `on_run_start` / `on_run_end`.
     #[inline]
     #[must_use]
     pub fn run_hooks(&self) -> &[Arc<dyn RunHook>] {
@@ -79,8 +77,7 @@ impl HookSet {
 
     /// Dispatches a run through the hook chain.
     ///
-    /// Includes `on_run_start` / `on_run_end` wrappers registered via the
-    /// builder. If no run hooks are registered, this calls the real run
+    /// If no run hooks are registered, this calls the real run
     /// executor directly.
     ///
     /// # Errors
@@ -387,6 +384,7 @@ mod tests {
             .unwrap();
 
         assert_eq!(output.content, "overridden-post");
+        assert_eq!(output.reason, EndReason::Completed);
     }
 
     #[tokio::test]
@@ -527,114 +525,6 @@ mod tests {
         );
     }
 
-    // --- Run notify wrappers via dispatch_run ---------------------------------
-
-    #[tokio::test]
-    async fn on_run_end_receives_executor_end_reason() {
-        static RECEIVED: std::sync::Mutex<Vec<EndReason>> = std::sync::Mutex::new(Vec::new());
-
-        struct ReasonRun(EndReason);
-        impl RunExecutor for ReasonRun {
-            fn execute<'a>(
-                &'a self,
-                _ctx: &'a HookRunContext<'a>,
-                _config: RunConfig,
-            ) -> RunHookFuture<'a> {
-                let reason = self.0;
-                Box::pin(async move {
-                    Ok(RunOutput {
-                        content: "ok".into(),
-                        reason,
-                        usage: RunUsage::default(),
-                    })
-                })
-            }
-        }
-
-        let ctx = HookRunContext {
-            agent_name: "a",
-            run_id: "r1",
-            model_name: "m",
-        };
-        for reason in [EndReason::Completed, EndReason::Failed] {
-            RECEIVED.lock().unwrap().clear();
-            let hooks = crate::hooks::builder::HookSetBuilder::new()
-                .on_run_end(|_ctx, reason| {
-                    RECEIVED.lock().unwrap().push(reason);
-                })
-                .build();
-            let output = hooks
-                .dispatch_run(&ctx, RunConfig::default(), &ReasonRun(reason))
-                .await
-                .unwrap();
-
-            assert_eq!(output.content, "ok");
-            assert_eq!(output.reason, reason);
-            assert_eq!(*RECEIVED.lock().unwrap(), vec![reason]);
-        }
-    }
-
-    #[tokio::test]
-    async fn on_run_end_does_not_fire_when_hook_before_it_skips() {
-        static END_FIRED: AtomicUsize = AtomicUsize::new(0);
-
-        struct SkipEverything;
-        impl RunHook for SkipEverything {
-            fn hook<'a>(
-                &'a self,
-                _ctx: &'a HookRunContext<'a>,
-                _config: RunConfig,
-                _original: RunOriginal<'a>,
-            ) -> RunHookFuture<'a> {
-                Box::pin(async {
-                    Ok(RunOutput {
-                        content: "skipped".into(),
-                        reason: EndReason::Completed,
-                        usage: RunUsage::default(),
-                    })
-                })
-            }
-        }
-
-        END_FIRED.store(0, Ordering::SeqCst);
-        let hooks = crate::hooks::builder::HookSetBuilder::new()
-            .run_hook(SkipEverything)
-            .on_run_end(|_ctx, _reason| {
-                END_FIRED.fetch_add(1, Ordering::SeqCst);
-            })
-            .build();
-        let ctx = HookRunContext {
-            agent_name: "a",
-            run_id: "r1",
-            model_name: "m",
-        };
-
-        // RealRun should never execute
-        struct RealRun;
-        impl RunExecutor for RealRun {
-            fn execute<'a>(
-                &'a self,
-                _ctx: &'a HookRunContext<'a>,
-                _config: RunConfig,
-            ) -> RunHookFuture<'a> {
-                Box::pin(async {
-                    Ok(RunOutput {
-                        content: "should not run".into(),
-                        reason: EndReason::Completed,
-                        usage: RunUsage::default(),
-                    })
-                })
-            }
-        }
-
-        hooks
-            .dispatch_run(&ctx, RunConfig::default(), &RealRun)
-            .await
-            .unwrap();
-
-        assert_eq!(END_FIRED.load(Ordering::SeqCst), 0);
-    }
-
     #[tokio::test]
     async fn session_compact_dispatch_untouched() {
         static COMPACTS: AtomicUsize = AtomicUsize::new(0);
@@ -655,68 +545,6 @@ mod tests {
 
         hooks.dispatch_session_compact(&ctx);
         assert_eq!(COMPACTS.load(Ordering::SeqCst), 1);
-    }
-
-    #[tokio::test]
-    async fn on_run_start_fires_before_other_hooks() {
-        use std::sync::Mutex;
-        static LOG: Mutex<Vec<String>> = Mutex::new(Vec::new());
-
-        struct Echo;
-        impl RunHook for Echo {
-            fn hook<'a>(
-                &'a self,
-                ctx: &'a HookRunContext<'a>,
-                config: RunConfig,
-                original: RunOriginal<'a>,
-            ) -> RunHookFuture<'a> {
-                LOG.lock().unwrap().push("hook-before".into());
-                Box::pin(async move {
-                    let output = original.call(ctx, config).await?;
-                    LOG.lock().unwrap().push("hook-after".into());
-                    Ok(output)
-                })
-            }
-        }
-
-        struct RealRun;
-        impl RunExecutor for RealRun {
-            fn execute<'a>(
-                &'a self,
-                _ctx: &'a HookRunContext<'a>,
-                _config: RunConfig,
-            ) -> RunHookFuture<'a> {
-                Box::pin(async {
-                    Ok(RunOutput {
-                        content: "ok".into(),
-                        reason: EndReason::Completed,
-                        usage: RunUsage::default(),
-                    })
-                })
-            }
-        }
-
-        LOG.lock().unwrap().clear();
-        let hooks = HookSet::builder()
-            .on_run_start(|_ctx| {
-                LOG.lock().unwrap().push("start-callback".into());
-            })
-            .run_hook(Echo)
-            .build();
-
-        let ctx = HookRunContext {
-            agent_name: "a",
-            run_id: "r1",
-            model_name: "m",
-        };
-        let output = hooks
-            .dispatch_run(&ctx, RunConfig::default(), &RealRun)
-            .await
-            .unwrap();
-
-        assert_eq!(output.content, "ok");
-        let log = LOG.lock().unwrap();
-        assert_eq!(*log, vec!["start-callback", "hook-before", "hook-after"]);
     }
 
     #[test]

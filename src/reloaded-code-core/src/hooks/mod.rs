@@ -20,9 +20,8 @@
 //! - [`HookRunContext`] - Context given to hook run lifecycle events
 //! - [`EndReason`] - Why a run ended
 //!
-//! Notification callbacks e.g. (`on_run_start` / `on_run_end`) are
-//! implemented as lightweight `Hook` wrappers. They participate in the
-//! same hook chain: code before `original` is "start", code after is "end".
+//! Observers are plain hooks: code before `original` is "start", code
+//! after is "end". They participate in the same hook chain.
 //!
 //! Container:
 //! - [`HookSet`] - Container for registered hooks and lifecycle events
