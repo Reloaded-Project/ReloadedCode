@@ -2965,7 +2965,9 @@ name = "reloaded-code-serdesai"
 version = "0.2.0"
 dependencies = [
  "ahash",
+ "anyhow",
  "async-trait",
+ "chrono",
  "futures",
  "indexmap",
  "reloaded-code-agents",

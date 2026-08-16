@@ -8,7 +8,7 @@
 
 use super::model::resolve_model;
 use super::provider_bridge::build_serdes_model;
-use crate::agent_ext::{AgentBuilderExt, ToolResultExt};
+use crate::agent_ext::{HookedToolExecutor, ToolResultExt};
 use crate::task::{TaskHandle, TaskTool};
 use crate::tools::CustomToolAdapter;
 use crate::{
@@ -26,14 +26,15 @@ use reloaded_code_core::context::ToolPrompt;
 use reloaded_code_core::permissions::Ruleset;
 use reloaded_code_core::tool_context::ToolBuildContext;
 use reloaded_code_core::tool_metadata::{
-    edit as edit_meta, glob as glob_meta, grep as grep_meta, read as read_meta,
+    bash as bash_meta, edit as edit_meta, glob as glob_meta, grep as grep_meta, read as read_meta,
+    task as task_meta, todo_read as todo_read_meta, todo_write as todo_write_meta,
     webfetch as webfetch_meta, write as write_meta,
 };
 use reloaded_code_core::tools::{
     GlobSettings, GrepFormattingSettings, GrepSettings, ReadSettings, WebFetchSettings,
 };
 use reloaded_code_core::{
-    CredentialLookup, SharedToolRegistry, ToolCatalogEntry, ToolCatalogKind, ToolError,
+    CredentialLookup, HookSet, SharedToolRegistry, ToolCatalogEntry, ToolCatalogKind, ToolError,
     models::ModelCatalog,
 };
 use serdes_ai::AgentBuilder;
@@ -138,6 +139,15 @@ impl PreparedBuild<'_> {
 
 /// Attaches the standard runtime tools and prompt contexts without finalizing the builder.
 ///
+/// # Arguments
+/// - `builder`: The [`AgentBuilder`] to attach tools onto.
+/// - `prepared`: Catalog-prepared build data (resolved model, tools, prompt, etc.).
+/// - `task_handle`: Optional handle for Task delegation support.
+/// - `workspace_root`: Project root directory exposed to tools.
+/// - `bash_sandbox`: Optional pre-built sandbox profile for [`BashTool`].
+/// - `custom_tool_registry`: Registry of user-defined portable custom tools.
+/// - `hooks`: The [`HookSet`] to wrap tool executors with hook dispatch.
+///
 /// # Errors
 ///
 /// Returns [`AgentBuildError::UnsupportedToolKind`] when the runtime catalog contains an
@@ -148,6 +158,11 @@ impl PreparedBuild<'_> {
 ///
 /// Returns [`AgentBuildError::CustomToolCreateFailed`] when a custom-tool
 /// factory cannot create its portable tool object.
+///
+/// Returns [`AgentBuildError::CustomToolNameMismatch`] when a custom tool's
+/// name (from [`reloaded_code_core::CustomTool`] or
+/// [`reloaded_code_core::CustomToolDefinition`]) does not match the catalog
+/// entry name.
 ///
 /// Returns [`AgentBuildError::ToolSettingsValidation`] when resolver creation or settings
 /// building fails for any tool, including:
@@ -161,6 +176,7 @@ pub(super) fn attach_standard_tools<'a, C>(
     workspace_root: &Path,
     bash_sandbox: Option<&Arc<Profile>>,
     custom_tool_registry: &SharedToolRegistry,
+    hooks: &HookSet,
 ) -> Result<(AgentBuilder<(), String>, SystemPromptBuilder), AgentBuildError>
 where
     C: CredentialLookup + Send + Sync + 'static,
@@ -195,28 +211,62 @@ where
                     build_resolver_for_tool(&build_context, permission_config, read_meta::NAME)
                         .with_tool(read_meta::NAME)?;
                 let settings = build_read_settings(&prepared.tool_settings.read)?;
-                builder =
-                    builder.tool(prompt_builder.track(ReadTool::with_settings(resolver, settings)));
+                let tool = ReadTool::with_settings(resolver, settings);
+                builder = builder.tool_with_executor(
+                    serdes_ai::Tool::<()>::definition(&tool),
+                    HookedToolExecutor::new(
+                        prompt_builder.track(tool),
+                        hooks,
+                        prepared.agent_name.as_ref(),
+                        read_meta::NAME,
+                    ),
+                );
             }
             ToolCatalogKind::Write => {
                 let resolver =
                     build_resolver_for_tool(&build_context, permission_config, write_meta::NAME)
                         .with_tool(write_meta::NAME)?;
-                builder = builder.tool(prompt_builder.track(WriteTool::new(resolver)));
+                let tool = WriteTool::new(resolver);
+                builder = builder.tool_with_executor(
+                    serdes_ai::Tool::<()>::definition(&tool),
+                    HookedToolExecutor::new(
+                        prompt_builder.track(tool),
+                        hooks,
+                        prepared.agent_name.as_ref(),
+                        write_meta::NAME,
+                    ),
+                );
             }
             ToolCatalogKind::Edit => {
                 let resolver =
                     build_resolver_for_tool(&build_context, permission_config, edit_meta::NAME)
                         .with_tool(edit_meta::NAME)?;
-                builder = builder.tool(prompt_builder.track(EditTool::new(resolver)));
+                let tool = EditTool::new(resolver);
+                builder = builder.tool_with_executor(
+                    serdes_ai::Tool::<()>::definition(&tool),
+                    HookedToolExecutor::new(
+                        prompt_builder.track(tool),
+                        hooks,
+                        prepared.agent_name.as_ref(),
+                        edit_meta::NAME,
+                    ),
+                );
             }
             ToolCatalogKind::Glob => {
                 let resolver =
                     build_resolver_for_tool(&build_context, permission_config, glob_meta::NAME)
                         .with_tool(glob_meta::NAME)?;
                 let settings = build_glob_settings(&prepared.tool_settings.glob)?;
-                builder =
-                    builder.tool(prompt_builder.track(GlobTool::with_settings(resolver, settings)));
+                let tool = GlobTool::with_settings(resolver, settings);
+                builder = builder.tool_with_executor(
+                    serdes_ai::Tool::<()>::definition(&tool),
+                    HookedToolExecutor::new(
+                        prompt_builder.track(tool),
+                        hooks,
+                        prepared.agent_name.as_ref(),
+                        glob_meta::NAME,
+                    ),
+                );
             }
             ToolCatalogKind::Grep => {
                 let resolver =
@@ -224,11 +274,16 @@ where
                         .with_tool(grep_meta::NAME)?;
                 let (search_settings, formatting_settings) =
                     build_grep_settings(&prepared.tool_settings.grep)?;
-                builder = builder.tool(prompt_builder.track(GrepTool::with_settings(
-                    resolver,
-                    search_settings,
-                    formatting_settings,
-                )));
+                let tool = GrepTool::with_settings(resolver, search_settings, formatting_settings);
+                builder = builder.tool_with_executor(
+                    serdes_ai::Tool::<()>::definition(&tool),
+                    HookedToolExecutor::new(
+                        prompt_builder.track(tool),
+                        hooks,
+                        prepared.agent_name.as_ref(),
+                        grep_meta::NAME,
+                    ),
+                );
             }
             ToolCatalogKind::Bash => {
                 let settings = &prepared.tool_settings.bash;
@@ -240,27 +295,69 @@ where
                 if let Some(profile) = bash_sandbox {
                     tool = tool.with_linux_bwrap(profile.clone());
                 }
-                builder = builder.tool(prompt_builder.track(tool));
+                builder = builder.tool_with_executor(
+                    serdes_ai::Tool::<()>::definition(&tool),
+                    HookedToolExecutor::new(
+                        prompt_builder.track(tool),
+                        hooks,
+                        prepared.agent_name.as_ref(),
+                        bash_meta::NAME,
+                    ),
+                );
             }
             ToolCatalogKind::WebFetch => {
                 let settings = build_webfetch_settings(&prepared.tool_settings.webfetch)?;
-                builder = builder.tool(prompt_builder.track(WebFetchTool::with_settings(settings)));
+                let tool = WebFetchTool::with_settings(settings);
+                builder = builder.tool_with_executor(
+                    serdes_ai::Tool::<()>::definition(&tool),
+                    HookedToolExecutor::new(
+                        prompt_builder.track(tool),
+                        hooks,
+                        prepared.agent_name.as_ref(),
+                        webfetch_meta::NAME,
+                    ),
+                );
             }
             ToolCatalogKind::TodoRead => {
-                builder = builder.tool(prompt_builder.track(todo_read.clone()))
+                builder = builder.tool_with_executor(
+                    serdes_ai::Tool::<()>::definition(&todo_read),
+                    HookedToolExecutor::new(
+                        prompt_builder.track(todo_read.clone()),
+                        hooks,
+                        prepared.agent_name.as_ref(),
+                        todo_read_meta::NAME,
+                    ),
+                );
             }
             ToolCatalogKind::TodoWrite => {
-                builder = builder.tool(prompt_builder.track(todo_write.clone()))
+                builder = builder.tool_with_executor(
+                    serdes_ai::Tool::<()>::definition(&todo_write),
+                    HookedToolExecutor::new(
+                        prompt_builder.track(todo_write.clone()),
+                        hooks,
+                        prepared.agent_name.as_ref(),
+                        todo_write_meta::NAME,
+                    ),
+                );
             }
             ToolCatalogKind::Task => {
                 if let Some(task_handle) = task_handle
                     && !prepared.callable_target_summaries.is_empty()
                 {
-                    builder = builder.tool(prompt_builder.track(TaskTool::new(
+                    let tool = TaskTool::new(
                         prepared.agent_name.as_ref(),
                         prepared.callable_target_summaries.clone(),
                         (*task_handle).clone(),
-                    )));
+                    );
+                    builder = builder.tool_with_executor(
+                        serdes_ai::Tool::<()>::definition(&tool),
+                        HookedToolExecutor::new(
+                            prompt_builder.track(tool),
+                            hooks,
+                            prepared.agent_name.as_ref(),
+                            task_meta::NAME,
+                        ),
+                    );
                 }
             }
             ToolCatalogKind::Custom => {
@@ -302,8 +399,19 @@ where
                 }
 
                 let serdes_definition = crate::convert::custom_definition_to_serdes(definition);
-                builder =
-                    builder.tool_dyn(serdes_definition, Box::new(CustomToolAdapter::new(tool)));
+                let tool_adapter = CustomToolAdapter::new(tool);
+                let tool_name = reloaded_code_core::ToolContext::name(&tool_adapter);
+                let executor =
+                    Box::new(crate::agent_ext::DynToolAsExecutor(Box::new(tool_adapter)));
+                builder = builder.tool_with_executor(
+                    serdes_definition,
+                    HookedToolExecutor::from_dyn(
+                        executor,
+                        hooks,
+                        prepared.agent_name.as_ref(),
+                        tool_name,
+                    ),
+                );
             }
             _ => {
                 return Err(AgentBuildError::UnsupportedToolKind {
@@ -406,7 +514,9 @@ fn build_webfetch_settings(
 
 #[cfg(test)]
 mod tests {
-    use super::{AgentBuildError, attach_standard_tools, prepare_build};
+    use super::AgentBuildError;
+    use super::{attach_standard_tools, prepare_build};
+    use crate::agent_runtime::test_stubs::{agent, allow_tools, catalog, credentials};
     use ahash::AHashMap;
     use indexmap::IndexMap;
     use reloaded_code_agents::{
@@ -414,18 +524,14 @@ mod tests {
         AgentToolSettings, PermissionRule,
     };
     use reloaded_code_core::context::{ToolContext, ToolPrompt};
-    use reloaded_code_core::models::{
-        Modality, ModelCatalog, ModelInfo, ProviderIdx, ProviderInfo, ProviderModelSource,
-        ProviderSource, ProviderType,
-    };
-    use reloaded_code_core::permissions::{ExpandError, PermissionAction};
+    use reloaded_code_core::permissions::ExpandError;
     use reloaded_code_core::tool_metadata::{
         bash as bash_meta, glob as glob_meta, grep as grep_meta, read as read_meta,
     };
     use reloaded_code_core::{
-        CredentialResolver, CustomTool, CustomToolDefinition, CustomToolFuture, SharedToolRegistry,
-        ToolBuildContext, ToolCatalogEntry, ToolCatalogKind, ToolError, ToolFactory, ToolOutput,
-        ToolResult, ToolRunContext,
+        CredentialResolver, CustomTool, CustomToolDefinition, CustomToolFuture, HookSet,
+        SharedToolRegistry, ToolBuildContext, ToolCatalogEntry, ToolCatalogKind, ToolError,
+        ToolFactory, ToolOutput, ToolResult, ToolRunContext,
     };
     use serdes_ai::AgentBuilder;
     use serdes_ai_models::MockModel;
@@ -458,31 +564,11 @@ mod tests {
             &workspace_root,
             None,
             registry,
+            &HookSet::default(),
         )?;
         let prompt = prompt_builder.build();
         let agent = builder.system_prompt(prompt.clone()).build();
         Ok((agent, prompt))
-    }
-
-    /// Creates a minimal agent config with no model or sampling overrides.
-    fn agent(
-        name: &str,
-        permission: IndexMap<String, PermissionRule>,
-        prompt: &str,
-    ) -> AgentConfig {
-        AgentConfig {
-            name: name.into(),
-            mode: AgentMode::Primary,
-            description: format!("{name} description").into(),
-            model: None,
-            hidden: false,
-            temperature: None,
-            top_p: None,
-            permission,
-            options: AHashMap::new(),
-            tool_settings: AgentToolSettings::default(),
-            prompt: prompt.into(),
-        }
     }
 
     /// Creates an agent config with explicit model and sampling settings.
@@ -495,57 +581,12 @@ mod tests {
         prompt: &str,
     ) -> AgentConfig {
         AgentConfig {
-            name: name.into(),
             mode: AgentMode::All,
-            description: format!("{name} description").into(),
             model: Some(model.into()),
-            hidden: false,
             temperature,
             top_p,
-            permission,
-            options: AHashMap::new(),
-            tool_settings: AgentToolSettings::default(),
-            prompt: prompt.into(),
+            ..agent(name, AgentMode::Primary, permission, prompt)
         }
-    }
-
-    /// Creates permission rules that allow the specified tools.
-    fn allow_tools(names: &[&str]) -> IndexMap<String, PermissionRule> {
-        names
-            .iter()
-            .map(|n| ((*n).into(), PermissionRule::Action(PermissionAction::Allow)))
-            .collect()
-    }
-
-    /// Creates a model catalog with two OpenRouter models for testing.
-    fn catalog() -> ModelCatalog {
-        let providers = vec![ProviderSource::new(
-            "openrouter",
-            ProviderInfo {
-                api_url: "https://openrouter.ai/api/v1".into(),
-                env_vars: vec!["OPENROUTER_API_KEY".into()],
-                api_type: ProviderType::OpenRouter,
-            },
-        )];
-        let info = ModelInfo {
-            modalities: Modality::TEXT,
-            max_input: 128_000,
-            max_output: 16_384,
-            temperature: Some(1.0),
-            top_p: Some(0.95),
-        };
-        let models: Vec<ProviderModelSource<'_>> =
-            [("openai/gpt-4.1-mini", info), ("openai/gpt-4o", info)]
-                .into_iter()
-                .map(|(key, i)| ProviderModelSource::new(ProviderIdx::new(0), key, i))
-                .collect();
-        ModelCatalog::build(&providers, &models).expect("catalog fixture should build")
-    }
-
-    fn credentials() -> CredentialResolver<false> {
-        let mut credentials = CredentialResolver::without_env();
-        credentials.set_override("OPENROUTER_API_KEY", "openrouter-key");
-        credentials
     }
 
     /// Builds a test runtime with one custom tool and read permission.
@@ -557,6 +598,7 @@ mod tests {
         AgentRuntimeBuilder::new()
             .catalog(AgentCatalog::from_entries([agent(
                 agent_name,
+                AgentMode::Primary,
                 allow_tools(&[read_meta::NAME, custom_name]),
                 "prompt",
             )]))
@@ -597,10 +639,11 @@ mod tests {
             .catalog(AgentCatalog::from_entries([
                 agent(
                     "with-tools",
+                    AgentMode::Primary,
                     allow_tools(&[read_meta::NAME, bash_meta::NAME]),
                     "prompt",
                 ),
-                agent("no-tools", IndexMap::new(), "prompt"),
+                agent("no-tools", AgentMode::Primary, IndexMap::new(), "prompt"),
             ]))
             .defaults(AgentDefaults::with_model("openrouter/openai/gpt-4.1-mini"))
             .build()?;
@@ -714,6 +757,7 @@ mod tests {
         let runtime_true = AgentRuntimeBuilder::new()
             .catalog(AgentCatalog::from_entries([agent(
                 "numbered",
+                AgentMode::Primary,
                 allow_tools(&[read_meta::NAME, grep_meta::NAME]),
                 "prompt",
             )]))
@@ -786,6 +830,7 @@ mod tests {
         let runtime = AgentRuntimeBuilder::new()
             .catalog(AgentCatalog::from_entries([agent(
                 "tester",
+                AgentMode::Primary,
                 allow_tools(&[read_meta::NAME, "custom_missing"]),
                 "prompt",
             )]))

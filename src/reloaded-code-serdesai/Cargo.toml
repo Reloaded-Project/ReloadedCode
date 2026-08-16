@@ -87,6 +87,10 @@ reqwest = { workspace = true }
 # Used for IndexMap in build.rs (permission config)
 indexmap = { workspace = true }
 
+# Error conversion for hook dispatch
+anyhow = "1.0"
+chrono = "0.4"
+
 [dev-dependencies]
 serial_test = { workspace = true }
 tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }
@@ -98,3 +102,28 @@ temp-env = { workspace = true }
 rstest = { workspace = true }
 # models.dev catalog loader for examples
 reloaded-code-models-dev = { workspace = true }
+
+[[example]]
+name = "serdesai-run-hook"
+path = "examples/hooks/run/serdesai-run-hook.rs"
+required-features = ["mock"]
+
+[[example]]
+name = "serdesai-run-chain"
+path = "examples/hooks/run/serdesai-run-chain.rs"
+required-features = ["mock"]
+
+[[example]]
+name = "serdesai-tool-hook"
+path = "examples/hooks/tool/serdesai-tool-hook.rs"
+required-features = ["mock"]
+
+[[example]]
+name = "serdesai-tool-block"
+path = "examples/hooks/tool/serdesai-tool-block.rs"
+required-features = ["mock"]
+
+[[example]]
+name = "serdesai-tool-chain"
+path = "examples/hooks/tool/serdesai-tool-chain.rs"
+required-features = ["mock"]

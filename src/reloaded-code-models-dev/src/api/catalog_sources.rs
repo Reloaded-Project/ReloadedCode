@@ -3,8 +3,6 @@
 //! This module parses models.dev `api.json`, maps provider/model metadata into
 //! transient core builder inputs, and immediately constructs a [`ModelCatalog`].
 //!
-//! [`ModelCatalog`]: reloaded_code_core::models::ModelCatalog
-//!
 //! Mapping policy:
 //! - missing limits default to `0`;
 //! - model modalities are mapped from `modalities.input[]`/`modalities.output[]`
@@ -14,6 +12,8 @@
 //!   [`Modality::empty()`];
 //! - model rows remain provider-scoped; shared configurations are deduplicated by
 //!   core during catalog build.
+//!
+//! [`ModelCatalog`]: reloaded_code_core::models::ModelCatalog
 
 use super::schema::{parse_api_json, ApiModelEntry, ApiModelLimit, ApiModelModalities};
 use crate::cache::payload::{CachedModelRow, CachedProviderRow, CatalogCachePayload};

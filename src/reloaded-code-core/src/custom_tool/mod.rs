@@ -17,8 +17,6 @@
 //! - [`CustomToolRegistry`] - Registry of custom tool factories.
 //! - [`SharedToolRegistry`] - Shared wrapper around a registry for cheap cloning.
 //!
-//! [`ToolContext`]: crate::ToolContext
-//!
 //! # Usage
 //!
 //! ```rust
@@ -78,6 +76,8 @@
 //! registry.insert(MyFactory);
 //! assert!(registry.get("my_tool").is_some());
 //! ```
+//!
+//! [`ToolContext`]: crate::ToolContext
 
 pub use crate::tool_context::ToolBuildContext;
 pub use definition::CustomToolDefinition;

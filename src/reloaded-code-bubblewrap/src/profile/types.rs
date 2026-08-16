@@ -17,12 +17,12 @@ use std::sync::Arc;
 ///
 /// Build this with [`crate::profile::Builder::build`].
 ///
-/// [`crate::profile::Builder::build`]: crate::profile::Builder::build
-///
 /// The build step validates profile-owned paths, resolves the `bwrap` binary,
 /// picks a visible host shell, and precomputes the static `bwrap` argv prefix.
 /// [`crate::wrap::wrap_command`] only needs to map the per-call working
 /// directory and append the shell command tail.
+///
+/// [`crate::profile::Builder::build`]: crate::profile::Builder::build
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Profile {
     pub(crate) preset: Option<Preset>,

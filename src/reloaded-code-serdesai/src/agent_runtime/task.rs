@@ -2,20 +2,28 @@
 //!
 //! # Public API
 //! - [`AgentBuildContext`] - Reusable shared inputs for building runnable agents.
+//! - [`HookedAgent`] - Built agent wrapper that dispatches through run hooks.
 
 #[cfg(not(all(feature = "linux-bubblewrap", target_os = "linux")))]
 use super::build::Profile;
 use super::build::{AgentBuildError, attach_standard_tools, prepare_build};
 use crate::task::TaskHandle;
+use futures::Stream;
 use reloaded_code_agents::AgentRuntime;
 #[cfg(all(feature = "linux-bubblewrap", target_os = "linux"))]
 use reloaded_code_bubblewrap::{CreateSandboxError, Preset, Profile, TempSandboxDirs};
+use reloaded_code_core::hooks::{
+    EndReason, HookRunContext, HookSet, ModelSettingsOverrides, PreambleRole, RunConfig,
+    RunExecutor, RunHookFuture, RunOutput, RunUsage,
+};
 use reloaded_code_core::{CredentialLookup, CredentialResolver, models::ModelCatalog};
-use serdes_ai::{Agent, AgentBuilder};
+use serdes_ai::core::ModelRequest;
+use serdes_ai::{Agent, AgentBuilder, RunOptions};
 #[cfg(any(test, feature = "mock"))]
 use serdes_ai_models::BoxedModel;
 use std::path::Path;
-use std::sync::Arc;
+use std::pin::Pin;
+use std::sync::{Arc, Mutex};
 
 /// Reusable shared inputs for building runnable SerdesAI agents.
 ///
@@ -26,6 +34,60 @@ use std::sync::Arc;
 #[derive(Clone)]
 pub struct AgentBuildContext<C: CredentialLookup + Send + Sync + 'static = CredentialResolver> {
     context: Arc<TaskBuildContext<C>>,
+}
+
+/// Lightweight newtype around a built SerdesAI `Agent` that dispatches
+/// `run()` and `run_stream()` through the core `HookSet::dispatch_run` hook
+/// chain when run hooks are registered. Passes through directly when no hooks
+/// are present for zero overhead.
+pub struct HookedAgent {
+    inner: Agent<(), String>,
+    hooks: HookSet,
+    agent_name: String,
+    model_name: String,
+}
+
+/// Result type returned by `HookedAgent::run`. Provides `.output()` and
+/// `.into_output()` so existing call sites compile without changes.
+pub struct HookedAgentRunResult {
+    content: String,
+}
+
+/// RunExecutor that calls the inner SerdesAI agent synchronously (non-stream).
+///
+/// Applies `RunConfig::preamble_messages` and `system_prompt` to the prompt
+/// text before calling the agent, because the built agent does not support
+/// runtime mutation of those fields. Applies `model_settings_overrides` to
+/// the per-run model settings via [`RunOptions`], merged over the agent's
+/// configured settings.
+///
+/// On inner failure the hook chain sees a [`ToolError::Execution`] projection
+/// while the original [`AgentRunError`] is parked in `error`; the dispatch
+/// site in `run_with_extras` restores the original when the failure reaches
+/// the caller untouched.
+///
+/// [`ToolError::Execution`]: reloaded_code_core::ToolError::Execution
+/// [`AgentRunError`]: serdes_ai::agent::AgentRunError
+struct SerdesRunExecutor<'a> {
+    agent: &'a Agent<(), String>,
+    prompt: String,
+    deps: (),
+    /// Slot the executor fills with the inner response's run metadata.
+    extras: Arc<Mutex<Option<AgentRunExtras>>>,
+    /// Slot the executor fills with the inner run's original failure.
+    error: Arc<Mutex<Option<serdes_ai::agent::AgentRunError>>>,
+}
+
+/// Inner-agent run metadata captured alongside the output so streaming
+/// callers can emit a faithful `RunComplete` event.
+#[derive(Default)]
+struct AgentRunExtras {
+    /// Run identifier assigned by the inner agent, or the wrapper's
+    /// identifier when a hook replaced the run without calling `original`.
+    run_id: String,
+    /// Complete message history from the inner run; empty when a hook
+    /// replaced the run without calling `original`.
+    messages: Vec<ModelRequest>,
 }
 
 /// Shared owned state for builds that may happen later during Task delegation.
@@ -57,13 +119,13 @@ where
     /// For sandboxed builds on Linux with the `linux-bubblewrap` feature, use
     /// `new_with_sandbox` or `new_with_temp_sandbox` instead.
     ///
-    /// [`BashTool`]: crate::BashTool
-    ///
     /// # Arguments
     /// - `runtime`: Shared agent runtime holding the catalog and defaults.
     /// - `model_catalog`: Available models for agent resolution.
     /// - `credentials`: Credential lookup used to authenticate model requests.
     /// - `workspace_root`: Project directory exposed to tools.
+    ///
+    /// [`BashTool`]: crate::BashTool
     pub fn new(
         runtime: Arc<AgentRuntime>,
         model_catalog: Arc<ModelCatalog>,
@@ -96,13 +158,15 @@ where
     /// - `model_catalog`: Available models for agent resolution.
     /// - `credentials`: Credential lookup used to authenticate model requests.
     /// - `workspace_root`: Project directory exposed to tools.
-    /// - `profile`: Pre-built sandbox profile for [`BashTool`](crate::BashTool).
+    /// - `profile`: Pre-built sandbox profile for [`BashTool`].
     /// - `sandbox_tmpdir`: Optional owning temp directories that keep the
     ///   profile's backing storage alive for the context's lifetime.
     ///
     /// # Platform
     ///
     /// Only available on Linux with the `linux-bubblewrap` feature enabled.
+    ///
+    /// [`BashTool`]: crate::BashTool
     #[cfg(all(feature = "linux-bubblewrap", target_os = "linux"))]
     pub fn new_with_sandbox(
         runtime: Arc<AgentRuntime>,
@@ -179,7 +243,7 @@ where
     /// - `name`: Catalog entry name to build.
     ///
     /// # Returns
-    /// - `Ok(`[`Agent`]`)`: A fully constructed agent ready to run.
+    /// - `Ok(`[`HookedAgent`]`)`: A fully constructed agent ready to run.
     ///
     /// # Errors
     /// - Returns [`AgentBuildError::UnknownAgent`] when `name` is not in the
@@ -194,10 +258,12 @@ where
     ///   contains a tool kind this adapter cannot materialise.
     /// - Returns [`AgentBuildError::UnknownCustomTool`] when a custom tool
     ///   entry names a tool absent from the custom-tool registry.
+    /// - Returns [`AgentBuildError::CustomToolNameMismatch`] when a custom
+    ///   tool's name does not match its catalog entry name.
     /// - Returns [`AgentBuildError::CustomToolCreateFailed`] when a
     ///   custom-tool factory cannot create its portable tool object.
     #[inline]
-    pub fn build(&self, name: &str) -> Result<Agent<(), String>, AgentBuildError> {
+    pub fn build(&self, name: &str) -> Result<HookedAgent, AgentBuildError> {
         build_agent(Arc::clone(&self.context), name, 0)
     }
 
@@ -240,6 +306,199 @@ where
     }
 }
 
+impl HookedAgent {
+    /// Creates the wrapper from a built agent and its runtime metadata.
+    pub(crate) fn new(
+        inner: Agent<(), String>,
+        hooks: HookSet,
+        agent_name: String,
+        model_name: String,
+    ) -> Self {
+        Self {
+            inner,
+            hooks,
+            agent_name,
+            model_name,
+        }
+    }
+
+    /// Returns attached tool definitions (delegates to inner agent).
+    pub fn tools(&self) -> Vec<&serdes_ai::ToolDefinition> {
+        self.inner.tools()
+    }
+
+    /// Runs the agent with the given prompt, dispatching through run hooks.
+    ///
+    /// When no run hooks are registered this delegates directly to the inner
+    /// agent for zero overhead. Otherwise it builds a `RunConfig`, runs the
+    /// hook chain, applies any `preamble_messages` or `system_prompt`
+    /// mutations to the prompt text, applies `model_settings_overrides` to
+    /// the per-run model settings, and returns the result.
+    ///
+    /// The run-hook context carries a wrapper-generated `run_id`. The inner
+    /// agent assigns its own id for tool hooks; SerdesAI `RunOptions` has no
+    /// field to override it, so the two identifiers cannot be unified here.
+    ///
+    /// # Errors
+    ///
+    /// - Returns the inner agent's [`serdes_ai::agent::AgentRunError`]
+    ///   unchanged when the inner agent fails (direct run or hooked run)
+    ///   and the failure reaches the caller untouched.
+    /// - Returns [`serdes_ai::agent::AgentRunError::Other`] when a run hook
+    ///   returns or substitutes its own error during dispatch.
+    pub async fn run(
+        &self,
+        prompt: impl Into<String>,
+        deps: (),
+    ) -> Result<HookedAgentRunResult, serdes_ai::agent::AgentRunError> {
+        let (result, _extras) = self.run_with_extras(prompt.into(), deps).await?;
+        Ok(result)
+    }
+
+    /// Shared implementation behind `run` and `run_stream`.
+    ///
+    /// Returns the run result plus the inner agent's run id and message
+    /// history, which `run_stream` needs for its synthetic `RunComplete`
+    /// event.
+    ///
+    /// # Errors
+    ///
+    /// - Returns the inner agent's [`serdes_ai::agent::AgentRunError`]
+    ///   unchanged when the inner agent fails (direct run or hooked run)
+    ///   and the failure reaches the caller untouched.
+    /// - Returns [`serdes_ai::agent::AgentRunError::Other`] when a run hook
+    ///   returns or substitutes its own error during dispatch.
+    async fn run_with_extras(
+        &self,
+        prompt: String,
+        deps: (),
+    ) -> Result<(HookedAgentRunResult, AgentRunExtras), serdes_ai::agent::AgentRunError> {
+        if self.hooks.run_hooks_is_empty() {
+            let response = self.inner.run(prompt, deps).await?;
+            let serdes_ai::agent::AgentRunResult {
+                output,
+                run_id,
+                messages,
+                ..
+            } = response;
+            let extras = AgentRunExtras { run_id, messages };
+            return Ok((HookedAgentRunResult { content: output }, extras));
+        }
+
+        // Wrapper-assigned run id for the hook context. The inner agent
+        // generates its own id for the real run and tool hooks; see the
+        // `run` doc comment.
+        let run_id = serdes_ai::agent::generate_run_id();
+        let ctx = HookRunContext {
+            agent_name: &self.agent_name,
+            run_id: &run_id,
+            model_name: &self.model_name,
+        };
+        let config = RunConfig::default();
+
+        let extras_slot = Arc::new(Mutex::new(None));
+        let error_slot = Arc::new(Mutex::new(None));
+        let executor = SerdesRunExecutor {
+            agent: &self.inner,
+            prompt,
+            deps,
+            extras: Arc::clone(&extras_slot),
+            error: Arc::clone(&error_slot),
+        };
+
+        // A dispatch failure carries a `ToolError`; restore the inner
+        // agent's original `AgentRunError` when it propagated untouched,
+        // and only label the error hook-origin otherwise.
+        let output = match self.hooks.dispatch_run(&ctx, config, &executor).await {
+            Ok(output) => output,
+            Err(dispatched) => return Err(restore_run_error(dispatched, &error_slot)),
+        };
+
+        // A hook that skipped `original` leaves the slot empty; fall back to
+        // the wrapper id so downstream events still carry a stable identifier.
+        let extras = extras_slot
+            .lock()
+            .expect("extras slot should not be poisoned")
+            .take()
+            .unwrap_or(AgentRunExtras {
+                run_id,
+                messages: Vec::new(),
+            });
+
+        Ok((HookedAgentRunResult::from_run_output(output), extras))
+    }
+
+    /// Runs the agent in streaming mode.
+    ///
+    /// When no run hooks are registered this delegates directly to the inner
+    /// agent's `run_stream`. When hooks are present it reuses the hooked
+    /// non-stream path and emits a synthetic stream containing the final
+    /// text output plus a `RunComplete` event carrying the real run id and
+    /// message history.
+    ///
+    /// # Errors
+    ///
+    /// - Returns the inner agent's [`serdes_ai::agent::AgentRunError`]
+    ///   unchanged when the inner agent fails (direct stream or hooked run)
+    ///   and the failure reaches the caller untouched.
+    /// - Returns [`serdes_ai::agent::AgentRunError::Other`] when the prompt is not
+    ///   representable as text, or when a run hook returns or substitutes its
+    ///   own error during dispatch.
+    pub async fn run_stream(
+        &self,
+        prompt: impl Into<serdes_ai::core::UserContent>,
+        deps: (),
+    ) -> Result<
+        Pin<
+            Box<
+                dyn Stream<
+                        Item = Result<serdes_ai::AgentStreamEvent, serdes_ai::agent::AgentRunError>,
+                    > + Send,
+            >,
+        >,
+        serdes_ai::agent::AgentRunError,
+    > {
+        let prompt = prompt.into();
+        if self.hooks.run_hooks_is_empty() {
+            let stream = self.inner.run_stream(prompt, deps).await?;
+            return Ok(Box::pin(stream));
+        }
+        let text = prompt.as_text().ok_or_else(|| {
+            serdes_ai::agent::AgentRunError::Other(anyhow::anyhow!(
+                "run hooks require a text prompt; image or multi-part prompts are unsupported"
+            ))
+        })?;
+        let (result, extras) = self.run_with_extras(text.to_string(), deps).await?;
+        let text = result.output().to_string();
+        let events = vec![
+            Ok(serdes_ai::AgentStreamEvent::TextDelta { text }),
+            Ok(serdes_ai::AgentStreamEvent::OutputReady),
+            Ok(serdes_ai::AgentStreamEvent::RunComplete {
+                run_id: extras.run_id,
+                messages: extras.messages,
+            }),
+        ];
+        Ok(Box::pin(futures::stream::iter(events)))
+    }
+}
+
+impl HookedAgentRunResult {
+    /// Returns the text output.
+    pub fn output(&self) -> &str {
+        &self.content
+    }
+    /// Consumes self and returns the owned text output.
+    pub fn into_output(self) -> String {
+        self.content
+    }
+
+    fn from_run_output(output: RunOutput) -> Self {
+        Self {
+            content: output.content,
+        }
+    }
+}
+
 impl<C> TaskBuildContext<C>
 where
     C: CredentialLookup + Send + Sync + 'static,
@@ -260,9 +519,11 @@ where
     /// - `model_catalog`: Available models for agent resolution.
     /// - `credentials`: Credential lookup used to authenticate model requests.
     /// - `workspace_root`: Project directory exposed to tools.
-    /// - `bash_sandbox`: Pre-built sandbox profile for [`BashTool`](crate::BashTool).
+    /// - `bash_sandbox`: Pre-built sandbox profile for [`BashTool`].
     /// - `_sandbox_tmpdir`: Optional owning temp directories that keep the
     ///   profile's backing storage alive.
+    ///
+    /// [`BashTool`]: crate::BashTool
     #[cfg(all(feature = "linux-bubblewrap", target_os = "linux"))]
     pub(crate) fn new_with_sandbox(
         runtime: Arc<AgentRuntime>,
@@ -312,6 +573,70 @@ where
     }
 }
 
+impl<'a> RunExecutor for SerdesRunExecutor<'a> {
+    fn execute<'b>(&'b self, _ctx: &'b HookRunContext<'b>, config: RunConfig) -> RunHookFuture<'b> {
+        let agent = self.agent;
+        let mut prompt = self.prompt.clone();
+
+        // Apply RunConfig modifications that can be expressed by prepending
+        // to the prompt text. Order: system prompt, preamble messages in
+        // configured order, then the original prompt.
+        let mut sections: Vec<String> = Vec::new();
+        if let Some(sys) = &config.system_prompt {
+            sections.push(sys.clone());
+        }
+        for msg in &config.preamble_messages {
+            match msg.role {
+                PreambleRole::System => sections.push(format!("[System] {}", msg.content)),
+                PreambleRole::User => sections.push(format!("[User] {}", msg.content)),
+            }
+        }
+        if !sections.is_empty() {
+            prompt = format!("{}\n\n{prompt}", sections.join("\n\n"));
+        }
+
+        let extras = Arc::clone(&self.extras);
+        let error = Arc::clone(&self.error);
+        let run_options = run_options_with_overrides(agent, config.model_settings_overrides);
+        #[allow(clippy::let_unit_value)]
+        let deps = self.deps;
+        #[allow(clippy::unit_arg)]
+        Box::pin(async move {
+            let result = if let Some(options) = run_options {
+                agent.run_with_options(prompt, deps, options).await
+            } else {
+                agent.run(prompt, deps).await
+            };
+            let response = match result {
+                Ok(response) => response,
+                Err(err) => {
+                    // Hooks see the `ToolError` projection; the original is
+                    // restored after dispatch when it propagates untouched.
+                    let projection = run_error_projection(&err);
+                    *error.lock().expect("run error slot should not be poisoned") = Some(err);
+                    return Err(projection);
+                }
+            };
+            // Read borrowed fields before moving run_id and messages out.
+            let content = response.output().to_string();
+            let usage = RunUsage {
+                prompt_tokens: response.usage.request_tokens,
+                completion_tokens: response.usage.response_tokens,
+            };
+            let inner_extras = AgentRunExtras {
+                run_id: response.run_id,
+                messages: response.messages,
+            };
+            *extras.lock().expect("extras slot should not be poisoned") = Some(inner_extras);
+            Ok(RunOutput {
+                content,
+                reason: EndReason::Completed,
+                usage,
+            })
+        })
+    }
+}
+
 /// Builds one runnable agent using the shared build context.
 ///
 /// # Arguments
@@ -321,7 +646,7 @@ where
 /// - `current_depth`: Current Task delegation depth (0 for top-level calls).
 ///
 /// # Returns
-/// - `Ok(`[`Agent`]`)`: A fully constructed agent ready to run.
+/// - `Ok(`[`HookedAgent`]`)`: A fully constructed agent ready to run.
 ///
 /// # Errors
 /// - Returns [`AgentBuildError::UnknownAgent`] when `name` is not in the
@@ -336,13 +661,15 @@ where
 ///   contains a tool kind this adapter cannot materialise.
 /// - Returns [`AgentBuildError::UnknownCustomTool`] when a custom tool entry
 ///   names a tool absent from the custom-tool registry.
+/// - Returns [`AgentBuildError::CustomToolNameMismatch`] when a custom
+///   tool's name does not match its catalog entry name.
 /// - Returns [`AgentBuildError::CustomToolCreateFailed`] when a custom-tool
 ///   factory cannot create its portable tool object.
 pub(crate) fn build_agent<C>(
     context: Arc<TaskBuildContext<C>>,
     name: &str,
     current_depth: u8,
-) -> Result<Agent<(), String>, AgentBuildError>
+) -> Result<HookedAgent, AgentBuildError>
 where
     C: CredentialLookup + Send + Sync + 'static,
 {
@@ -383,104 +710,108 @@ where
         &context.workspace_root,
         sandbox_ref,
         context.runtime.custom_tool_registry(),
+        context.runtime().hooks(),
     )?;
-    Ok(builder.system_prompt(prompt_builder.build()).build())
+    let agent = builder.system_prompt(prompt_builder.build()).build();
+    let hooks = context.runtime().hooks().clone();
+    let model_name = prepared.model().name().to_string();
+    Ok(HookedAgent::new(agent, hooks, name.to_string(), model_name))
+}
+
+/// Recovers the failure from a failed run dispatch.
+///
+/// Restores the captured inner-agent [`AgentRunError`] when the hook chain
+/// propagated its projection untouched. Any other dispatched error reached
+/// the caller through a hook returning or substituting its own error, so it
+/// is labeled as hook-origin.
+///
+/// [`AgentRunError`]: serdes_ai::agent::AgentRunError
+fn restore_run_error(
+    dispatched: reloaded_code_core::ToolError,
+    captured: &Mutex<Option<serdes_ai::agent::AgentRunError>>,
+) -> serdes_ai::agent::AgentRunError {
+    let captured = captured
+        .lock()
+        .expect("run error slot should not be poisoned")
+        .take();
+    match captured {
+        Some(inner) if run_error_projection(&inner).to_string() == dispatched.to_string() => inner,
+        _ => {
+            serdes_ai::agent::AgentRunError::Other(anyhow::anyhow!("run hook error: {dispatched}"))
+        }
+    }
+}
+
+/// Builds per-run [`RunOptions`] that merge [`ModelSettingsOverrides`] over
+/// the agent's configured settings.
+///
+/// Returns `None` when no override field is set, so those runs keep the plain
+/// [`Agent::run`] behavior. An overridden field replaces only that field;
+/// all others keep the agent's values, because a provided
+/// `RunOptions::model_settings` replaces the agent's settings wholesale.
+///
+/// Every [`ModelSettingsOverrides`] field is bound explicitly (no rest
+/// pattern), so adding a field fails compilation here; extend this function
+/// to apply the new field or reject it with
+/// [`ToolError::validation_for`][reloaded_code_core::ToolError::validation_for]
+/// naming `model_settings_overrides`.
+fn run_options_with_overrides(
+    agent: &Agent<(), String>,
+    overrides: Option<ModelSettingsOverrides>,
+) -> Option<RunOptions> {
+    let ModelSettingsOverrides { temperature, top_p } = overrides?;
+    if temperature.is_none() && top_p.is_none() {
+        return None;
+    }
+    let mut settings = agent.model_settings().clone();
+    if let Some(temperature) = temperature {
+        settings.temperature = Some(f64::from(temperature));
+    }
+    if let Some(top_p) = top_p {
+        settings.top_p = Some(f64::from(top_p));
+    }
+    Some(RunOptions::default().model_settings(settings))
+}
+
+/// Deterministic [`ToolError`] projection of an inner-agent run failure that
+/// the run hook chain carries. The dispatch site recognizes an untouched
+/// projection and restores the original [`AgentRunError`] afterward.
+///
+/// [`ToolError`]: reloaded_code_core::ToolError
+/// [`AgentRunError`]: serdes_ai::agent::AgentRunError
+fn run_error_projection(err: &serdes_ai::agent::AgentRunError) -> reloaded_code_core::ToolError {
+    reloaded_code_core::ToolError::Execution(err.to_string())
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use ahash::AHashMap;
-    use indexmap::IndexMap;
-    use reloaded_code_agents::{
-        AgentCatalog, AgentConfig, AgentDefaults, AgentMode, AgentRuntimeBuilder,
-        AgentToolSettings, PermissionRule,
+    use crate::agent_runtime::test_stubs::{
+        agent, allow_tools, catalog, credentials, pattern_task, workspace_root,
     };
-    use reloaded_code_core::CredentialResolver;
-    use reloaded_code_core::models::{
-        Modality, ModelCatalog, ModelInfo, ProviderIdx, ProviderInfo, ProviderModelSource,
-        ProviderSource, ProviderType,
+    use crate::mock::{FunctionModel, two_tools_then_text};
+    use reloaded_code_agents::{AgentCatalog, AgentDefaults, AgentMode, AgentRuntimeBuilder};
+    use reloaded_code_core::ToolOutput;
+    use reloaded_code_core::hooks::{
+        ModelSettingsOverrides, PreambleMessage, PreambleRole, RunHook, RunOriginal,
+        ToolCallContext, ToolHook, ToolHookFuture, ToolOriginal, ToolRequest,
     };
     use reloaded_code_core::permissions::{ExpandError, PermissionAction};
     use reloaded_code_core::tool_metadata::{
         read as read_meta, task as task_meta, write as write_meta,
     };
+    use serde_json::json;
+    use serdes_ai::core::{ModelResponse, ModelSettings};
+    use std::collections::HashSet;
+    use std::path::PathBuf;
+    use std::sync::Mutex;
+    use tempfile::TempDir;
 
     type TestResult = Result<(), ExpandError>;
 
-    fn agent(
-        name: &str,
-        mode: AgentMode,
-        permission: IndexMap<String, PermissionRule>,
-        prompt: &str,
-    ) -> AgentConfig {
-        AgentConfig {
-            name: name.into(),
-            mode,
-            description: format!("{name} description").into(),
-            model: None,
-            hidden: false,
-            temperature: None,
-            top_p: None,
-            permission,
-            options: AHashMap::new(),
-            tool_settings: AgentToolSettings::default(),
-            prompt: prompt.into(),
-        }
-    }
-
-    fn allow_tools(names: &[&str]) -> IndexMap<String, PermissionRule> {
-        names
-            .iter()
-            .map(|n| ((*n).into(), PermissionRule::Action(PermissionAction::Allow)))
-            .collect()
-    }
-
-    fn pattern_task(patterns: &[(&str, PermissionAction)]) -> IndexMap<String, PermissionRule> {
-        let mut map = IndexMap::new();
-        for (pattern, action) in patterns {
-            map.insert(pattern.to_string(), *action);
-        }
-        IndexMap::from([(task_meta::NAME.into(), PermissionRule::Pattern(map))])
-    }
-
-    fn catalog() -> ModelCatalog {
-        let providers = vec![ProviderSource::new(
-            "openrouter",
-            ProviderInfo {
-                api_url: "https://openrouter.ai/api/v1".into(),
-                env_vars: vec!["OPENROUTER_API_KEY".into()],
-                api_type: ProviderType::OpenRouter,
-            },
-        )];
-        let info = ModelInfo {
-            modalities: Modality::TEXT,
-            max_input: 128_000,
-            max_output: 16_384,
-            temperature: Some(1.0),
-            top_p: Some(0.95),
-        };
-        let models: Vec<ProviderModelSource<'_>> =
-            [("openai/gpt-4.1-mini", info), ("openai/gpt-4o", info)]
-                .into_iter()
-                .map(|(key, i)| ProviderModelSource::new(ProviderIdx::new(0), key, i))
-                .collect();
-        ModelCatalog::build(&providers, &models).expect("catalog fixture should build")
-    }
-
-    fn credentials() -> Arc<CredentialResolver<false>> {
-        let mut resolver = CredentialResolver::without_env();
-        resolver.set_override("OPENROUTER_API_KEY", "test-key");
-        Arc::new(resolver)
-    }
-
-    fn workspace_root() -> Arc<Path> {
-        Arc::from(reloaded_code_core::resolve_workspace_root().expect("workspace root"))
-    }
-
     #[test]
     fn build_agent_skips_task_tool_when_no_targets_are_callable() -> TestResult {
-        let credentials = credentials();
+        let credentials = Arc::new(credentials());
         let model_catalog = Arc::new(catalog());
 
         let runtime = AgentRuntimeBuilder::new()
@@ -496,18 +827,12 @@ mod tests {
             .defaults(AgentDefaults::with_model("openrouter/openai/gpt-4.1-mini"))
             .build()?;
 
-        let context = Arc::new(TaskBuildContext {
-            runtime: Arc::new(runtime),
+        let context = Arc::new(TaskBuildContext::new_for_test(
+            Arc::new(runtime),
             model_catalog,
             credentials,
-            workspace_root: workspace_root(),
-            #[cfg(any(test, feature = "mock"))]
-            model_override: None,
-            #[cfg(all(feature = "linux-bubblewrap", target_os = "linux"))]
-            bash_sandbox: None,
-            #[cfg(all(feature = "linux-bubblewrap", target_os = "linux"))]
-            _sandbox_tmpdir: None,
-        });
+            workspace_root(),
+        ));
 
         let agent = build_agent(context, "caller", 0).expect("build should succeed");
         let names: Vec<_> = agent.tools().iter().map(|t| t.name()).collect();
@@ -517,7 +842,7 @@ mod tests {
 
     #[test]
     fn build_agent_attaches_task_when_callable_targets_exist() -> TestResult {
-        let credentials = credentials();
+        let credentials = Arc::new(credentials());
         let model_catalog = Arc::new(catalog());
 
         let runtime = AgentRuntimeBuilder::new()
@@ -538,18 +863,12 @@ mod tests {
             .defaults(AgentDefaults::with_model("openrouter/openai/gpt-4.1-mini"))
             .build()?;
 
-        let context = Arc::new(TaskBuildContext {
-            runtime: Arc::new(runtime),
+        let context = Arc::new(TaskBuildContext::new_for_test(
+            Arc::new(runtime),
             model_catalog,
             credentials,
-            workspace_root: workspace_root(),
-            #[cfg(any(test, feature = "mock"))]
-            model_override: None,
-            #[cfg(all(feature = "linux-bubblewrap", target_os = "linux"))]
-            bash_sandbox: None,
-            #[cfg(all(feature = "linux-bubblewrap", target_os = "linux"))]
-            _sandbox_tmpdir: None,
-        });
+            workspace_root(),
+        ));
 
         let agent = build_agent(context, "caller", 0).expect("build should succeed");
         let names: Vec<_> = agent.tools().iter().map(|t| t.name()).collect();
@@ -559,10 +878,39 @@ mod tests {
     }
 
     #[test]
-    fn build_agent_attaches_task_when_task_permission_is_target_scoped() -> TestResult {
-        let credentials = credentials();
+    fn build_agent_attaches_task_according_to_task_permission() -> TestResult {
+        // Task permission absent: delegation defaults to every non-Primary
+        // target, so the Task tool attaches alongside the allowed `read`.
+        let credentials = Arc::new(credentials());
         let model_catalog = Arc::new(catalog());
 
+        let runtime = AgentRuntimeBuilder::new()
+            .catalog(AgentCatalog::from_entries([
+                agent(
+                    "caller",
+                    AgentMode::Primary,
+                    allow_tools(&[read_meta::NAME]),
+                    "prompt",
+                ),
+                agent("reader", AgentMode::Subagent, allow_tools(&[]), "prompt"),
+            ]))
+            .defaults(AgentDefaults::with_model("openrouter/openai/gpt-4.1-mini"))
+            .build()?;
+
+        let context = Arc::new(TaskBuildContext::new_for_test(
+            Arc::new(runtime),
+            model_catalog.clone(),
+            credentials.clone(),
+            workspace_root(),
+        ));
+
+        let built = build_agent(context, "caller", 0).expect("build should succeed");
+        let names: Vec<_> = built.tools().iter().map(|t| t.name()).collect();
+        assert!(names.contains(&read_meta::NAME));
+        assert!(names.contains(&task_meta::NAME));
+
+        // Pattern-scoped Task permission: only the `reader` target is
+        // callable and no other tool is allowed, so Task attaches alone.
         let runtime = AgentRuntimeBuilder::new()
             .catalog(AgentCatalog::from_entries([
                 agent(
@@ -579,96 +927,22 @@ mod tests {
             .defaults(AgentDefaults::with_model("openrouter/openai/gpt-4.1-mini"))
             .build()?;
 
-        let context = Arc::new(TaskBuildContext {
-            runtime: Arc::new(runtime),
-            model_catalog,
-            credentials,
-            workspace_root: workspace_root(),
-            #[cfg(any(test, feature = "mock"))]
-            model_override: None,
-            #[cfg(all(feature = "linux-bubblewrap", target_os = "linux"))]
-            bash_sandbox: None,
-            #[cfg(all(feature = "linux-bubblewrap", target_os = "linux"))]
-            _sandbox_tmpdir: None,
-        });
+        let context = Arc::new(TaskBuildContext::new_for_test(
+            Arc::new(runtime),
+            model_catalog.clone(),
+            credentials.clone(),
+            workspace_root(),
+        ));
 
-        let agent = build_agent(context, "caller", 0).expect("build should succeed");
-        let names: Vec<_> = agent.tools().iter().map(|t| t.name()).collect();
+        let built = build_agent(context, "caller", 0).expect("build should succeed");
+        let names: Vec<_> = built.tools().iter().map(|t| t.name()).collect();
         assert_eq!(names, vec![task_meta::NAME]);
         Ok(())
     }
 
     #[test]
-    fn build_agent_attaches_task_when_permission_task_is_absent() -> TestResult {
-        let credentials = credentials();
-        let model_catalog = Arc::new(catalog());
-
-        let runtime = AgentRuntimeBuilder::new()
-            .catalog(AgentCatalog::from_entries([
-                agent(
-                    "caller",
-                    AgentMode::Primary,
-                    allow_tools(&[read_meta::NAME]),
-                    "prompt",
-                ),
-                agent("reader", AgentMode::Subagent, allow_tools(&[]), "prompt"),
-            ]))
-            .defaults(AgentDefaults::with_model("openrouter/openai/gpt-4.1-mini"))
-            .build()?;
-
-        let context = Arc::new(TaskBuildContext {
-            runtime: Arc::new(runtime),
-            model_catalog,
-            credentials,
-            workspace_root: workspace_root(),
-            #[cfg(any(test, feature = "mock"))]
-            model_override: None,
-            #[cfg(all(feature = "linux-bubblewrap", target_os = "linux"))]
-            bash_sandbox: None,
-            #[cfg(all(feature = "linux-bubblewrap", target_os = "linux"))]
-            _sandbox_tmpdir: None,
-        });
-
-        let agent = build_agent(context, "caller", 0).expect("build should succeed");
-        let names: Vec<_> = agent.tools().iter().map(|t| t.name()).collect();
-        assert!(names.contains(&read_meta::NAME));
-        assert!(names.contains(&task_meta::NAME));
-        Ok(())
-    }
-
-    #[test]
-    fn agent_build_context_omits_task_tool_when_no_targets_are_callable() -> TestResult {
-        let model_catalog = Arc::new(catalog());
-        let credentials = credentials();
-
-        let runtime = AgentRuntimeBuilder::new()
-            .catalog(AgentCatalog::from_entries([
-                agent(
-                    "caller",
-                    AgentMode::Primary,
-                    allow_tools(&[read_meta::NAME]),
-                    "prompt",
-                ),
-                agent("other", AgentMode::Primary, allow_tools(&[]), "prompt"),
-            ]))
-            .defaults(AgentDefaults::with_model("openrouter/openai/gpt-4.1-mini"))
-            .build()?;
-
-        let context = AgentBuildContext::new(
-            Arc::new(runtime),
-            model_catalog,
-            credentials,
-            workspace_root(),
-        );
-        let agent = context.build("caller").expect("build should succeed");
-        let names: Vec<_> = agent.tools().iter().map(|t| t.name()).collect();
-        assert!(!names.contains(&task_meta::NAME));
-        Ok(())
-    }
-
-    #[test]
     fn build_agent_omits_task_tool_at_max_depth() -> TestResult {
-        let credentials = credentials();
+        let credentials = Arc::new(credentials());
         let model_catalog = Arc::new(catalog());
 
         let runtime = AgentRuntimeBuilder::new()
@@ -690,18 +964,12 @@ mod tests {
             .max_task_depth(1)
             .build()?;
 
-        let context = Arc::new(TaskBuildContext {
-            runtime: Arc::new(runtime),
+        let context = Arc::new(TaskBuildContext::new_for_test(
+            Arc::new(runtime),
             model_catalog,
             credentials,
-            workspace_root: workspace_root(),
-            #[cfg(any(test, feature = "mock"))]
-            model_override: None,
-            #[cfg(all(feature = "linux-bubblewrap", target_os = "linux"))]
-            bash_sandbox: None,
-            #[cfg(all(feature = "linux-bubblewrap", target_os = "linux"))]
-            _sandbox_tmpdir: None,
-        });
+            workspace_root(),
+        ));
 
         let agent = build_agent(context, "caller", 1).expect("build should succeed");
         let names: Vec<_> = agent.tools().iter().map(|t| t.name()).collect();
@@ -710,40 +978,642 @@ mod tests {
         Ok(())
     }
 
-    #[test]
-    fn agent_build_context_omits_task_tool_when_max_depth_is_zero() -> TestResult {
-        let model_catalog = Arc::new(catalog());
-        let credentials = credentials();
+    /// Denies `write` calls to files the run has not `read`.
+    ///
+    /// The shared hook instance fires for every tool call of the run, so the
+    /// set of read files lives behind interior mutability. Reads record their
+    /// target keyed by `(run_id, path)` so authorization cannot leak across
+    /// runs; writes to never-read targets get an explanatory result without
+    /// calling `original`, which is what short-circuits the real tool.
+    struct ReadBeforeWriteHook {
+        read_files: Mutex<HashSet<(String, PathBuf)>>,
+    }
+
+    impl ToolHook for ReadBeforeWriteHook {
+        fn hook<'a>(
+            &'a self,
+            ctx: &'a ToolCallContext<'a>,
+            req: ToolRequest,
+            original: ToolOriginal<'a>,
+        ) -> ToolHookFuture<'a> {
+            Box::pin(async move {
+                let target = req
+                    .args
+                    .get("file_path")
+                    .and_then(|value| value.as_str())
+                    .map(PathBuf::from);
+
+                match (ctx.tool_name, target) {
+                    (read_meta::NAME, Some(path)) => {
+                        // Record the read before continuing so the lock is
+                        // never held across the await.
+                        self.read_files
+                            .lock()
+                            .expect("read_files should not be poisoned")
+                            .insert((ctx.run_id.to_string(), path));
+                        original.call(ctx, req).await
+                    }
+                    (write_meta::NAME, Some(path)) => {
+                        let was_read = self
+                            .read_files
+                            .lock()
+                            .expect("read_files should not be poisoned")
+                            .contains(&(ctx.run_id.to_string(), path.clone()));
+                        if was_read {
+                            return original.call(ctx, req).await;
+                        }
+                        // Skipping `original` blocks the call: the real
+                        // `write` sits behind it and is never reached.
+                        Ok(ToolOutput::new(format!(
+                            "[blocked by hook] write to {} denied: no read of that file \
+                             happened this run",
+                            path.display()
+                        )))
+                    }
+                    _ => original.call(ctx, req).await,
+                }
+            })
+        }
+    }
+
+    #[tokio::test]
+    async fn tool_hook_denies_write_to_never_read_file_during_agent_run() {
+        // Workspace fixture: the model reads `service.env`, then tries to
+        // write `draft.md`, a file the run never reads.
+        let workspace = TempDir::new().expect("create temp workspace");
+        let read_file = workspace.path().join("service.env");
+        std::fs::write(&read_file, "LOG_LEVEL=debug\n").expect("write read fixture");
+        let unread_target = workspace.path().join("draft.md");
+
+        let hooks = HookSet::builder()
+            .tool_hook(ReadBeforeWriteHook {
+                read_files: Mutex::new(HashSet::new()),
+            })
+            .build();
 
         let runtime = AgentRuntimeBuilder::new()
-            .catalog(AgentCatalog::from_entries([
-                agent(
-                    "caller",
-                    AgentMode::All,
-                    allow_tools(&[task_meta::NAME, read_meta::NAME]),
-                    "prompt",
-                ),
-                agent(
-                    "target",
-                    AgentMode::All,
-                    allow_tools(&[write_meta::NAME]),
-                    "prompt",
-                ),
-            ]))
+            .catalog(AgentCatalog::from_entries([agent(
+                "caller",
+                AgentMode::Primary,
+                allow_tools(&[read_meta::NAME, write_meta::NAME]),
+                "prompt",
+            )]))
             .defaults(AgentDefaults::with_model("openrouter/openai/gpt-4.1-mini"))
-            .max_task_depth(0)
-            .build()?;
+            .hooks(hooks)
+            .build()
+            .expect("runtime should build");
+
+        // Script the model: first turn reads the fixture, second turn writes
+        // the never-read target, final turn echoes the collected tool returns.
+        let context = AgentBuildContext::new(
+            Arc::new(runtime),
+            Arc::new(catalog()),
+            Arc::new(credentials()),
+            Arc::from(workspace.path()),
+        )
+        .with_model_override(two_tools_then_text(
+            (read_meta::NAME, json!({"file_path": "service.env"})),
+            (
+                write_meta::NAME,
+                json!({"file_path": "draft.md", "content": "Draft notes."}),
+            ),
+            "Run finished.",
+        ));
+        let hooked = context.build("caller").expect("build should succeed");
+
+        let result = hooked
+            .run("Read the config, then write the draft.", ())
+            .await
+            .expect("run should complete");
+
+        // The real `read` executed: its result is the only source of the
+        // fixture content in the final answer.
+        assert!(
+            result.output().contains("LOG_LEVEL=debug"),
+            "real read result should reach the model: {}",
+            result.output()
+        );
+
+        // The denied `write` never executed; the hook's response reached the
+        // model in its place and the target file was never created.
+        assert!(
+            result.output().contains("[blocked by hook]"),
+            "hook denial should reach the model: {}",
+            result.output()
+        );
+        assert!(
+            !unread_target.exists(),
+            "the denied write must not create {}",
+            unread_target.display()
+        );
+    }
+
+    /// Model settings overrides: applied per run, merged over the agent's
+    /// configured settings, with prompt-prepend behavior untouched.
+
+    /// Run hook that installs fixed model settings overrides before
+    /// delegating to `original`.
+    struct OverridingRunHook {
+        temperature: Option<f32>,
+        top_p: Option<f32>,
+    }
+
+    impl RunHook for OverridingRunHook {
+        fn hook<'a>(
+            &'a self,
+            ctx: &'a HookRunContext<'a>,
+            mut config: RunConfig,
+            original: RunOriginal<'a>,
+        ) -> RunHookFuture<'a> {
+            config.model_settings_overrides = Some(ModelSettingsOverrides {
+                temperature: self.temperature,
+                top_p: self.top_p,
+            });
+            original.call(ctx, config)
+        }
+    }
+
+    /// Run hook that injects prompt sections plus a temperature override
+    /// before delegating to `original`.
+    struct PromptAndSettingsOverrideRunHook;
+
+    impl RunHook for PromptAndSettingsOverrideRunHook {
+        fn hook<'a>(
+            &'a self,
+            ctx: &'a HookRunContext<'a>,
+            mut config: RunConfig,
+            original: RunOriginal<'a>,
+        ) -> RunHookFuture<'a> {
+            config.system_prompt = Some("agent system override".into());
+            config.preamble_messages = vec![
+                PreambleMessage {
+                    role: PreambleRole::System,
+                    content: "sys note".into(),
+                },
+                PreambleMessage {
+                    role: PreambleRole::User,
+                    content: "user note".into(),
+                },
+            ];
+            config.model_settings_overrides = Some(ModelSettingsOverrides {
+                temperature: Some(0.9),
+                top_p: None,
+            });
+            original.call(ctx, config)
+        }
+    }
+
+    /// Builds a hooked agent with agent-level settings temperature 0.3 and
+    /// top_p 0.8, running a model that records the [`ModelSettings`] of every
+    /// request and echoes the last user prompt.
+    fn hooked_agent_with_settings_capture(
+        hook: impl RunHook + 'static,
+    ) -> (HookedAgent, Arc<Mutex<Vec<ModelSettings>>>) {
+        let captured: Arc<Mutex<Vec<ModelSettings>>> = Arc::new(Mutex::new(Vec::new()));
+        let seen = Arc::clone(&captured);
+        let model = FunctionModel::new(move |messages, settings| {
+            seen.lock()
+                .expect("captured settings should not be poisoned")
+                .push(settings.clone());
+            let last_user = messages
+                .iter()
+                .rev()
+                .flat_map(|m| m.user_prompts())
+                .next()
+                .and_then(|prompt| prompt.as_text())
+                .unwrap_or_default()
+                .to_string();
+            ModelResponse::text(last_user)
+        });
+
+        let hooks = HookSet::builder().run_hook(hook).build();
+        let mut defaults = AgentDefaults::with_model("openrouter/openai/gpt-4.1-mini");
+        defaults.temperature = Some(0.3);
+        defaults.top_p = Some(0.8);
+        let runtime = AgentRuntimeBuilder::new()
+            .catalog(AgentCatalog::from_entries([agent(
+                "caller",
+                AgentMode::Primary,
+                allow_tools(&[]),
+                "prompt",
+            )]))
+            .defaults(defaults)
+            .hooks(hooks)
+            .build()
+            .expect("runtime should build");
 
         let context = AgentBuildContext::new(
             Arc::new(runtime),
-            model_catalog,
-            credentials,
+            Arc::new(catalog()),
+            Arc::new(credentials()),
             workspace_root(),
+        )
+        .with_model_override(model);
+        let hooked = context.build("caller").expect("build should succeed");
+        (hooked, captured)
+    }
+
+    #[tokio::test]
+    async fn model_settings_override_replaces_only_the_overridden_setting_in_request() {
+        let (hooked, captured) = hooked_agent_with_settings_capture(OverridingRunHook {
+            temperature: Some(0.9),
+            top_p: None,
+        });
+
+        hooked.run("hello", ()).await.expect("run should complete");
+
+        let seen = captured
+            .lock()
+            .expect("captured settings should not be poisoned");
+        assert_eq!(seen.len(), 1, "one model request should have been made");
+        assert_eq!(seen[0].temperature, Some(f64::from(0.9_f32)));
+        assert_eq!(
+            seen[0].top_p,
+            Some(f64::from(0.8_f32)),
+            "agent-configured top_p should be retained"
         );
-        let agent = context.build("caller").expect("build should succeed");
-        let names: Vec<_> = agent.tools().iter().map(|t| t.name()).collect();
-        assert!(!names.contains(&task_meta::NAME));
-        assert!(names.contains(&read_meta::NAME));
-        Ok(())
+        drop(seen);
+
+        // Mirror direction: a top_p-only override replaces top_p and keeps
+        // the agent-configured temperature.
+        let (hooked, captured) = hooked_agent_with_settings_capture(OverridingRunHook {
+            temperature: None,
+            top_p: Some(0.6),
+        });
+
+        hooked.run("hello", ()).await.expect("run should complete");
+
+        let seen = captured
+            .lock()
+            .expect("captured settings should not be poisoned");
+        assert_eq!(seen.len(), 1, "one model request should have been made");
+        assert_eq!(seen[0].top_p, Some(f64::from(0.6_f32)));
+        assert_eq!(
+            seen[0].temperature,
+            Some(f64::from(0.3_f32)),
+            "agent-configured temperature should be retained"
+        );
+    }
+
+    #[tokio::test]
+    async fn run_without_model_settings_overrides_uses_agent_configured_settings() {
+        // Absent overrides: `RunConfig::default()` flows through untouched.
+        let (hooked, captured) = hooked_agent_with_settings_capture(PassthroughRunHook);
+        hooked.run("hello", ()).await.expect("run should complete");
+
+        // All-None overrides: no field is set, so agent settings apply as-is.
+        let (hooked, captured_empty) = hooked_agent_with_settings_capture(OverridingRunHook {
+            temperature: None,
+            top_p: None,
+        });
+        hooked.run("hello", ()).await.expect("run should complete");
+
+        let expected = ModelSettings {
+            temperature: Some(f64::from(0.3_f32)),
+            top_p: Some(f64::from(0.8_f32)),
+            ..ModelSettings::default()
+        };
+        for run in [captured, captured_empty] {
+            let seen = run
+                .lock()
+                .expect("captured settings should not be poisoned");
+            assert_eq!(seen.len(), 1, "one model request should have been made");
+            assert_eq!(
+                seen[0], expected,
+                "no-override runs must use the agent's configured settings"
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn prompt_sections_are_unchanged_when_model_settings_overrides_are_present() {
+        let (hooked, captured) =
+            hooked_agent_with_settings_capture(PromptAndSettingsOverrideRunHook);
+
+        let output = hooked
+            .run("base prompt", ())
+            .await
+            .expect("run should complete")
+            .into_output();
+
+        // The echoed prompt still leads with system prompt, preamble
+        // messages in configured order, then the original prompt.
+        assert_eq!(
+            output,
+            "agent system override\n\n[System] sys note\n\n[User] user note\n\nbase prompt"
+        );
+
+        // The same run carried the override, proving prompt handling is
+        // untouched while model settings change.
+        let seen = captured
+            .lock()
+            .expect("captured settings should not be poisoned");
+        assert_eq!(seen[0].temperature, Some(f64::from(0.9_f32)));
+        assert_eq!(
+            seen[0].top_p,
+            Some(f64::from(0.8_f32)),
+            "agent-configured top_p should be retained"
+        );
+    }
+
+    /// Model whose every request fails, so the inner agent run surfaces a
+    /// real `AgentRunError::Model` failure.
+    struct FailingModel {
+        profile: serdes_ai_models::ModelProfile,
+    }
+
+    impl FailingModel {
+        fn new() -> Self {
+            Self {
+                profile: serdes_ai_models::ModelProfile::default(),
+            }
+        }
+    }
+
+    #[async_trait::async_trait]
+    impl serdes_ai_models::Model for FailingModel {
+        fn name(&self) -> &str {
+            "failing-model"
+        }
+
+        fn system(&self) -> &str {
+            "test"
+        }
+
+        fn profile(&self) -> &serdes_ai_models::ModelProfile {
+            &self.profile
+        }
+
+        async fn request(
+            &self,
+            _messages: &[ModelRequest],
+            _settings: &serdes_ai::core::ModelSettings,
+            _params: &serdes_ai_models::ModelRequestParameters,
+        ) -> Result<serdes_ai::core::ModelResponse, serdes_ai_models::ModelError> {
+            Err(serdes_ai_models::ModelError::api("upstream exploded"))
+        }
+
+        async fn request_stream(
+            &self,
+            _messages: &[ModelRequest],
+            _settings: &serdes_ai::core::ModelSettings,
+            _params: &serdes_ai_models::ModelRequestParameters,
+        ) -> Result<serdes_ai_models::StreamedResponse, serdes_ai_models::ModelError> {
+            Err(serdes_ai_models::ModelError::api("upstream exploded"))
+        }
+    }
+
+    /// Run hook that delegates straight to `original`, standing in for any
+    /// observer hook that never interferes with the run.
+    struct PassthroughRunHook;
+
+    impl RunHook for PassthroughRunHook {
+        fn hook<'a>(
+            &'a self,
+            ctx: &'a HookRunContext<'a>,
+            config: RunConfig,
+            original: RunOriginal<'a>,
+        ) -> RunHookFuture<'a> {
+            original.call(ctx, config)
+        }
+    }
+
+    /// Run hook that skips `original` and fails on its own.
+    struct FailingRunHook;
+
+    impl RunHook for FailingRunHook {
+        fn hook<'a>(
+            &'a self,
+            _ctx: &'a HookRunContext<'a>,
+            _config: RunConfig,
+            _original: RunOriginal<'a>,
+        ) -> RunHookFuture<'a> {
+            Box::pin(async {
+                Err(reloaded_code_core::ToolError::Execution(
+                    "hook rejected the run".into(),
+                ))
+            })
+        }
+    }
+
+    /// Run hook that observes the original run's failure and substitutes its
+    /// own error instead of propagating it.
+    struct SubstitutingRunHook;
+
+    impl RunHook for SubstitutingRunHook {
+        fn hook<'a>(
+            &'a self,
+            ctx: &'a HookRunContext<'a>,
+            config: RunConfig,
+            original: RunOriginal<'a>,
+        ) -> RunHookFuture<'a> {
+            Box::pin(async move {
+                match original.call(ctx, config).await {
+                    Err(_) => Err(reloaded_code_core::ToolError::Execution(
+                        "policy veto".into(),
+                    )),
+                    ok => ok,
+                }
+            })
+        }
+    }
+
+    #[tokio::test]
+    async fn run_failure_keeps_original_error_variant_when_hook_propagates_it_untouched() {
+        // The hook calls `original`, so the inner model failure flows
+        // through the whole chain before reaching the caller.
+        let hooks = HookSet::builder().run_hook(PassthroughRunHook).build();
+
+        let runtime = AgentRuntimeBuilder::new()
+            .catalog(AgentCatalog::from_entries([agent(
+                "caller",
+                AgentMode::Primary,
+                allow_tools(&[]),
+                "prompt",
+            )]))
+            .defaults(AgentDefaults::with_model("openrouter/openai/gpt-4.1-mini"))
+            .hooks(hooks)
+            .build()
+            .expect("runtime should build");
+
+        let context = AgentBuildContext::new(
+            Arc::new(runtime),
+            Arc::new(catalog()),
+            Arc::new(credentials()),
+            workspace_root(),
+        )
+        .with_model_override(FailingModel::new());
+        let hooked = context.build("caller").expect("build should succeed");
+
+        let err = hooked
+            .run("trigger the failure", ())
+            .await
+            .err()
+            .expect("run should fail");
+
+        assert!(
+            matches!(
+                err,
+                serdes_ai::agent::AgentRunError::Model(serdes_ai_models::ModelError::Api { .. })
+            ),
+            "inner model failure should keep its variant, got: {err:?}"
+        );
+        assert!(
+            !err.to_string().contains("run hook error"),
+            "untouched inner failure must not be labeled as a hook error: {err}"
+        );
+    }
+
+    #[tokio::test]
+    async fn run_failure_keeps_original_error_variant_when_model_settings_overrides_are_present() {
+        // The override routes the run through `run_with_options`; its
+        // failures must keep the same untouched-projection handling as
+        // plain runs.
+        let hooks = HookSet::builder()
+            .run_hook(OverridingRunHook {
+                temperature: Some(0.9),
+                top_p: None,
+            })
+            .build();
+
+        let runtime = AgentRuntimeBuilder::new()
+            .catalog(AgentCatalog::from_entries([agent(
+                "caller",
+                AgentMode::Primary,
+                allow_tools(&[]),
+                "prompt",
+            )]))
+            .defaults(AgentDefaults::with_model("openrouter/openai/gpt-4.1-mini"))
+            .hooks(hooks)
+            .build()
+            .expect("runtime should build");
+
+        let context = AgentBuildContext::new(
+            Arc::new(runtime),
+            Arc::new(catalog()),
+            Arc::new(credentials()),
+            workspace_root(),
+        )
+        .with_model_override(FailingModel::new());
+        let hooked = context.build("caller").expect("build should succeed");
+
+        let err = hooked
+            .run("trigger the failure", ())
+            .await
+            .err()
+            .expect("run should fail");
+
+        assert!(
+            matches!(
+                err,
+                serdes_ai::agent::AgentRunError::Model(serdes_ai_models::ModelError::Api { .. })
+            ),
+            "inner model failure should keep its variant, got: {err:?}"
+        );
+        assert!(
+            !err.to_string().contains("run hook error"),
+            "untouched inner failure must not be labeled as a hook error: {err}"
+        );
+    }
+
+    #[tokio::test]
+    async fn run_failure_is_labeled_hook_error_when_hook_returns_its_own_error() {
+        // The hook skips `original` and fails on its own, so the model is
+        // never invoked and the failure can only be hook-origin.
+        let hooks = HookSet::builder().run_hook(FailingRunHook).build();
+
+        let runtime = AgentRuntimeBuilder::new()
+            .catalog(AgentCatalog::from_entries([agent(
+                "caller",
+                AgentMode::Primary,
+                allow_tools(&[]),
+                "prompt",
+            )]))
+            .defaults(AgentDefaults::with_model("openrouter/openai/gpt-4.1-mini"))
+            .hooks(hooks)
+            .build()
+            .expect("runtime should build");
+
+        let context = AgentBuildContext::new(
+            Arc::new(runtime),
+            Arc::new(catalog()),
+            Arc::new(credentials()),
+            workspace_root(),
+        )
+        .with_model_override(crate::mock::MockModel::new("unused").with_text_response("unused"));
+        let hooked = context.build("caller").expect("build should succeed");
+
+        let err = hooked
+            .run("trigger the hook failure", ())
+            .await
+            .err()
+            .expect("run should fail");
+
+        match err {
+            serdes_ai::agent::AgentRunError::Other(source) => {
+                let message = source.to_string();
+                assert!(
+                    message.contains("run hook error"),
+                    "hook-origin failure should be labeled as such: {message}"
+                );
+                assert!(
+                    message.contains("hook rejected the run"),
+                    "dispatched hook error should be preserved: {message}"
+                );
+            }
+            other => panic!("hook-substituted failure should surface as Other, got: {other:?}"),
+        }
+    }
+
+    #[tokio::test]
+    async fn run_failure_is_labeled_hook_error_when_hook_substitutes_its_own_error() {
+        // The hook calls `original`, sees the model failure, then returns a
+        // different error: the inner failure was observed but replaced, so
+        // the surfaced failure is hook-origin, not the inner one.
+        let hooks = HookSet::builder().run_hook(SubstitutingRunHook).build();
+
+        let runtime = AgentRuntimeBuilder::new()
+            .catalog(AgentCatalog::from_entries([agent(
+                "caller",
+                AgentMode::Primary,
+                allow_tools(&[]),
+                "prompt",
+            )]))
+            .defaults(AgentDefaults::with_model("openrouter/openai/gpt-4.1-mini"))
+            .hooks(hooks)
+            .build()
+            .expect("runtime should build");
+
+        let context = AgentBuildContext::new(
+            Arc::new(runtime),
+            Arc::new(catalog()),
+            Arc::new(credentials()),
+            workspace_root(),
+        )
+        .with_model_override(FailingModel::new());
+        let hooked = context.build("caller").expect("build should succeed");
+
+        let err = hooked
+            .run("trigger the failure", ())
+            .await
+            .err()
+            .expect("run should fail");
+
+        match err {
+            serdes_ai::agent::AgentRunError::Other(source) => {
+                let message = source.to_string();
+                assert!(
+                    message.contains("run hook error"),
+                    "hook-substituted failure should be labeled hook-origin: {message}"
+                );
+                assert!(
+                    message.contains("policy veto"),
+                    "hook's substituted error should be preserved: {message}"
+                );
+            }
+            other => {
+                panic!("hook-substituted failure must not surface the inner error, got: {other:?}")
+            }
+        }
     }
 }

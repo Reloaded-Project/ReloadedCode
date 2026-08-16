@@ -4,14 +4,9 @@
 //! [`AgentBuilder`] via
 //! [`AgentBuilderExt`](crate::agent_ext::AgentBuilderExt).
 //!
-//! [`AgentBuilder`]: serdes_ai::AgentBuilder
-//!
 //! The adapter is also used internally by the agent-runtime build layer, but
 //! it lives here so non-agent users can attach portable custom tools to a plain
 //! SerdesAI agent without going through [`AgentRuntimeBuilder`].
-//!
-//! [`AgentRuntimeBuilder`]: reloaded_code_agents::AgentRuntimeBuilder
-//! [`AgentBuilderExt`]: crate::agent_ext::AgentBuilderExt
 //!
 //! # Example
 //!
@@ -65,6 +60,10 @@
 //!     .build();
 //! # Ok::<(), Box<dyn std::error::Error>>(())
 //! ```
+//!
+//! [`AgentBuilder`]: serdes_ai::AgentBuilder
+//! [`AgentRuntimeBuilder`]: reloaded_code_agents::AgentRuntimeBuilder
+//! [`AgentBuilderExt`]: crate::agent_ext::AgentBuilderExt
 
 use async_trait::async_trait;
 use reloaded_code_core::context::ToolContext;

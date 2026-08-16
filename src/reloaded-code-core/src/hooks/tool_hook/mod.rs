@@ -1,4 +1,40 @@
-//! Tool hook types -- traits, futures, and chain trampoline.
+//! Tool hook types: intercept trait, context, request, and chain trampoline.
+//!
+//! # What a tool call is
+//!
+//! One tool call = one invocation of a single tool. The model requests
+//! the tool with JSON arguments, the tool runs, a result goes back to
+//! the model. Each request during a run is its own call.
+//!
+//! Tool hooks fire inside a run, once per tool call, under the same
+//! `run_id` as the enclosing run.
+//!
+//! [`ToolCallContext`] names the call: `tool_name` for the tool being
+//! called, `agent_name` for the agent making the call, `run_id` for
+//! the enclosing run.
+//!
+//! A tool hook wraps that single call. Code before
+//! [`ToolOriginal::call`] sees the raw [`ToolRequest`]: inspect the
+//! JSON arguments or rewrite them.
+//!
+//! Code after [`ToolOriginal::call`] sees the result returned by the
+//! next hook in the chain, or the real tool if none remain: an inner
+//! hook may wrap or replace it. Skipping `original` blocks the call:
+//! the real tool never runs and the hook's return value becomes the
+//! result.
+//!
+//! [`ToolOriginal`] is consumed by [`ToolOriginal::call`], so each hook
+//! can continue the chain at most once. There is no built-in retry: a
+//! hook that wants to block or replace the call returns its own result
+//! without calling the continuation.
+//!
+//! Multiple hooks run in registration order, outer-to-inner: the first
+//! registered hook is outermost, the last one sits directly on the
+//! real tool.
+//!
+//! Next: see [`RunHook`] for the whole-run intercept point.
+//!
+//! [`RunHook`]: crate::hooks::RunHook
 
 use crate::{ToolOutput, ToolResult};
 use serde_json::Value;
@@ -23,9 +59,9 @@ pub type ToolHookFuture<'a> = Pin<Box<dyn Future<Output = ToolResult<ToolOutput>
 
 /// Managed trampoline to the next hook or real tool.
 ///
-/// `ToolOriginal` is consumed by [`call`], so normal hooks call
-/// the continuation once. Hooks that intentionally retry can clone the
-/// request before calling and perform retries around one continuation call.
+/// `ToolOriginal` is consumed by [`call`], so each hook can continue
+/// the chain at most once. There is no built-in retry: block or replace
+/// the call by returning a result without invoking the continuation.
 ///
 /// [`call`]: Self::call
 pub struct ToolOriginal<'a> {

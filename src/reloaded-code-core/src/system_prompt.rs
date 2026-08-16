@@ -125,8 +125,6 @@ impl SystemPromptBuilder {
     /// * `name` - Section header (e.g., "Git Workflow", "GitHub CLI")
     /// * `context` - Context string content (e.g., [`GIT_WORKFLOW`])
     ///
-    /// [`GIT_WORKFLOW`]: crate::context::GIT_WORKFLOW
-    ///
     /// # Examples
     ///
     /// Adding both git and GitHub CLI context:
@@ -156,6 +154,8 @@ impl SystemPromptBuilder {
     /// assert!(prompt.contains("## Git Workflow"));
     /// assert!(!prompt.contains("## GitHub CLI"));
     /// ```
+    ///
+    /// [`GIT_WORKFLOW`]: crate::context::GIT_WORKFLOW
     #[inline]
     pub fn add_context(mut self, name: &'static str, context: &'static str) -> Self {
         self.supplemental.push((name, context));

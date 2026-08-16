@@ -3,6 +3,7 @@ PROMPT.md
 PROMPT-*.md
 PROMPT.MD
 PROMPT-*.MD
+artifact/
 
 # Local Code Review
 .vscode/local-reviews

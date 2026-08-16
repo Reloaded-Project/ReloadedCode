@@ -1,6 +1,6 @@
 //! HookSetBuilder — builder for constructing a [`HookSet`].
 
-use crate::hooks::{HookSet, SessionCompactFn, SessionEndFn, SessionStartFn, ToolHook, INLINE_CAP};
+use crate::hooks::{HookSet, RunHook, SessionCompactFn, ToolHook, INLINE_CAP};
 use std::fmt;
 use std::sync::Arc;
 use tinyvec::TinyVec;
@@ -9,8 +9,7 @@ use tinyvec::TinyVec;
 #[derive(Default)]
 pub struct HookSetBuilder {
     pub(super) tool_hooks: Vec<Arc<dyn ToolHook>>,
-    pub(super) session_start: TinyVec<[Option<SessionStartFn>; INLINE_CAP]>,
-    pub(super) session_end: TinyVec<[Option<SessionEndFn>; INLINE_CAP]>,
+    pub(super) run_hooks: Vec<Arc<dyn RunHook>>,
     pub(super) session_compact: TinyVec<[Option<SessionCompactFn>; INLINE_CAP]>,
 }
 
@@ -41,27 +40,30 @@ impl HookSetBuilder {
         self
     }
 
-    /// Registers a session-start event.
-    #[inline]
-    #[must_use]
-    pub fn on_session_start(mut self, event: SessionStartFn) -> Self {
-        self.session_start.push(Some(event));
-        self
-    }
-
-    /// Registers a session-end event.
-    #[inline]
-    #[must_use]
-    pub fn on_session_end(mut self, event: SessionEndFn) -> Self {
-        self.session_end.push(Some(event));
-        self
-    }
-
-    /// Registers a session-compact event.
+    /// Registers a compact event. Name preserved — compact is its own concept, distinct from "run".
     #[inline]
     #[must_use]
     pub fn on_session_compact(mut self, event: SessionCompactFn) -> Self {
         self.session_compact.push(Some(event));
+        self
+    }
+
+    /// Registers a game-style run hook.
+    ///
+    /// Hooks run in registration order. Each hook's `original` handle calls
+    /// the next registered hook, or the real run executor at the end of the chain.
+    #[inline]
+    #[must_use]
+    pub fn run_hook(mut self, hook: impl RunHook) -> Self {
+        self.run_hooks.push(Arc::new(hook));
+        self
+    }
+
+    /// Registers an already shared game-style run hook.
+    #[inline]
+    #[must_use]
+    pub fn shared_run_hook(mut self, hook: Arc<dyn RunHook>) -> Self {
+        self.run_hooks.push(hook);
         self
     }
 
@@ -71,8 +73,7 @@ impl HookSetBuilder {
     pub fn build(self) -> HookSet {
         HookSet {
             tool_hooks: self.tool_hooks,
-            session_start: self.session_start,
-            session_end: self.session_end,
+            run_hooks: self.run_hooks,
             session_compact: self.session_compact,
         }
     }
@@ -82,8 +83,7 @@ impl fmt::Debug for HookSetBuilder {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("HookSetBuilder")
             .field("tool_hooks", &self.tool_hooks.len())
-            .field("session_start", &self.session_start.len())
-            .field("session_end", &self.session_end.len())
+            .field("run_hooks", &self.run_hooks.len())
             .field("session_compact", &self.session_compact.len())
             .finish()
     }
@@ -92,6 +92,7 @@ impl fmt::Debug for HookSetBuilder {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::hooks::run_hook::{HookRunContext, RunConfig, RunHookFuture, RunOriginal};
     use crate::hooks::tool_hook::{ToolCallContext, ToolHookFuture, ToolOriginal, ToolRequest};
 
     #[test]
@@ -125,5 +126,50 @@ mod tests {
         assert!(!hooks.is_empty());
         assert!(!hooks.tool_hooks_is_empty());
         assert_eq!(hooks.tool_hooks().len(), 1);
+    }
+
+    #[test]
+    fn run_hook_registration_makes_hook_set_non_empty() {
+        struct NoopRun;
+        impl RunHook for NoopRun {
+            fn hook<'a>(
+                &'a self,
+                ctx: &'a HookRunContext<'a>,
+                config: RunConfig,
+                original: RunOriginal<'a>,
+            ) -> RunHookFuture<'a> {
+                original.call(ctx, config)
+            }
+        }
+        let hooks = HookSetBuilder::new().run_hook(NoopRun).build();
+        assert!(!hooks.is_empty());
+        assert!(!hooks.run_hooks_is_empty());
+        assert_eq!(hooks.run_hooks().len(), 1);
+    }
+
+    #[test]
+    fn shared_run_hook_registration() {
+        struct NoopRun;
+        impl RunHook for NoopRun {
+            fn hook<'a>(
+                &'a self,
+                ctx: &'a HookRunContext<'a>,
+                config: RunConfig,
+                original: RunOriginal<'a>,
+            ) -> RunHookFuture<'a> {
+                original.call(ctx, config)
+            }
+        }
+        let shared: Arc<dyn RunHook> = Arc::new(NoopRun);
+        let hooks = HookSetBuilder::new().shared_run_hook(shared).build();
+        assert!(!hooks.run_hooks_is_empty());
+        assert_eq!(hooks.run_hooks().len(), 1);
+    }
+
+    #[test]
+    fn builder_debug_includes_run_hooks() {
+        let builder = HookSetBuilder::new();
+        let debug = format!("{:?}", builder);
+        assert!(debug.contains("run_hooks"));
     }
 }
