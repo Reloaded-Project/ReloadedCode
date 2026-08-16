@@ -6,8 +6,9 @@
 //! `RunConfig` and prints a confirmation message.
 //!
 //! Expected output:
+//!   Built agent with 0 tools.
 //!   [PreambleInjector] injecting preamble for agent=hook-demo
-//!   Output: Hello from the mock model.
+//!   Output: Mock response
 //!
 //! Run with:
 //!   cargo run --example serdesai-run-hook -p reloaded-code-serdesai --features mock

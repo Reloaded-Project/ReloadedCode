@@ -5,9 +5,9 @@
 //! model override, and verifies the callbacks fire around the run.
 //!
 //! Expected output:
-//!   [on_run_start] agent=demo-agent
-//!   [on_run_end] agent=demo-agent, reason=Completed
-//!   Output: Hello from the mock model.
+//!   [on_run_start] agent=event-demo
+//!   [on_run_end] agent=event-demo, reason=Completed
+//!   Output: Mock response
 //!
 //! Run with:
 //!   cargo run --example serdesai-run-event -p reloaded-code-serdesai --features mock

@@ -8,7 +8,7 @@
 //!   [SecondHook] before
 //!   [SecondHook] after
 //!   [FirstHook] after
-//!   Output: Hello from the mock model.
+//!   Output: Mock response
 //!
 //! Run with:
 //!   cargo run --example serdesai-run-chain -p reloaded-code-serdesai --features mock
