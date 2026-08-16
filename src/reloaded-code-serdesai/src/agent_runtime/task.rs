@@ -13,12 +13,12 @@ use reloaded_code_agents::AgentRuntime;
 #[cfg(all(feature = "linux-bubblewrap", target_os = "linux"))]
 use reloaded_code_bubblewrap::{CreateSandboxError, Preset, Profile, TempSandboxDirs};
 use reloaded_code_core::hooks::{
-    EndReason, HookRunContext, HookSet, PreambleRole, RunConfig, RunExecutor, RunHookFuture,
-    RunOutput, RunUsage,
+    EndReason, HookRunContext, HookSet, ModelSettingsOverrides, PreambleRole, RunConfig,
+    RunExecutor, RunHookFuture, RunOutput, RunUsage,
 };
 use reloaded_code_core::{CredentialLookup, CredentialResolver, models::ModelCatalog};
 use serdes_ai::core::ModelRequest;
-use serdes_ai::{Agent, AgentBuilder};
+use serdes_ai::{Agent, AgentBuilder, RunOptions};
 #[cfg(any(test, feature = "mock"))]
 use serdes_ai_models::BoxedModel;
 use std::path::Path;
@@ -57,7 +57,9 @@ pub struct HookedAgentRunResult {
 ///
 /// Applies `RunConfig::preamble_messages` and `system_prompt` to the prompt
 /// text before calling the agent, because the built agent does not support
-/// runtime mutation of those fields.
+/// runtime mutation of those fields. Applies `model_settings_overrides` to
+/// the per-run model settings via [`RunOptions`], merged over the agent's
+/// configured settings.
 ///
 /// On inner failure the hook chain sees a [`ToolError::Execution`] projection
 /// while the original [`AgentRunError`] is parked in `error`; the dispatch
@@ -330,7 +332,8 @@ impl HookedAgent {
     /// When no run hooks are registered this delegates directly to the inner
     /// agent for zero overhead. Otherwise it builds a `RunConfig`, runs the
     /// hook chain, applies any `preamble_messages` or `system_prompt`
-    /// mutations to the prompt text, and returns the result.
+    /// mutations to the prompt text, applies `model_settings_overrides` to
+    /// the per-run model settings, and returns the result.
     ///
     /// The run-hook context carries a wrapper-generated `run_id`. The inner
     /// agent assigns its own id for tool hooks; SerdesAI `RunOptions` has no
@@ -594,11 +597,17 @@ impl<'a> RunExecutor for SerdesRunExecutor<'a> {
 
         let extras = Arc::clone(&self.extras);
         let error = Arc::clone(&self.error);
+        let run_options = run_options_with_overrides(agent, config.model_settings_overrides);
         #[allow(clippy::let_unit_value)]
         let deps = self.deps;
         #[allow(clippy::unit_arg)]
         Box::pin(async move {
-            let response = match agent.run(prompt, deps).await {
+            let result = if let Some(options) = run_options {
+                agent.run_with_options(prompt, deps, options).await
+            } else {
+                agent.run(prompt, deps).await
+            };
+            let response = match result {
                 Ok(response) => response,
                 Err(err) => {
                     // Hooks see the `ToolError` projection; the original is
@@ -733,6 +742,37 @@ fn restore_run_error(
     }
 }
 
+/// Builds per-run [`RunOptions`] that merge [`ModelSettingsOverrides`] over
+/// the agent's configured settings.
+///
+/// Returns `None` when no override field is set, so those runs keep the plain
+/// [`Agent::run`] behavior. An overridden field replaces only that field;
+/// all others keep the agent's values, because a provided
+/// `RunOptions::model_settings` replaces the agent's settings wholesale.
+///
+/// Every [`ModelSettingsOverrides`] field is bound explicitly (no rest
+/// pattern), so adding a field fails compilation here; extend this function
+/// to apply the new field or reject it with
+/// [`ToolError::validation_for`][reloaded_code_core::ToolError::validation_for]
+/// naming `model_settings_overrides`.
+fn run_options_with_overrides(
+    agent: &Agent<(), String>,
+    overrides: Option<ModelSettingsOverrides>,
+) -> Option<RunOptions> {
+    let ModelSettingsOverrides { temperature, top_p } = overrides?;
+    if temperature.is_none() && top_p.is_none() {
+        return None;
+    }
+    let mut settings = agent.model_settings().clone();
+    if let Some(temperature) = temperature {
+        settings.temperature = Some(f64::from(temperature));
+    }
+    if let Some(top_p) = top_p {
+        settings.top_p = Some(f64::from(top_p));
+    }
+    Some(RunOptions::default().model_settings(settings))
+}
+
 /// Deterministic [`ToolError`] projection of an inner-agent run failure that
 /// the run hook chain carries. The dispatch site recognizes an untouched
 /// projection and restores the original [`AgentRunError`] afterward.
@@ -749,17 +789,19 @@ mod tests {
     use crate::agent_runtime::test_stubs::{
         agent, allow_tools, catalog, credentials, pattern_task, workspace_root,
     };
-    use crate::mock::two_tools_then_text;
+    use crate::mock::{FunctionModel, two_tools_then_text};
     use reloaded_code_agents::{AgentCatalog, AgentDefaults, AgentMode, AgentRuntimeBuilder};
     use reloaded_code_core::ToolOutput;
     use reloaded_code_core::hooks::{
-        RunHook, RunOriginal, ToolCallContext, ToolHook, ToolHookFuture, ToolOriginal, ToolRequest,
+        ModelSettingsOverrides, PreambleMessage, PreambleRole, RunHook, RunOriginal,
+        ToolCallContext, ToolHook, ToolHookFuture, ToolOriginal, ToolRequest,
     };
     use reloaded_code_core::permissions::{ExpandError, PermissionAction};
     use reloaded_code_core::tool_metadata::{
         read as read_meta, task as task_meta, write as write_meta,
     };
     use serde_json::json;
+    use serdes_ai::core::{ModelResponse, ModelSettings};
     use std::collections::HashSet;
     use std::path::PathBuf;
     use std::sync::Mutex;
@@ -1066,6 +1108,193 @@ mod tests {
         );
     }
 
+    /// Model settings overrides: applied per run, merged over the agent's
+    /// configured settings, with prompt-prepend behavior untouched.
+
+    /// Run hook that installs fixed model settings overrides before
+    /// delegating to `original`.
+    struct OverridingRunHook {
+        temperature: Option<f32>,
+        top_p: Option<f32>,
+    }
+
+    impl RunHook for OverridingRunHook {
+        fn hook<'a>(
+            &'a self,
+            ctx: &'a HookRunContext<'a>,
+            mut config: RunConfig,
+            original: RunOriginal<'a>,
+        ) -> RunHookFuture<'a> {
+            config.model_settings_overrides = Some(ModelSettingsOverrides {
+                temperature: self.temperature,
+                top_p: self.top_p,
+            });
+            original.call(ctx, config)
+        }
+    }
+
+    /// Run hook that injects prompt sections plus a temperature override
+    /// before delegating to `original`.
+    struct PromptAndSettingsOverrideRunHook;
+
+    impl RunHook for PromptAndSettingsOverrideRunHook {
+        fn hook<'a>(
+            &'a self,
+            ctx: &'a HookRunContext<'a>,
+            mut config: RunConfig,
+            original: RunOriginal<'a>,
+        ) -> RunHookFuture<'a> {
+            config.system_prompt = Some("agent system override".into());
+            config.preamble_messages = vec![
+                PreambleMessage {
+                    role: PreambleRole::System,
+                    content: "sys note".into(),
+                },
+                PreambleMessage {
+                    role: PreambleRole::User,
+                    content: "user note".into(),
+                },
+            ];
+            config.model_settings_overrides = Some(ModelSettingsOverrides {
+                temperature: Some(0.9),
+                top_p: None,
+            });
+            original.call(ctx, config)
+        }
+    }
+
+    /// Builds a hooked agent with agent-level settings temperature 0.3 and
+    /// top_p 0.8, running a model that records the [`ModelSettings`] of every
+    /// request and echoes the last user prompt.
+    fn hooked_agent_with_settings_capture(
+        hook: impl RunHook + 'static,
+    ) -> (HookedAgent, Arc<Mutex<Vec<ModelSettings>>>) {
+        let captured: Arc<Mutex<Vec<ModelSettings>>> = Arc::new(Mutex::new(Vec::new()));
+        let seen = Arc::clone(&captured);
+        let model = FunctionModel::new(move |messages, settings| {
+            seen.lock()
+                .expect("captured settings should not be poisoned")
+                .push(settings.clone());
+            let last_user = messages
+                .iter()
+                .rev()
+                .flat_map(|m| m.user_prompts())
+                .next()
+                .and_then(|prompt| prompt.as_text())
+                .unwrap_or_default()
+                .to_string();
+            ModelResponse::text(last_user)
+        });
+
+        let hooks = HookSet::builder().run_hook(hook).build();
+        let mut defaults = AgentDefaults::with_model("openrouter/openai/gpt-4.1-mini");
+        defaults.temperature = Some(0.3);
+        defaults.top_p = Some(0.8);
+        let runtime = AgentRuntimeBuilder::new()
+            .catalog(AgentCatalog::from_entries([agent(
+                "caller",
+                AgentMode::Primary,
+                allow_tools(&[]),
+                "prompt",
+            )]))
+            .defaults(defaults)
+            .hooks(hooks)
+            .build()
+            .expect("runtime should build");
+
+        let context = AgentBuildContext::new(
+            Arc::new(runtime),
+            Arc::new(catalog()),
+            Arc::new(credentials()),
+            workspace_root(),
+        )
+        .with_model_override(model);
+        let hooked = context.build("caller").expect("build should succeed");
+        (hooked, captured)
+    }
+
+    #[tokio::test]
+    async fn model_settings_override_replaces_only_the_overridden_setting_in_request() {
+        let (hooked, captured) = hooked_agent_with_settings_capture(OverridingRunHook {
+            temperature: Some(0.9),
+            top_p: None,
+        });
+
+        hooked.run("hello", ()).await.expect("run should complete");
+
+        let seen = captured
+            .lock()
+            .expect("captured settings should not be poisoned");
+        assert_eq!(seen.len(), 1, "one model request should have been made");
+        assert_eq!(seen[0].temperature, Some(f64::from(0.9_f32)));
+        assert_eq!(
+            seen[0].top_p,
+            Some(f64::from(0.8_f32)),
+            "agent-configured top_p should be retained"
+        );
+    }
+
+    #[tokio::test]
+    async fn run_without_model_settings_overrides_uses_agent_configured_settings() {
+        // Absent overrides: `RunConfig::default()` flows through untouched.
+        let (hooked, captured) = hooked_agent_with_settings_capture(PassthroughRunHook);
+        hooked.run("hello", ()).await.expect("run should complete");
+
+        // All-None overrides: no field is set, so agent settings apply as-is.
+        let (hooked, captured_empty) = hooked_agent_with_settings_capture(OverridingRunHook {
+            temperature: None,
+            top_p: None,
+        });
+        hooked.run("hello", ()).await.expect("run should complete");
+
+        let expected = ModelSettings {
+            temperature: Some(f64::from(0.3_f32)),
+            top_p: Some(f64::from(0.8_f32)),
+            ..ModelSettings::default()
+        };
+        for run in [captured, captured_empty] {
+            let seen = run
+                .lock()
+                .expect("captured settings should not be poisoned");
+            assert_eq!(seen.len(), 1, "one model request should have been made");
+            assert_eq!(
+                seen[0], expected,
+                "no-override runs must use the agent's configured settings"
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn prompt_sections_are_unchanged_when_model_settings_overrides_are_present() {
+        let (hooked, captured) =
+            hooked_agent_with_settings_capture(PromptAndSettingsOverrideRunHook);
+
+        let output = hooked
+            .run("base prompt", ())
+            .await
+            .expect("run should complete")
+            .into_output();
+
+        // The echoed prompt still leads with system prompt, preamble
+        // messages in configured order, then the original prompt.
+        assert_eq!(
+            output,
+            "agent system override\n\n[System] sys note\n\n[User] user note\n\nbase prompt"
+        );
+
+        // The same run carried the override, proving prompt handling is
+        // untouched while model settings change.
+        let seen = captured
+            .lock()
+            .expect("captured settings should not be poisoned");
+        assert_eq!(seen[0].temperature, Some(f64::from(0.9_f32)));
+        assert_eq!(
+            seen[0].top_p,
+            Some(f64::from(0.8_f32)),
+            "agent-configured top_p should be retained"
+        );
+    }
+
     /// Model whose every request fails, so the inner agent run surfaces a
     /// real `AgentRunError::Model` failure.
     struct FailingModel {
@@ -1173,6 +1402,58 @@ mod tests {
         // The hook calls `original`, so the inner model failure flows
         // through the whole chain before reaching the caller.
         let hooks = HookSet::builder().run_hook(PassthroughRunHook).build();
+
+        let runtime = AgentRuntimeBuilder::new()
+            .catalog(AgentCatalog::from_entries([agent(
+                "caller",
+                AgentMode::Primary,
+                allow_tools(&[]),
+                "prompt",
+            )]))
+            .defaults(AgentDefaults::with_model("openrouter/openai/gpt-4.1-mini"))
+            .hooks(hooks)
+            .build()
+            .expect("runtime should build");
+
+        let context = AgentBuildContext::new(
+            Arc::new(runtime),
+            Arc::new(catalog()),
+            Arc::new(credentials()),
+            workspace_root(),
+        )
+        .with_model_override(FailingModel::new());
+        let hooked = context.build("caller").expect("build should succeed");
+
+        let err = hooked
+            .run("trigger the failure", ())
+            .await
+            .err()
+            .expect("run should fail");
+
+        assert!(
+            matches!(
+                err,
+                serdes_ai::agent::AgentRunError::Model(serdes_ai_models::ModelError::Api { .. })
+            ),
+            "inner model failure should keep its variant, got: {err:?}"
+        );
+        assert!(
+            !err.to_string().contains("run hook error"),
+            "untouched inner failure must not be labeled as a hook error: {err}"
+        );
+    }
+
+    #[tokio::test]
+    async fn run_failure_keeps_original_error_variant_when_model_settings_overrides_are_present() {
+        // The override routes the run through `run_with_options`; its
+        // failures must keep the same untouched-projection handling as
+        // plain runs.
+        let hooks = HookSet::builder()
+            .run_hook(OverridingRunHook {
+                temperature: Some(0.9),
+                top_p: None,
+            })
+            .build();
 
         let runtime = AgentRuntimeBuilder::new()
             .catalog(AgentCatalog::from_entries([agent(
