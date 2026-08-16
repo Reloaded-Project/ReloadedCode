@@ -27,6 +27,7 @@ use futures::{Stream, StreamExt};
 use reloaded_code_core::hooks::{
     RunEvent, RunMessage, RunMessageRole, RunToolCallSummary, RunToolResultSummary,
 };
+use serdes_ai::core::messages::{RetryContent, ToolCallArgs, ToolReturnContent};
 use serdes_ai::core::{
     ModelRequest, ModelRequestPart, ModelResponse, ModelResponsePart, UserContent,
 };
@@ -174,16 +175,24 @@ fn distill_messages(messages: Vec<ModelRequest>) -> Vec<RunMessage> {
                     ));
                 }
                 ModelRequestPart::RetryPrompt(part) => {
-                    distilled.push(authored_message(
-                        RunMessageRole::User,
-                        part.content.message().to_owned(),
-                    ));
+                    // Plain-text retry content moves its owned String;
+                    // structured content still renders through the vendor
+                    // accessor, which only borrows.
+                    let text = match part.content {
+                        RetryContent::Text(text) => text,
+                        other => other.message().to_owned(),
+                    };
+                    distilled.push(authored_message(RunMessageRole::User, text));
                 }
                 ModelRequestPart::ToolReturn(part) => {
-                    distilled.push(tool_result_message(
-                        part.tool_call_id,
-                        part.content.to_string_content(),
-                    ));
+                    // Text returns (the common large case) move their
+                    // owned String; other variants render through the
+                    // vendor accessor, which clones.
+                    let output = match part.content {
+                        ToolReturnContent::Text { content } => content,
+                        other => other.to_string_content(),
+                    };
+                    distilled.push(tool_result_message(part.tool_call_id, output));
                 }
                 ModelRequestPart::BuiltinToolReturn(part) => {
                     // Structured content (search results, code output) has
@@ -219,32 +228,53 @@ fn authored_message(role: RunMessageRole, text: String) -> RunMessage {
 /// Returns `None` when the response carries no distilled content
 /// (thinking-only, file-only, or empty).
 fn distill_model_response(response: ModelResponse) -> Option<RunMessage> {
-    // One sizing scan gives both outputs exact capacity, so neither
-    // grows mid-build.
+    // One sizing scan gives both outputs exact capacity, plus the text
+    // part count: a single text part (the common shape) moves its
+    // String instead of copying through a joined buffer.
     let mut text_len = 0usize;
+    let mut text_part_count = 0usize;
     let mut tool_call_count = 0usize;
     for part in &response.parts {
         match part {
-            ModelResponsePart::Text(text) => text_len += text.content.len(),
+            ModelResponsePart::Text(text) => {
+                text_len += text.content.len();
+                text_part_count += 1;
+            }
             ModelResponsePart::ToolCall(_) => tool_call_count += 1,
             _ => {}
         }
     }
-    let mut text = String::with_capacity(text_len);
     let mut tool_calls = Vec::with_capacity(tool_call_count);
+    let mut joined = (text_part_count != 1).then(|| String::with_capacity(text_len));
+    let mut single: Option<String> = None;
     // Consuming the parts moves the call fields instead of cloning.
     for part in response.parts {
         match part {
-            ModelResponsePart::Text(part_text) => text.push_str(&part_text.content),
+            ModelResponsePart::Text(part_text) => {
+                if let Some(buffer) = joined.as_mut() {
+                    buffer.push_str(&part_text.content);
+                } else {
+                    single = Some(part_text.content);
+                }
+            }
             ModelResponsePart::ToolCall(call) => tool_calls.push(RunToolCallSummary {
                 tool_name: call.tool_name,
                 tool_call_id: call.tool_call_id,
-                arguments_json: call.args.to_json_string().ok(),
+                // Raw-string args move their owned String; parsed JSON
+                // serializes through the vendor accessor.
+                arguments_json: match call.args {
+                    ToolCallArgs::String(raw) => Some(raw),
+                    other => other.to_json_string().ok(),
+                },
             }),
             _ => {}
         }
     }
-    let text = (!text.is_empty()).then_some(text);
+    // Multi-text responses keep their joined buffer; both paths drop
+    // to `None` when no text survived.
+    let text = single
+        .or_else(|| joined.filter(|joined| !joined.is_empty()))
+        .filter(|text| !text.is_empty());
     if text.is_none() && tool_calls.is_empty() {
         return None;
     }
