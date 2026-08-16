@@ -58,12 +58,22 @@ pub struct HookedAgentRunResult {
 /// Applies `RunConfig::preamble_messages` and `system_prompt` to the prompt
 /// text before calling the agent, because the built agent does not support
 /// runtime mutation of those fields.
+///
+/// On inner failure the hook chain sees a [`ToolError::Execution`] projection
+/// while the original [`AgentRunError`] is parked in `error`; the dispatch
+/// site in `run_with_extras` restores the original when the failure reaches
+/// the caller untouched.
+///
+/// [`ToolError::Execution`]: reloaded_code_core::ToolError::Execution
+/// [`AgentRunError`]: serdes_ai::agent::AgentRunError
 struct SerdesRunExecutor<'a> {
     agent: &'a Agent<(), String>,
     prompt: String,
     deps: (),
     /// Slot the executor fills with the inner response's run metadata.
     extras: Arc<Mutex<Option<AgentRunExtras>>>,
+    /// Slot the executor fills with the inner run's original failure.
+    error: Arc<Mutex<Option<serdes_ai::agent::AgentRunError>>>,
 }
 
 /// Inner-agent run metadata captured alongside the output so streaming
@@ -328,9 +338,11 @@ impl HookedAgent {
     ///
     /// # Errors
     ///
-    /// - Returns [`serdes_ai::agent::AgentRunError`] when the inner agent fails to complete a run.
-    /// - Returns [`serdes_ai::agent::AgentRunError::Other`] when a registered run hook returns
-    ///   an error during dispatch.
+    /// - Returns the inner agent's [`serdes_ai::agent::AgentRunError`]
+    ///   unchanged when the inner agent fails (direct run or hooked run)
+    ///   and the failure reaches the caller untouched.
+    /// - Returns [`serdes_ai::agent::AgentRunError::Other`] when a run hook
+    ///   returns or substitutes its own error during dispatch.
     pub async fn run(
         &self,
         prompt: impl Into<String>,
@@ -348,9 +360,11 @@ impl HookedAgent {
     ///
     /// # Errors
     ///
-    /// - Returns [`serdes_ai::agent::AgentRunError`] when the inner agent fails to complete a run.
-    /// - Returns [`serdes_ai::agent::AgentRunError::Other`] when a registered run hook returns
-    ///   an error during dispatch.
+    /// - Returns the inner agent's [`serdes_ai::agent::AgentRunError`]
+    ///   unchanged when the inner agent fails (direct run or hooked run)
+    ///   and the failure reaches the caller untouched.
+    /// - Returns [`serdes_ai::agent::AgentRunError::Other`] when a run hook
+    ///   returns or substitutes its own error during dispatch.
     async fn run_with_extras(
         &self,
         prompt: String,
@@ -380,20 +394,22 @@ impl HookedAgent {
         let config = RunConfig::default();
 
         let extras_slot = Arc::new(Mutex::new(None));
+        let error_slot = Arc::new(Mutex::new(None));
         let executor = SerdesRunExecutor {
             agent: &self.inner,
             prompt,
             deps,
             extras: Arc::clone(&extras_slot),
+            error: Arc::clone(&error_slot),
         };
 
-        let output = self
-            .hooks
-            .dispatch_run(&ctx, config, &executor)
-            .await
-            .map_err(|e| {
-                serdes_ai::agent::AgentRunError::Other(anyhow::anyhow!("run hook error: {e}"))
-            })?;
+        // A dispatch failure carries a `ToolError`; restore the inner
+        // agent's original `AgentRunError` when it propagated untouched,
+        // and only label the error hook-origin otherwise.
+        let output = match self.hooks.dispatch_run(&ctx, config, &executor).await {
+            Ok(output) => output,
+            Err(dispatched) => return Err(restore_run_error(dispatched, &error_slot)),
+        };
 
         // A hook that skipped `original` leaves the slot empty; fall back to
         // the wrapper id so downstream events still carry a stable identifier.
@@ -419,10 +435,12 @@ impl HookedAgent {
     ///
     /// # Errors
     ///
-    /// - Returns [`serdes_ai::agent::AgentRunError`] when the inner agent stream fails.
+    /// - Returns the inner agent's [`serdes_ai::agent::AgentRunError`]
+    ///   unchanged when the inner agent fails (direct stream or hooked run)
+    ///   and the failure reaches the caller untouched.
     /// - Returns [`serdes_ai::agent::AgentRunError::Other`] when the prompt is not
-    ///   representable as text, or when a registered run hook returns an error
-    ///   during dispatch.
+    ///   representable as text, or when a run hook returns or substitutes its
+    ///   own error during dispatch.
     pub async fn run_stream(
         &self,
         prompt: impl Into<serdes_ai::core::UserContent>,
@@ -575,14 +593,21 @@ impl<'a> RunExecutor for SerdesRunExecutor<'a> {
         }
 
         let extras = Arc::clone(&self.extras);
+        let error = Arc::clone(&self.error);
         #[allow(clippy::let_unit_value)]
         let deps = self.deps;
         #[allow(clippy::unit_arg)]
         Box::pin(async move {
-            let response = agent
-                .run(prompt, deps)
-                .await
-                .map_err(|e| reloaded_code_core::ToolError::Execution(e.to_string()))?;
+            let response = match agent.run(prompt, deps).await {
+                Ok(response) => response,
+                Err(err) => {
+                    // Hooks see the `ToolError` projection; the original is
+                    // restored after dispatch when it propagates untouched.
+                    let projection = run_error_projection(&err);
+                    *error.lock().expect("run error slot should not be poisoned") = Some(err);
+                    return Err(projection);
+                }
+            };
             // Read borrowed fields before moving run_id and messages out.
             let content = response.output().to_string();
             let usage = RunUsage {
@@ -684,6 +709,40 @@ where
     Ok(HookedAgent::new(agent, hooks, name.to_string(), model_name))
 }
 
+/// Recovers the failure from a failed run dispatch.
+///
+/// Restores the captured inner-agent [`AgentRunError`] when the hook chain
+/// propagated its projection untouched. Any other dispatched error reached
+/// the caller through a hook returning or substituting its own error, so it
+/// is labeled as hook-origin.
+///
+/// [`AgentRunError`]: serdes_ai::agent::AgentRunError
+fn restore_run_error(
+    dispatched: reloaded_code_core::ToolError,
+    captured: &Mutex<Option<serdes_ai::agent::AgentRunError>>,
+) -> serdes_ai::agent::AgentRunError {
+    let captured = captured
+        .lock()
+        .expect("run error slot should not be poisoned")
+        .take();
+    match captured {
+        Some(inner) if run_error_projection(&inner).to_string() == dispatched.to_string() => inner,
+        _ => {
+            serdes_ai::agent::AgentRunError::Other(anyhow::anyhow!("run hook error: {dispatched}"))
+        }
+    }
+}
+
+/// Deterministic [`ToolError`] projection of an inner-agent run failure that
+/// the run hook chain carries. The dispatch site recognizes an untouched
+/// projection and restores the original [`AgentRunError`] afterward.
+///
+/// [`ToolError`]: reloaded_code_core::ToolError
+/// [`AgentRunError`]: serdes_ai::agent::AgentRunError
+fn run_error_projection(err: &serdes_ai::agent::AgentRunError) -> reloaded_code_core::ToolError {
+    reloaded_code_core::ToolError::Execution(err.to_string())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -694,7 +753,7 @@ mod tests {
     use reloaded_code_agents::{AgentCatalog, AgentDefaults, AgentMode, AgentRuntimeBuilder};
     use reloaded_code_core::ToolOutput;
     use reloaded_code_core::hooks::{
-        ToolCallContext, ToolHook, ToolHookFuture, ToolOriginal, ToolRequest,
+        RunHook, RunOriginal, ToolCallContext, ToolHook, ToolHookFuture, ToolOriginal, ToolRequest,
     };
     use reloaded_code_core::permissions::{ExpandError, PermissionAction};
     use reloaded_code_core::tool_metadata::{
@@ -1005,5 +1064,254 @@ mod tests {
             "the denied write must not create {}",
             unread_target.display()
         );
+    }
+
+    /// Model whose every request fails, so the inner agent run surfaces a
+    /// real `AgentRunError::Model` failure.
+    struct FailingModel {
+        profile: serdes_ai_models::ModelProfile,
+    }
+
+    impl FailingModel {
+        fn new() -> Self {
+            Self {
+                profile: serdes_ai_models::ModelProfile::default(),
+            }
+        }
+    }
+
+    #[async_trait::async_trait]
+    impl serdes_ai_models::Model for FailingModel {
+        fn name(&self) -> &str {
+            "failing-model"
+        }
+
+        fn system(&self) -> &str {
+            "test"
+        }
+
+        fn profile(&self) -> &serdes_ai_models::ModelProfile {
+            &self.profile
+        }
+
+        async fn request(
+            &self,
+            _messages: &[ModelRequest],
+            _settings: &serdes_ai::core::ModelSettings,
+            _params: &serdes_ai_models::ModelRequestParameters,
+        ) -> Result<serdes_ai::core::ModelResponse, serdes_ai_models::ModelError> {
+            Err(serdes_ai_models::ModelError::api("upstream exploded"))
+        }
+
+        async fn request_stream(
+            &self,
+            _messages: &[ModelRequest],
+            _settings: &serdes_ai::core::ModelSettings,
+            _params: &serdes_ai_models::ModelRequestParameters,
+        ) -> Result<serdes_ai_models::StreamedResponse, serdes_ai_models::ModelError> {
+            Err(serdes_ai_models::ModelError::api("upstream exploded"))
+        }
+    }
+
+    /// Run hook that delegates straight to `original`, standing in for any
+    /// observer hook that never interferes with the run.
+    struct PassthroughRunHook;
+
+    impl RunHook for PassthroughRunHook {
+        fn hook<'a>(
+            &'a self,
+            ctx: &'a HookRunContext<'a>,
+            config: RunConfig,
+            original: RunOriginal<'a>,
+        ) -> RunHookFuture<'a> {
+            original.call(ctx, config)
+        }
+    }
+
+    /// Run hook that skips `original` and fails on its own.
+    struct FailingRunHook;
+
+    impl RunHook for FailingRunHook {
+        fn hook<'a>(
+            &'a self,
+            _ctx: &'a HookRunContext<'a>,
+            _config: RunConfig,
+            _original: RunOriginal<'a>,
+        ) -> RunHookFuture<'a> {
+            Box::pin(async {
+                Err(reloaded_code_core::ToolError::Execution(
+                    "hook rejected the run".into(),
+                ))
+            })
+        }
+    }
+
+    /// Run hook that observes the original run's failure and substitutes its
+    /// own error instead of propagating it.
+    struct SubstitutingRunHook;
+
+    impl RunHook for SubstitutingRunHook {
+        fn hook<'a>(
+            &'a self,
+            ctx: &'a HookRunContext<'a>,
+            config: RunConfig,
+            original: RunOriginal<'a>,
+        ) -> RunHookFuture<'a> {
+            Box::pin(async move {
+                match original.call(ctx, config).await {
+                    Err(_) => Err(reloaded_code_core::ToolError::Execution(
+                        "policy veto".into(),
+                    )),
+                    ok => ok,
+                }
+            })
+        }
+    }
+
+    #[tokio::test]
+    async fn run_failure_keeps_original_error_variant_when_hook_propagates_it_untouched() {
+        // The hook calls `original`, so the inner model failure flows
+        // through the whole chain before reaching the caller.
+        let hooks = HookSet::builder().run_hook(PassthroughRunHook).build();
+
+        let runtime = AgentRuntimeBuilder::new()
+            .catalog(AgentCatalog::from_entries([agent(
+                "caller",
+                AgentMode::Primary,
+                allow_tools(&[]),
+                "prompt",
+            )]))
+            .defaults(AgentDefaults::with_model("openrouter/openai/gpt-4.1-mini"))
+            .hooks(hooks)
+            .build()
+            .expect("runtime should build");
+
+        let context = AgentBuildContext::new(
+            Arc::new(runtime),
+            Arc::new(catalog()),
+            Arc::new(credentials()),
+            workspace_root(),
+        )
+        .with_model_override(FailingModel::new());
+        let hooked = context.build("caller").expect("build should succeed");
+
+        let err = hooked
+            .run("trigger the failure", ())
+            .await
+            .err()
+            .expect("run should fail");
+
+        assert!(
+            matches!(
+                err,
+                serdes_ai::agent::AgentRunError::Model(serdes_ai_models::ModelError::Api { .. })
+            ),
+            "inner model failure should keep its variant, got: {err:?}"
+        );
+        assert!(
+            !err.to_string().contains("run hook error"),
+            "untouched inner failure must not be labeled as a hook error: {err}"
+        );
+    }
+
+    #[tokio::test]
+    async fn run_failure_is_labeled_hook_error_when_hook_returns_its_own_error() {
+        // The hook skips `original` and fails on its own, so the model is
+        // never invoked and the failure can only be hook-origin.
+        let hooks = HookSet::builder().run_hook(FailingRunHook).build();
+
+        let runtime = AgentRuntimeBuilder::new()
+            .catalog(AgentCatalog::from_entries([agent(
+                "caller",
+                AgentMode::Primary,
+                allow_tools(&[]),
+                "prompt",
+            )]))
+            .defaults(AgentDefaults::with_model("openrouter/openai/gpt-4.1-mini"))
+            .hooks(hooks)
+            .build()
+            .expect("runtime should build");
+
+        let context = AgentBuildContext::new(
+            Arc::new(runtime),
+            Arc::new(catalog()),
+            Arc::new(credentials()),
+            workspace_root(),
+        )
+        .with_model_override(crate::mock::MockModel::new("unused").with_text_response("unused"));
+        let hooked = context.build("caller").expect("build should succeed");
+
+        let err = hooked
+            .run("trigger the hook failure", ())
+            .await
+            .err()
+            .expect("run should fail");
+
+        match err {
+            serdes_ai::agent::AgentRunError::Other(source) => {
+                let message = source.to_string();
+                assert!(
+                    message.contains("run hook error"),
+                    "hook-origin failure should be labeled as such: {message}"
+                );
+                assert!(
+                    message.contains("hook rejected the run"),
+                    "dispatched hook error should be preserved: {message}"
+                );
+            }
+            other => panic!("hook-substituted failure should surface as Other, got: {other:?}"),
+        }
+    }
+
+    #[tokio::test]
+    async fn run_failure_is_labeled_hook_error_when_hook_substitutes_its_own_error() {
+        // The hook calls `original`, sees the model failure, then returns a
+        // different error: the inner failure was observed but replaced, so
+        // the surfaced failure is hook-origin, not the inner one.
+        let hooks = HookSet::builder().run_hook(SubstitutingRunHook).build();
+
+        let runtime = AgentRuntimeBuilder::new()
+            .catalog(AgentCatalog::from_entries([agent(
+                "caller",
+                AgentMode::Primary,
+                allow_tools(&[]),
+                "prompt",
+            )]))
+            .defaults(AgentDefaults::with_model("openrouter/openai/gpt-4.1-mini"))
+            .hooks(hooks)
+            .build()
+            .expect("runtime should build");
+
+        let context = AgentBuildContext::new(
+            Arc::new(runtime),
+            Arc::new(catalog()),
+            Arc::new(credentials()),
+            workspace_root(),
+        )
+        .with_model_override(FailingModel::new());
+        let hooked = context.build("caller").expect("build should succeed");
+
+        let err = hooked
+            .run("trigger the failure", ())
+            .await
+            .err()
+            .expect("run should fail");
+
+        match err {
+            serdes_ai::agent::AgentRunError::Other(source) => {
+                let message = source.to_string();
+                assert!(
+                    message.contains("run hook error"),
+                    "hook-substituted failure should be labeled hook-origin: {message}"
+                );
+                assert!(
+                    message.contains("policy veto"),
+                    "hook's substituted error should be preserved: {message}"
+                );
+            }
+            other => {
+                panic!("hook-substituted failure must not surface the inner error, got: {other:?}")
+            }
+        }
     }
 }
