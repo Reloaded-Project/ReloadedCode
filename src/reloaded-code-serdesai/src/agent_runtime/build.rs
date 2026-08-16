@@ -212,12 +212,10 @@ where
                         .with_tool(read_meta::NAME)?;
                 let settings = build_read_settings(&prepared.tool_settings.read)?;
                 let tool = ReadTool::with_settings(resolver, settings);
-                let definition = serdes_ai::Tool::<()>::definition(&tool);
-                let tracked = prompt_builder.track(tool);
                 builder = builder.tool_with_executor(
-                    definition,
+                    serdes_ai::Tool::<()>::definition(&tool),
                     HookedToolExecutor::new(
-                        tracked,
+                        prompt_builder.track(tool),
                         hooks,
                         prepared.agent_name.as_ref(),
                         read_meta::NAME,
@@ -229,12 +227,10 @@ where
                     build_resolver_for_tool(&build_context, permission_config, write_meta::NAME)
                         .with_tool(write_meta::NAME)?;
                 let tool = WriteTool::new(resolver);
-                let definition = serdes_ai::Tool::<()>::definition(&tool);
-                let tracked = prompt_builder.track(tool);
                 builder = builder.tool_with_executor(
-                    definition,
+                    serdes_ai::Tool::<()>::definition(&tool),
                     HookedToolExecutor::new(
-                        tracked,
+                        prompt_builder.track(tool),
                         hooks,
                         prepared.agent_name.as_ref(),
                         write_meta::NAME,
@@ -246,12 +242,10 @@ where
                     build_resolver_for_tool(&build_context, permission_config, edit_meta::NAME)
                         .with_tool(edit_meta::NAME)?;
                 let tool = EditTool::new(resolver);
-                let definition = serdes_ai::Tool::<()>::definition(&tool);
-                let tracked = prompt_builder.track(tool);
                 builder = builder.tool_with_executor(
-                    definition,
+                    serdes_ai::Tool::<()>::definition(&tool),
                     HookedToolExecutor::new(
-                        tracked,
+                        prompt_builder.track(tool),
                         hooks,
                         prepared.agent_name.as_ref(),
                         edit_meta::NAME,
@@ -264,12 +258,10 @@ where
                         .with_tool(glob_meta::NAME)?;
                 let settings = build_glob_settings(&prepared.tool_settings.glob)?;
                 let tool = GlobTool::with_settings(resolver, settings);
-                let definition = serdes_ai::Tool::<()>::definition(&tool);
-                let tracked = prompt_builder.track(tool);
                 builder = builder.tool_with_executor(
-                    definition,
+                    serdes_ai::Tool::<()>::definition(&tool),
                     HookedToolExecutor::new(
-                        tracked,
+                        prompt_builder.track(tool),
                         hooks,
                         prepared.agent_name.as_ref(),
                         glob_meta::NAME,
@@ -283,12 +275,10 @@ where
                 let (search_settings, formatting_settings) =
                     build_grep_settings(&prepared.tool_settings.grep)?;
                 let tool = GrepTool::with_settings(resolver, search_settings, formatting_settings);
-                let definition = serdes_ai::Tool::<()>::definition(&tool);
-                let tracked = prompt_builder.track(tool);
                 builder = builder.tool_with_executor(
-                    definition,
+                    serdes_ai::Tool::<()>::definition(&tool),
                     HookedToolExecutor::new(
-                        tracked,
+                        prompt_builder.track(tool),
                         hooks,
                         prepared.agent_name.as_ref(),
                         grep_meta::NAME,
@@ -305,12 +295,10 @@ where
                 if let Some(profile) = bash_sandbox {
                     tool = tool.with_linux_bwrap(profile.clone());
                 }
-                let definition = serdes_ai::Tool::<()>::definition(&tool);
-                let tracked = prompt_builder.track(tool);
                 builder = builder.tool_with_executor(
-                    definition,
+                    serdes_ai::Tool::<()>::definition(&tool),
                     HookedToolExecutor::new(
-                        tracked,
+                        prompt_builder.track(tool),
                         hooks,
                         prepared.agent_name.as_ref(),
                         bash_meta::NAME,
@@ -320,12 +308,10 @@ where
             ToolCatalogKind::WebFetch => {
                 let settings = build_webfetch_settings(&prepared.tool_settings.webfetch)?;
                 let tool = WebFetchTool::with_settings(settings);
-                let definition = serdes_ai::Tool::<()>::definition(&tool);
-                let tracked = prompt_builder.track(tool);
                 builder = builder.tool_with_executor(
-                    definition,
+                    serdes_ai::Tool::<()>::definition(&tool),
                     HookedToolExecutor::new(
-                        tracked,
+                        prompt_builder.track(tool),
                         hooks,
                         prepared.agent_name.as_ref(),
                         webfetch_meta::NAME,
@@ -333,12 +319,10 @@ where
                 );
             }
             ToolCatalogKind::TodoRead => {
-                let definition = serdes_ai::Tool::<()>::definition(&todo_read);
-                let tracked = prompt_builder.track(todo_read.clone());
                 builder = builder.tool_with_executor(
-                    definition,
+                    serdes_ai::Tool::<()>::definition(&todo_read),
                     HookedToolExecutor::new(
-                        tracked,
+                        prompt_builder.track(todo_read.clone()),
                         hooks,
                         prepared.agent_name.as_ref(),
                         todo_read_meta::NAME,
@@ -346,12 +330,10 @@ where
                 );
             }
             ToolCatalogKind::TodoWrite => {
-                let definition = serdes_ai::Tool::<()>::definition(&todo_write);
-                let tracked = prompt_builder.track(todo_write.clone());
                 builder = builder.tool_with_executor(
-                    definition,
+                    serdes_ai::Tool::<()>::definition(&todo_write),
                     HookedToolExecutor::new(
-                        tracked,
+                        prompt_builder.track(todo_write.clone()),
                         hooks,
                         prepared.agent_name.as_ref(),
                         todo_write_meta::NAME,
@@ -367,12 +349,10 @@ where
                         prepared.callable_target_summaries.clone(),
                         (*task_handle).clone(),
                     );
-                    let definition = serdes_ai::Tool::<()>::definition(&tool);
-                    let tracked = prompt_builder.track(tool);
                     builder = builder.tool_with_executor(
-                        definition,
+                        serdes_ai::Tool::<()>::definition(&tool),
                         HookedToolExecutor::new(
-                            tracked,
+                            prompt_builder.track(tool),
                             hooks,
                             prepared.agent_name.as_ref(),
                             task_meta::NAME,
