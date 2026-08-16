@@ -28,7 +28,7 @@ pub use reloaded_code_core::{
     TodoPriority, TodoState, TodoStatus, WebFetchOutput,
 };
 // Re-export standalone tools and runtime helpers
-pub use agent_runtime::{AgentBuildContext, AgentBuildError, HookedAgent};
+pub use agent_runtime::{AgentBuildContext, AgentBuildError, HookedAgent, HookedAgentRunResult};
 pub use reloaded_code_agents::{
     AgentDefaults, AgentRuntime, AgentRuntimeBuilder, ModelResolutionError, ResolvedModel,
     resolve_model_with_catalog,

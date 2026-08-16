@@ -14,7 +14,7 @@ pub use reloaded_code_agents::{
     AgentDefaults, AgentRuntime, AgentRuntimeBuilder, ModelResolutionError, ResolvedModel,
     resolve_model_with_catalog,
 };
-pub use task::{AgentBuildContext, HookedAgent};
+pub use task::{AgentBuildContext, HookedAgent, HookedAgentRunResult};
 pub(crate) use task::{TaskBuildContext, build_agent};
 
 mod build;
