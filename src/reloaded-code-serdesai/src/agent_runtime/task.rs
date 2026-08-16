@@ -1232,6 +1232,27 @@ mod tests {
             Some(f64::from(0.8_f32)),
             "agent-configured top_p should be retained"
         );
+        drop(seen);
+
+        // Mirror direction: a top_p-only override replaces top_p and keeps
+        // the agent-configured temperature.
+        let (hooked, captured) = hooked_agent_with_settings_capture(OverridingRunHook {
+            temperature: None,
+            top_p: Some(0.6),
+        });
+
+        hooked.run("hello", ()).await.expect("run should complete");
+
+        let seen = captured
+            .lock()
+            .expect("captured settings should not be poisoned");
+        assert_eq!(seen.len(), 1, "one model request should have been made");
+        assert_eq!(seen[0].top_p, Some(f64::from(0.6_f32)));
+        assert_eq!(
+            seen[0].temperature,
+            Some(f64::from(0.3_f32)),
+            "agent-configured temperature should be retained"
+        );
     }
 
     #[tokio::test]
