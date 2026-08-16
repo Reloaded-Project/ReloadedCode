@@ -5,24 +5,21 @@
 //! event types stay inside this module; consumers of
 //! [`HookedAgent::run_stream`][task] only ever see [`RunEvent`] items.
 //!
-//! # Dropped vendor-only events
+//! # Optional events
 //!
-//! The vendor emits five events with no [`RunEvent`] counterpart; the
-//! mapping drops them:
+//! Step boundaries, context telemetry, and streamed tool-call
+//! arguments map through when the vendor reports them. The vendor
+//! delivers whole tool-call arguments as a single delta when the
+//! model does not stream fragments, so [`RunEvent::ToolCallDelta`]
+//! items arrive for every tool call with non-empty arguments.
 //!
-//! - `ContextInfo` and `ContextCompressed`: context-size telemetry emitted
-//!   before each model request, and compression notices. Context metrics
-//!   are not surfaced anywhere else.
-//! - `RequestStart` and `ResponseComplete`: model-request step boundaries.
-//!   Dropping them removes the step index consumers could use to group
-//!   events by model request.
-//! - `ToolCallDelta`: incremental tool-call argument fragments. Dropping it
-//!   removes streamed argument assembly; complete arguments remain
-//!   available in the [`RunEvent::RunComplete`] transcript as
-//!   [`RunToolCallSummary::arguments_json`].
+//! Ordering caveat: the vendor emits `ResponseComplete` before
+//! executing a step's tool calls, so [`RunEvent::StepEnd`] closes the
+//! step before its [`RunEvent::ToolExecuted`] items arrive.
 //!
-//! Observable information loss: step boundaries and incremental tool-call
-//! arguments no longer stream, and context telemetry is not surfaced.
+//! The match over [`AgentStreamEvent`] is exhaustive: a new vendor
+//! variant fails compilation here, keeping vendor coupling inside
+//! this module.
 //!
 //! [task]: super::task::HookedAgent::run_stream
 
@@ -42,8 +39,7 @@ use std::task::{Context, Poll};
 ///
 /// Polling this stream drives the vendor stream, which the vendor already
 /// runs on its own background task; no channel, spawn, or shared agent
-/// handle is added on this side. Vendor-only events (see the module docs)
-/// are dropped rather than yielded.
+/// handle is added on this side.
 pub(super) struct RunEventStream {
     /// Owned vendor stream, driven by the vendor's own background task.
     inner: AgentStream,
@@ -60,31 +56,46 @@ impl Stream for RunEventStream {
     type Item = Result<RunEvent, serdes_ai::agent::AgentRunError>;
 
     fn poll_next(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
-        // Dropped events yield nothing, so keep polling until a mappable
-        // event, an error, or the stream's end arrives.
         let inner = &mut self.get_mut().inner;
-        loop {
-            match inner.poll_next_unpin(cx) {
-                Poll::Ready(Some(Ok(event))) => {
-                    if let Some(event) = map_vendor_event(event) {
-                        return Poll::Ready(Some(Ok(event)));
-                    }
-                }
-                Poll::Ready(Some(Err(error))) => return Poll::Ready(Some(Err(error))),
-                Poll::Ready(None) => return Poll::Ready(None),
-                Poll::Pending => return Poll::Pending,
-            }
+        match inner.poll_next_unpin(cx) {
+            Poll::Ready(Some(Ok(event))) => Poll::Ready(Some(Ok(map_vendor_event(event)))),
+            Poll::Ready(Some(Err(error))) => Poll::Ready(Some(Err(error))),
+            Poll::Ready(None) => Poll::Ready(None),
+            Poll::Pending => Poll::Pending,
         }
     }
 }
 
 /// Maps one vendor event to its framework-owned counterpart.
 ///
-/// Returns `None` for vendor-only events; see the module docs for the
-/// dropped set and its observable information loss.
-fn map_vendor_event(event: AgentStreamEvent) -> Option<RunEvent> {
-    Some(match event {
+/// The match is exhaustive over the vendor enum, so vendor drift
+/// fails compilation here instead of leaking vendor types.
+fn map_vendor_event(event: AgentStreamEvent) -> RunEvent {
+    match event {
         AgentStreamEvent::RunStart { run_id } => RunEvent::RunStart { run_id },
+        AgentStreamEvent::RequestStart { step } => RunEvent::StepStart { step },
+        AgentStreamEvent::ContextInfo {
+            estimated_tokens,
+            request_bytes,
+            context_limit,
+        } => RunEvent::ContextInfo {
+            estimated_tokens,
+            request_bytes,
+            context_limit,
+        },
+        AgentStreamEvent::ContextCompressed {
+            original_tokens,
+            compressed_tokens,
+            strategy,
+            messages_before,
+            messages_after,
+        } => RunEvent::ContextCompressed {
+            original_tokens,
+            compressed_tokens,
+            strategy,
+            messages_before,
+            messages_after,
+        },
         AgentStreamEvent::TextDelta { text } => RunEvent::TextDelta { text },
         AgentStreamEvent::ThinkingDelta { text } => RunEvent::ThinkingDelta { text },
         AgentStreamEvent::ToolCallStart {
@@ -93,6 +104,13 @@ fn map_vendor_event(event: AgentStreamEvent) -> Option<RunEvent> {
         } => RunEvent::ToolCallStart {
             tool_name,
             tool_call_id,
+        },
+        AgentStreamEvent::ToolCallDelta {
+            delta,
+            tool_call_id,
+        } => RunEvent::ToolCallDelta {
+            tool_call_id,
+            delta,
         },
         AgentStreamEvent::ToolCallComplete {
             tool_name,
@@ -112,6 +130,7 @@ fn map_vendor_event(event: AgentStreamEvent) -> Option<RunEvent> {
             success,
             error,
         },
+        AgentStreamEvent::ResponseComplete { step } => RunEvent::StepEnd { step },
         AgentStreamEvent::OutputReady => RunEvent::OutputReady,
         AgentStreamEvent::RunComplete { run_id, messages } => RunEvent::RunComplete {
             run_id,
@@ -127,12 +146,7 @@ fn map_vendor_event(event: AgentStreamEvent) -> Option<RunEvent> {
             partial_thinking,
             pending_tools,
         },
-        AgentStreamEvent::ContextInfo { .. }
-        | AgentStreamEvent::ContextCompressed { .. }
-        | AgentStreamEvent::RequestStart { .. }
-        | AgentStreamEvent::ToolCallDelta { .. }
-        | AgentStreamEvent::ResponseComplete { .. } => return None,
-    })
+    }
 }
 
 /// Distills the vendor run transcript into framework-owned records.
@@ -205,18 +219,32 @@ fn authored_message(role: RunMessageRole, text: String) -> RunMessage {
 /// Returns `None` when the response carries no distilled content
 /// (thinking-only, file-only, or empty).
 fn distill_model_response(response: ModelResponse) -> Option<RunMessage> {
-    let text = response.text_content();
-    let text = (!text.is_empty()).then_some(text);
-    let mut tool_calls = Vec::new();
+    // One sizing scan gives both outputs exact capacity, so neither
+    // grows mid-build.
+    let mut text_len = 0usize;
+    let mut tool_call_count = 0usize;
     for part in &response.parts {
-        if let ModelResponsePart::ToolCall(call) = part {
-            tool_calls.push(RunToolCallSummary {
-                tool_name: call.tool_name.clone(),
-                tool_call_id: call.tool_call_id.clone(),
-                arguments_json: call.args.to_json_string().ok(),
-            });
+        match part {
+            ModelResponsePart::Text(text) => text_len += text.content.len(),
+            ModelResponsePart::ToolCall(_) => tool_call_count += 1,
+            _ => {}
         }
     }
+    let mut text = String::with_capacity(text_len);
+    let mut tool_calls = Vec::with_capacity(tool_call_count);
+    // Consuming the parts moves the call fields instead of cloning.
+    for part in response.parts {
+        match part {
+            ModelResponsePart::Text(part_text) => text.push_str(&part_text.content),
+            ModelResponsePart::ToolCall(call) => tool_calls.push(RunToolCallSummary {
+                tool_name: call.tool_name,
+                tool_call_id: call.tool_call_id,
+                arguments_json: call.args.to_json_string().ok(),
+            }),
+            _ => {}
+        }
+    }
+    let text = (!text.is_empty()).then_some(text);
     if text.is_none() && tool_calls.is_empty() {
         return None;
     }
@@ -283,49 +311,96 @@ mod tests {
     // ========================================================================
 
     #[test]
-    fn map_vendor_event_drops_vendor_only_variants() {
-        let dropped = vec![
-            AgentStreamEvent::ContextInfo {
-                estimated_tokens: 1,
-                request_bytes: 4,
-                context_limit: None,
-            },
-            AgentStreamEvent::ContextCompressed {
-                original_tokens: 10,
-                compressed_tokens: 5,
-                strategy: "truncate".into(),
-                messages_before: 2,
-                messages_after: 1,
-            },
-            AgentStreamEvent::RequestStart { step: 1 },
-            AgentStreamEvent::ToolCallDelta {
-                delta: "{\"a\":".into(),
-                tool_call_id: Some("call_1".into()),
-            },
-            AgentStreamEvent::ResponseComplete { step: 1 },
-        ];
-        for event in dropped {
-            assert!(
-                map_vendor_event(event).is_none(),
-                "vendor-only event should be dropped"
-            );
-        }
+    fn map_vendor_event_preserves_optional_variant_payloads() {
+        // Shared field shapes across variants compile even when
+        // mislabelled, so each mapping pins its variant identity.
+        let RunEvent::StepStart { step } =
+            map_vendor_event(AgentStreamEvent::RequestStart { step: 2 })
+        else {
+            panic!("request start should map to the step-start variant");
+        };
+        assert_eq!(step, 2);
+
+        let RunEvent::StepEnd { step } =
+            map_vendor_event(AgentStreamEvent::ResponseComplete { step: 2 })
+        else {
+            panic!("response complete should map to the step-end variant");
+        };
+        assert_eq!(step, 2);
+
+        let RunEvent::ContextInfo {
+            estimated_tokens,
+            request_bytes,
+            context_limit,
+        } = map_vendor_event(AgentStreamEvent::ContextInfo {
+            estimated_tokens: 128,
+            request_bytes: 512,
+            context_limit: Some(8192),
+        })
+        else {
+            panic!("context info should map");
+        };
+        assert_eq!((estimated_tokens, request_bytes), (128, 512));
+        assert_eq!(context_limit, Some(8192));
+
+        let RunEvent::ContextCompressed {
+            original_tokens,
+            compressed_tokens,
+            strategy,
+            messages_before,
+            messages_after,
+        } = map_vendor_event(AgentStreamEvent::ContextCompressed {
+            original_tokens: 10,
+            compressed_tokens: 5,
+            strategy: "truncate".into(),
+            messages_before: 2,
+            messages_after: 1,
+        })
+        else {
+            panic!("context compressed should map");
+        };
+        assert_eq!(
+            (
+                original_tokens,
+                compressed_tokens,
+                messages_before,
+                messages_after
+            ),
+            (10, 5, 2, 1)
+        );
+        assert_eq!(strategy, "truncate");
+
+        // The vendor also emits whole arguments as one delta, so this
+        // mapping runs on the mock path; pinned here with a fragment
+        // shape to prove pass-through.
+        let RunEvent::ToolCallDelta {
+            tool_call_id,
+            delta,
+        } = map_vendor_event(AgentStreamEvent::ToolCallDelta {
+            delta: "{\"a\":".into(),
+            tool_call_id: Some("call_1".into()),
+        })
+        else {
+            panic!("tool call delta should map");
+        };
+        assert_eq!(tool_call_id.as_deref(), Some("call_1"));
+        assert_eq!(delta, "{\"a\":");
     }
 
     #[test]
     fn map_vendor_event_preserves_mapped_variant_payloads() {
-        let Some(RunEvent::Error { message }) = map_vendor_event(AgentStreamEvent::Error {
+        let RunEvent::Error { message } = map_vendor_event(AgentStreamEvent::Error {
             message: "boom".into(),
         }) else {
             panic!("error event should map");
         };
         assert_eq!(message, "boom");
 
-        let Some(RunEvent::Cancelled {
+        let RunEvent::Cancelled {
             partial_text,
             partial_thinking,
             pending_tools,
-        }) = map_vendor_event(AgentStreamEvent::Cancelled {
+        } = map_vendor_event(AgentStreamEvent::Cancelled {
             partial_text: Some("partial".into()),
             partial_thinking: None,
             pending_tools: vec!["read".into()],
@@ -339,7 +414,7 @@ mod tests {
 
         // A mislabel of the thinking arm (both sides are bare text records)
         // would compile, so pin the variant identity here.
-        let Some(RunEvent::ThinkingDelta { text }) =
+        let RunEvent::ThinkingDelta { text } =
             map_vendor_event(AgentStreamEvent::ThinkingDelta { text: "hmm".into() })
         else {
             panic!("thinking delta should map to the thinking variant");
@@ -348,10 +423,10 @@ mod tests {
 
         // The call-start and call-complete arms share one field shape, so
         // pin each variant identity and its id separately.
-        let Some(RunEvent::ToolCallStart {
+        let RunEvent::ToolCallStart {
             tool_name,
             tool_call_id,
-        }) = map_vendor_event(AgentStreamEvent::ToolCallStart {
+        } = map_vendor_event(AgentStreamEvent::ToolCallStart {
             tool_name: "read".into(),
             tool_call_id: Some("call_1".into()),
         })
@@ -363,10 +438,10 @@ mod tests {
             ("read", Some("call_1"))
         );
 
-        let Some(RunEvent::ToolCallComplete {
+        let RunEvent::ToolCallComplete {
             tool_name,
             tool_call_id,
-        }) = map_vendor_event(AgentStreamEvent::ToolCallComplete {
+        } = map_vendor_event(AgentStreamEvent::ToolCallComplete {
             tool_name: "read".into(),
             tool_call_id: Some("call_1".into()),
         })
@@ -378,12 +453,12 @@ mod tests {
             ("read", Some("call_1"))
         );
 
-        let Some(RunEvent::ToolExecuted {
+        let RunEvent::ToolExecuted {
             tool_name,
             tool_call_id,
             success,
             error,
-        }) = map_vendor_event(AgentStreamEvent::ToolExecuted {
+        } = map_vendor_event(AgentStreamEvent::ToolExecuted {
             tool_name: "read".into(),
             tool_call_id: Some("call_1".into()),
             success: false,
@@ -407,6 +482,9 @@ mod tests {
         let response = ModelResponse::with_parts(vec![
             ModelResponsePart::text("checking"),
             ModelResponsePart::tool_call("read_file", json!({"path": "a.txt"})),
+            // Text after the call proves the consuming pass keeps every
+            // text part in order, not just the leading one.
+            ModelResponsePart::text("done"),
         ]);
         let request = ModelRequest::with_parts(vec![
             ModelRequestPart::SystemPrompt(SystemPromptPart::new("sys")),
@@ -443,7 +521,7 @@ mod tests {
             },
             RunMessage {
                 role: RunMessageRole::Assistant,
-                text: Some("checking".into()),
+                text: Some("checkingdone".into()),
                 tool_calls: vec![RunToolCallSummary {
                     tool_name: "read_file".into(),
                     tool_call_id: None,
@@ -796,39 +874,67 @@ mod tests {
         );
     }
 
-    #[tokio::test]
-    async fn run_stream_reports_tool_activity_consistent_with_transcript() {
-        // Scripted flow: the first turn calls `ping`, then the final turn
-        // answers with text once the tool return is in the history.
+    /// Stream window of the scripted ping call: the run's events plus
+    /// the call's start/complete positions and stamped call id, shared
+    /// by the tool-activity and optional-events tests.
+    struct PingCallWindow {
+        events: Vec<RunEvent>,
+        call_start: usize,
+        call_id: Option<String>,
+        call_complete: usize,
+    }
+
+    /// Runs the scripted ping flow (the first turn calls `ping`, then
+    /// the final turn answers with text) and locates the ping call's
+    /// stream window.
+    async fn run_scripted_ping_flow() -> PingCallWindow {
         let model = tool_then_text("ping", json!({"target": "example.com"}), "after the tool");
         let hooked = streamed_agent_with_ping_tool(model, HookSet::builder().build());
-
         let events = collect_events(&hooked, "use the tool").await;
 
-        let position = |predicate: &dyn Fn(&RunEvent) -> bool| {
-            events.iter().position(|event| predicate(event))
-        };
-        let call_start = position(&|event| {
+        let call_start = position(&events, &|event| {
             matches!(event, RunEvent::ToolCallStart { tool_name, .. } if tool_name == "ping")
         })
         .expect("tool call start should stream");
-        // The scripted mock stamps the call id; every later event and
-        // transcript record must correlate on it.
-        let streamed_call_id = match &events[call_start] {
+        let call_id = match &events[call_start] {
             RunEvent::ToolCallStart { tool_call_id, .. } => tool_call_id.clone(),
             other => panic!("expected a tool call start, got {other:?}"),
         };
+        let call_complete = position(&events, &|event| {
+            matches!(event, RunEvent::ToolCallComplete { tool_call_id, .. }
+                if tool_call_id == &call_id)
+        })
+        .expect("tool call complete should stream");
+        PingCallWindow {
+            events,
+            call_start,
+            call_id,
+            call_complete,
+        }
+    }
+
+    /// Index of the first event matching `predicate`.
+    fn position(events: &[RunEvent], predicate: &dyn Fn(&RunEvent) -> bool) -> Option<usize> {
+        events.iter().position(|event| predicate(event))
+    }
+
+    #[tokio::test]
+    async fn run_stream_reports_tool_activity_consistent_with_transcript() {
+        let PingCallWindow {
+            events,
+            call_start,
+            call_id: streamed_call_id,
+            call_complete,
+        } = run_scripted_ping_flow().await;
+
+        // The scripted mock stamps the call id; every later event and
+        // transcript record must correlate on it.
         assert_eq!(
             streamed_call_id.as_deref(),
             Some("call_mock"),
             "the scripted call id must stream through the start event"
         );
-        let call_complete = position(&|event| {
-            matches!(event, RunEvent::ToolCallComplete { tool_call_id, .. }
-                if tool_call_id == &streamed_call_id)
-        })
-        .expect("tool call complete should stream");
-        let executed = position(&|event| {
+        let executed = position(&events, &|event| {
             matches!(
                 event,
                 RunEvent::ToolExecuted { tool_name, tool_call_id, success, error: None, .. }
@@ -842,10 +948,12 @@ mod tests {
         );
 
         // Output-ready arrives after the final text but before completion.
-        let output_ready = position(&|event| matches!(event, RunEvent::OutputReady))
+        let output_ready = position(&events, &|event| matches!(event, RunEvent::OutputReady))
             .expect("output-ready should stream");
-        let complete = position(&|event| matches!(event, RunEvent::RunComplete { .. }))
-            .expect("run should complete");
+        let complete = position(&events, &|event| {
+            matches!(event, RunEvent::RunComplete { .. })
+        })
+        .expect("run should complete");
         assert_eq!(
             complete,
             events.len() - 1,
@@ -910,6 +1018,98 @@ mod tests {
             .last()
             .expect("closing assistant turn should carry text");
         assert_eq!(final_answer, streamed_answer);
+    }
+
+    #[tokio::test]
+    async fn run_stream_surfaces_optional_events_when_backend_emits_them() {
+        let PingCallWindow {
+            events,
+            call_start,
+            call_id: streamed_call_id,
+            call_complete,
+        } = run_scripted_ping_flow().await;
+
+        // Both model-request steps report start and end boundaries, so
+        // consumers can group the stream by step index; this backend
+        // numbers steps from one.
+        let started_steps: Vec<u32> = events
+            .iter()
+            .filter_map(|event| match event {
+                RunEvent::StepStart { step } => Some(*step),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(started_steps, vec![1, 2], "both steps should report starts");
+        let ended_steps: Vec<u32> = events
+            .iter()
+            .filter_map(|event| match event {
+                RunEvent::StepEnd { step } => Some(*step),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(ended_steps, vec![1, 2], "both steps should report ends");
+        let first_step_start = position(&events, &|event| {
+            matches!(event, RunEvent::StepStart { step: 1 })
+        })
+        .expect("first step should start");
+        let first_content = position(&events, &|event| {
+            matches!(
+                event,
+                RunEvent::TextDelta { .. } | RunEvent::ToolCallStart { .. }
+            )
+        })
+        .expect("step content should stream");
+        assert!(
+            first_step_start < first_content,
+            "step start must precede the step's content events"
+        );
+        let first_step_end = position(&events, &|event| {
+            matches!(event, RunEvent::StepEnd { step: 1 })
+        })
+        .expect("first step should end");
+        let second_step_start = position(&events, &|event| {
+            matches!(event, RunEvent::StepStart { step: 2 })
+        })
+        .expect("second step should start");
+        assert!(
+            first_step_end < second_step_start,
+            "steps must not interleave"
+        );
+
+        // Context telemetry arrives per model request.
+        let context_infos: Vec<&RunEvent> = events
+            .iter()
+            .filter(|event| matches!(event, RunEvent::ContextInfo { .. }))
+            .collect();
+        assert_eq!(context_infos.len(), 2, "one context info per step");
+        for info in context_infos {
+            let RunEvent::ContextInfo { request_bytes, .. } = info else {
+                unreachable!("filtered to context info");
+            };
+            assert!(
+                *request_bytes > 0,
+                "serialized request size should be positive"
+            );
+        }
+
+        // Streamed argument assembly: the ping call's deltas arrive
+        // between its start and completion and concatenate to the
+        // call's arguments. The mock delivers arguments whole, so this
+        // exercises the vendor's single-delta path.
+        let streamed_args: String = events[call_start + 1..call_complete]
+            .iter()
+            .filter_map(|event| match event {
+                RunEvent::ToolCallDelta {
+                    tool_call_id,
+                    delta,
+                } if tool_call_id == &streamed_call_id => Some(delta.as_str()),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(
+            streamed_args, r#"{"target":"example.com"}"#,
+            "argument deltas must concatenate to the call's arguments"
+        );
     }
 
     #[tokio::test]

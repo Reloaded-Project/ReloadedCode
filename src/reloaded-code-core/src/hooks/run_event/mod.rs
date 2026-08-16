@@ -21,9 +21,10 @@ use serde::{Deserialize, Serialize};
 
 /// Framework-owned event yielded by a run stream.
 ///
-/// One variant per observable streaming milestone: run start, text
-/// and thinking deltas, tool activity (call start, call complete,
-/// executed), output-ready, run complete, error, and cancellation.
+/// One variant per observable streaming milestone: run start, step
+/// boundaries, context telemetry, text and thinking deltas, tool
+/// activity (call start, argument deltas, call complete, executed),
+/// output-ready, run complete, error, and cancellation.
 ///
 /// The enum is `#[non_exhaustive]`: variants may be appended in a
 /// future release without a breaking change, so matches outside this
@@ -35,6 +36,43 @@ pub enum RunEvent {
     RunStart {
         /// Identifier of the started run.
         run_id: String,
+    },
+    /// A model-request step started; the step's tool events may follow
+    /// the matching [`RunEvent::StepEnd`] (see that variant).
+    ///
+    /// Optional: emitted only by backends that report step boundaries;
+    /// absence is normal.
+    StepStart {
+        /// Index of the started step; numbering is backend-defined.
+        step: u32,
+    },
+    /// Context-size telemetry measured while building a model request.
+    ///
+    /// Optional: emitted only by backends that report context metrics;
+    /// absence is normal.
+    ContextInfo {
+        /// Estimated token count of the request.
+        estimated_tokens: usize,
+        /// Serialized request size in bytes (messages plus tools).
+        request_bytes: usize,
+        /// Model's context window limit, when known.
+        context_limit: Option<u64>,
+    },
+    /// Context was compressed to fit within limits.
+    ///
+    /// Optional: emitted only by backends that compress context and
+    /// report it; absence is normal.
+    ContextCompressed {
+        /// Token count before compression.
+        original_tokens: usize,
+        /// Token count after compression.
+        compressed_tokens: usize,
+        /// Strategy used, e.g. "truncate" or "summarize".
+        strategy: String,
+        /// Number of messages before compression.
+        messages_before: usize,
+        /// Number of messages after compression.
+        messages_after: usize,
     },
     /// Incremental assistant text arrived.
     TextDelta {
@@ -53,6 +91,17 @@ pub enum RunEvent {
         /// Call id correlating this call with its completion and result.
         tool_call_id: Option<String>,
     },
+    /// Incremental tool-call argument fragment arrived.
+    ///
+    /// Optional: a backend may omit it; absence is normal. Complete
+    /// arguments remain available in the [`RunEvent::RunComplete`]
+    /// transcript as [`RunToolCallSummary::arguments_json`].
+    ToolCallDelta {
+        /// Call id correlating this fragment with its call.
+        tool_call_id: Option<String>,
+        /// Argument fragment appended since the previous delta.
+        delta: String,
+    },
     /// A tool call's arguments finished streaming.
     ToolCallComplete {
         /// Name of the tool being called.
@@ -70,6 +119,19 @@ pub enum RunEvent {
         success: bool,
         /// Error text when the tool failed.
         error: Option<String>,
+    },
+    /// A model-request step's response finished.
+    ///
+    /// Backends that execute tools inside a step emit this before the
+    /// step's tool calls run, so tool events may arrive after the
+    /// matching [`RunEvent::StepEnd`].
+    ///
+    /// Optional: emitted only by backends that report step boundaries;
+    /// absence is normal.
+    StepEnd {
+        /// Index of the finished step, matching its
+        /// [`RunEvent::StepStart`].
+        step: u32,
     },
     /// The run's final output is ready to consume.
     OutputReady,
@@ -209,6 +271,24 @@ mod tests {
             RunEvent::RunStart {
                 run_id: "run-42".into(),
             },
+            RunEvent::StepStart { step: 0 },
+            RunEvent::ContextInfo {
+                estimated_tokens: 128,
+                request_bytes: 512,
+                context_limit: Some(8192),
+            },
+            RunEvent::ContextInfo {
+                estimated_tokens: 128,
+                request_bytes: 512,
+                context_limit: None,
+            },
+            RunEvent::ContextCompressed {
+                original_tokens: 9000,
+                compressed_tokens: 4000,
+                strategy: "truncate".into(),
+                messages_before: 20,
+                messages_after: 6,
+            },
             RunEvent::TextDelta {
                 text: "chunk".into(),
             },
@@ -218,6 +298,10 @@ mod tests {
             RunEvent::ToolCallStart {
                 tool_name: "read_file".into(),
                 tool_call_id: Some("call_1".into()),
+            },
+            RunEvent::ToolCallDelta {
+                tool_call_id: Some("call_1".into()),
+                delta: "{\"path\":".into(),
             },
             RunEvent::ToolCallComplete {
                 tool_name: "read_file".into(),
@@ -229,6 +313,7 @@ mod tests {
                 success: false,
                 error: Some("missing".into()),
             },
+            RunEvent::StepEnd { step: 0 },
             RunEvent::OutputReady,
             RunEvent::Error {
                 message: "boom".into(),
