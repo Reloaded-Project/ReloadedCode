@@ -25,6 +25,7 @@ use async_trait::async_trait;
 use futures::stream;
 use serdes_ai::core::{
     FinishReason, ModelRequest, ModelResponse, ModelResponsePart, ModelResponseStreamEvent,
+    ToolCallPart,
 };
 use serdes_ai_models::Model as ModelTrait;
 pub use serdes_ai_models::{FunctionModel, MockModel, TestModel};
@@ -33,6 +34,13 @@ use serdes_ai::core::ModelSettings;
 use serdes_ai_models::{
     ModelCapability, ModelError, ModelProfile, ModelRequestParameters, StreamedResponse,
 };
+
+// ============================================================================
+// Private helpers
+// ============================================================================
+
+/// Characters per streamed text chunk; see [`response_to_stream_events`].
+const STREAM_CHUNK_CHARS: usize = 16;
 
 // ============================================================================
 // Streamed - wrapper that adds streaming support to any Model
@@ -292,16 +300,37 @@ fn extract_tool_return_text(tr: &serdes_ai::core::ToolReturnPart) -> String {
     serde_json::to_string_pretty(&val).unwrap_or_else(|_| format!("{:?}", tr.content))
 }
 
-// ============================================================================
-// Private helpers
-// ============================================================================
-
 fn response_to_stream_events(response: ModelResponse) -> Vec<ModelResponseStreamEvent> {
-    let mut events = Vec::with_capacity(response.parts.len() * 2 + 1);
+    // Estimate: two boundary events per part plus one delta per chunk
+    // (byte length bounds the char-chunk count from above).
+    let estimated: usize = response
+        .parts
+        .iter()
+        .map(|part| match part {
+            ModelResponsePart::Text(text) => text.content.len() / STREAM_CHUNK_CHARS + 3,
+            _ => 3,
+        })
+        .sum();
+    let mut events = Vec::with_capacity(estimated);
 
     for (index, part) in response.parts.into_iter().enumerate() {
-        events.push(ModelResponseStreamEvent::part_start(index, part));
-        events.push(ModelResponseStreamEvent::part_end(index));
+        match part {
+            // Text streams incrementally: an empty start, then bounded
+            // chunks, so the agent layer surfaces multiple text deltas
+            // instead of one whole-part event.
+            ModelResponsePart::Text(text) => {
+                events.push(ModelResponseStreamEvent::part_start(
+                    index,
+                    ModelResponsePart::text(""),
+                ));
+                push_text_delta_events(&mut events, index, &text.content);
+                events.push(ModelResponseStreamEvent::part_end(index));
+            }
+            part => {
+                events.push(ModelResponseStreamEvent::part_start(index, part));
+                events.push(ModelResponseStreamEvent::part_end(index));
+            }
+        }
     }
 
     events
@@ -309,10 +338,32 @@ fn response_to_stream_events(response: ModelResponse) -> Vec<ModelResponseStream
 
 /// Emits a tool-call response: a short text part, then the call that
 /// triggers the real tool.
+///
+/// The call carries a fixed id so streamed events and transcripts expose
+/// the correlation key real providers assign.
 fn tool_call_response(tool_name: &str, args: &serde_json::Value) -> ModelResponse {
     ModelResponse::with_parts(vec![
         ModelResponsePart::text(format!("Calling {tool_name}...")),
-        ModelResponsePart::tool_call(tool_name, args.clone()),
+        ModelResponsePart::ToolCall(
+            ToolCallPart::new(tool_name, args.clone()).with_tool_call_id("call_mock"),
+        ),
     ])
     .with_finish_reason(FinishReason::ToolCall)
+}
+
+/// Pushes one `text_delta` event per [`STREAM_CHUNK_CHARS`] character chunk
+/// of `text`, chunking on char boundaries so multi-byte text stays intact.
+fn push_text_delta_events(events: &mut Vec<ModelResponseStreamEvent>, index: usize, text: &str) {
+    let mut remaining = text;
+    while !remaining.is_empty() {
+        let end = remaining
+            .char_indices()
+            .nth(STREAM_CHUNK_CHARS)
+            .map_or(remaining.len(), |(offset, _)| offset);
+        events.push(ModelResponseStreamEvent::text_delta(
+            index,
+            &remaining[..end],
+        ));
+        remaining = &remaining[end..];
+    }
 }

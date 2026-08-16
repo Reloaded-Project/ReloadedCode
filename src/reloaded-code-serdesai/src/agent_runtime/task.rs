@@ -2,22 +2,23 @@
 //!
 //! # Public API
 //! - [`AgentBuildContext`] - Reusable shared inputs for building runnable agents.
-//! - [`HookedAgent`] - Built agent wrapper that dispatches through run hooks.
+//! - [`HookedAgent`] - Built agent wrapper that dispatches `run()` through run
+//!   hooks and streams framework-owned events from `run_stream()`.
 
 #[cfg(not(all(feature = "linux-bubblewrap", target_os = "linux")))]
 use super::build::Profile;
 use super::build::{AgentBuildError, attach_standard_tools, prepare_build};
+use super::stream_events::RunEventStream;
 use crate::task::TaskHandle;
 use futures::Stream;
 use reloaded_code_agents::AgentRuntime;
 #[cfg(all(feature = "linux-bubblewrap", target_os = "linux"))]
 use reloaded_code_bubblewrap::{CreateSandboxError, Preset, Profile, TempSandboxDirs};
 use reloaded_code_core::hooks::{
-    EndReason, HookRunContext, HookSet, ModelSettingsOverrides, PreambleRole, RunConfig,
+    EndReason, HookRunContext, HookSet, ModelSettingsOverrides, PreambleRole, RunConfig, RunEvent,
     RunExecutor, RunHookFuture, RunOutput, RunUsage,
 };
 use reloaded_code_core::{CredentialLookup, CredentialResolver, models::ModelCatalog};
-use serdes_ai::core::ModelRequest;
 use serdes_ai::{Agent, AgentBuilder, RunOptions};
 #[cfg(any(test, feature = "mock"))]
 use serdes_ai_models::BoxedModel;
@@ -36,10 +37,13 @@ pub struct AgentBuildContext<C: CredentialLookup + Send + Sync + 'static = Crede
     context: Arc<TaskBuildContext<C>>,
 }
 
-/// Lightweight newtype around a built SerdesAI `Agent` that dispatches
-/// `run()` and `run_stream()` through the core `HookSet::dispatch_run` hook
-/// chain when run hooks are registered. Passes through directly when no hooks
-/// are present for zero overhead.
+/// Lightweight newtype around a built SerdesAI `Agent`.
+///
+/// `run()` dispatches through the core `HookSet::dispatch_run` hook chain
+/// when run hooks are registered and passes through directly otherwise.
+/// `run_stream()` streams framework-owned [`RunEvent`]s lazily mapped from
+/// the vendor stream; registered run hooks are not consulted on the
+/// streaming path, so run-hook config injection applies to `run()` only.
 pub struct HookedAgent {
     inner: Agent<(), String>,
     hooks: HookSet,
@@ -63,7 +67,7 @@ pub struct HookedAgentRunResult {
 ///
 /// On inner failure the hook chain sees a [`ToolError::Execution`] projection
 /// while the original [`AgentRunError`] is parked in `error`; the dispatch
-/// site in `run_with_extras` restores the original when the failure reaches
+/// site in `run_hooked` restores the original when the failure reaches
 /// the caller untouched.
 ///
 /// [`ToolError::Execution`]: reloaded_code_core::ToolError::Execution
@@ -72,22 +76,8 @@ struct SerdesRunExecutor<'a> {
     agent: &'a Agent<(), String>,
     prompt: String,
     deps: (),
-    /// Slot the executor fills with the inner response's run metadata.
-    extras: Arc<Mutex<Option<AgentRunExtras>>>,
     /// Slot the executor fills with the inner run's original failure.
     error: Arc<Mutex<Option<serdes_ai::agent::AgentRunError>>>,
-}
-
-/// Inner-agent run metadata captured alongside the output so streaming
-/// callers can emit a faithful `RunComplete` event.
-#[derive(Default)]
-struct AgentRunExtras {
-    /// Run identifier assigned by the inner agent, or the wrapper's
-    /// identifier when a hook replaced the run without calling `original`.
-    run_id: String,
-    /// Complete message history from the inner run; empty when a hook
-    /// replaced the run without calling `original`.
-    messages: Vec<ModelRequest>,
 }
 
 /// Shared owned state for builds that may happen later during Task delegation.
@@ -351,15 +341,10 @@ impl HookedAgent {
         prompt: impl Into<String>,
         deps: (),
     ) -> Result<HookedAgentRunResult, serdes_ai::agent::AgentRunError> {
-        let (result, _extras) = self.run_with_extras(prompt.into(), deps).await?;
-        Ok(result)
+        self.run_hooked(prompt.into(), deps).await
     }
 
-    /// Shared implementation behind `run` and `run_stream`.
-    ///
-    /// Returns the run result plus the inner agent's run id and message
-    /// history, which `run_stream` needs for its synthetic `RunComplete`
-    /// event.
+    /// Hooked-run implementation behind `run`.
     ///
     /// # Errors
     ///
@@ -368,21 +353,15 @@ impl HookedAgent {
     ///   and the failure reaches the caller untouched.
     /// - Returns [`serdes_ai::agent::AgentRunError::Other`] when a run hook
     ///   returns or substitutes its own error during dispatch.
-    async fn run_with_extras(
+    async fn run_hooked(
         &self,
         prompt: String,
         deps: (),
-    ) -> Result<(HookedAgentRunResult, AgentRunExtras), serdes_ai::agent::AgentRunError> {
+    ) -> Result<HookedAgentRunResult, serdes_ai::agent::AgentRunError> {
         if self.hooks.run_hooks_is_empty() {
             let response = self.inner.run(prompt, deps).await?;
-            let serdes_ai::agent::AgentRunResult {
-                output,
-                run_id,
-                messages,
-                ..
-            } = response;
-            let extras = AgentRunExtras { run_id, messages };
-            return Ok((HookedAgentRunResult { content: output }, extras));
+            let serdes_ai::agent::AgentRunResult { output, .. } = response;
+            return Ok(HookedAgentRunResult { content: output });
         }
 
         // Wrapper-assigned run id for the hook context. The inner agent
@@ -396,13 +375,11 @@ impl HookedAgent {
         };
         let config = RunConfig::default();
 
-        let extras_slot = Arc::new(Mutex::new(None));
         let error_slot = Arc::new(Mutex::new(None));
         let executor = SerdesRunExecutor {
             agent: &self.inner,
             prompt,
             deps,
-            extras: Arc::clone(&extras_slot),
             error: Arc::clone(&error_slot),
         };
 
@@ -414,71 +391,41 @@ impl HookedAgent {
             Err(dispatched) => return Err(restore_run_error(dispatched, &error_slot)),
         };
 
-        // A hook that skipped `original` leaves the slot empty; fall back to
-        // the wrapper id so downstream events still carry a stable identifier.
-        let extras = extras_slot
-            .lock()
-            .expect("extras slot should not be poisoned")
-            .take()
-            .unwrap_or(AgentRunExtras {
-                run_id,
-                messages: Vec::new(),
-            });
-
-        Ok((HookedAgentRunResult::from_run_output(output), extras))
+        Ok(HookedAgentRunResult::from_run_output(output))
     }
 
-    /// Runs the agent in streaming mode.
+    /// Runs the agent in streaming mode, yielding framework-owned
+    /// [`RunEvent`]s.
     ///
-    /// When no run hooks are registered this delegates directly to the inner
-    /// agent's `run_stream`. When hooks are present it reuses the hooked
-    /// non-stream path and emits a synthetic stream containing the final
-    /// text output plus a `RunComplete` event carrying the real run id and
-    /// message history.
+    /// Starts the inner agent's stream and lazily maps each vendor event as
+    /// the stream is polled, so real incremental text and thinking deltas
+    /// reach the caller as they arrive. The mapped
+    /// [`RunEvent::RunComplete`] carries the inner run's id and a distilled
+    /// transcript. The prompt accepts full
+    /// [`UserContent`][serdes_ai::core::UserContent]; image and multi-part
+    /// prompts pass through to the vendor unchanged.
+    ///
+    /// Registered run hooks are not consulted on the streaming path;
+    /// preamble, system-prompt, and model-settings injection apply to
+    /// [`HookedAgent::run`] only.
     ///
     /// # Errors
     ///
     /// - Returns the inner agent's [`serdes_ai::agent::AgentRunError`]
-    ///   unchanged when the inner agent fails (direct stream or hooked run)
-    ///   and the failure reaches the caller untouched.
-    /// - Returns [`serdes_ai::agent::AgentRunError::Other`] when the prompt is not
-    ///   representable as text, or when a run hook returns or substitutes its
-    ///   own error during dispatch.
+    ///   unchanged when starting the stream fails.
+    /// - The stream itself yields the inner error as an `Err` item when the
+    ///   run fails mid-stream; a vendor error event surfaces as the mapped
+    ///   [`RunEvent::Error`] variant instead.
     pub async fn run_stream(
         &self,
         prompt: impl Into<serdes_ai::core::UserContent>,
         deps: (),
     ) -> Result<
-        Pin<
-            Box<
-                dyn Stream<
-                        Item = Result<serdes_ai::AgentStreamEvent, serdes_ai::agent::AgentRunError>,
-                    > + Send,
-            >,
-        >,
+        Pin<Box<dyn Stream<Item = Result<RunEvent, serdes_ai::agent::AgentRunError>> + Send>>,
         serdes_ai::agent::AgentRunError,
     > {
-        let prompt = prompt.into();
-        if self.hooks.run_hooks_is_empty() {
-            let stream = self.inner.run_stream(prompt, deps).await?;
-            return Ok(Box::pin(stream));
-        }
-        let text = prompt.as_text().ok_or_else(|| {
-            serdes_ai::agent::AgentRunError::Other(anyhow::anyhow!(
-                "run hooks require a text prompt; image or multi-part prompts are unsupported"
-            ))
-        })?;
-        let (result, extras) = self.run_with_extras(text.to_string(), deps).await?;
-        let text = result.output().to_string();
-        let events = vec![
-            Ok(serdes_ai::AgentStreamEvent::TextDelta { text }),
-            Ok(serdes_ai::AgentStreamEvent::OutputReady),
-            Ok(serdes_ai::AgentStreamEvent::RunComplete {
-                run_id: extras.run_id,
-                messages: extras.messages,
-            }),
-        ];
-        Ok(Box::pin(futures::stream::iter(events)))
+        let inner = self.inner.run_stream(prompt, deps).await?;
+        Ok(Box::pin(RunEventStream::new(inner)))
     }
 }
 
@@ -595,7 +542,6 @@ impl<'a> RunExecutor for SerdesRunExecutor<'a> {
             prompt = format!("{}\n\n{prompt}", sections.join("\n\n"));
         }
 
-        let extras = Arc::clone(&self.extras);
         let error = Arc::clone(&self.error);
         let run_options = run_options_with_overrides(agent, config.model_settings_overrides);
         #[allow(clippy::let_unit_value)]
@@ -617,17 +563,11 @@ impl<'a> RunExecutor for SerdesRunExecutor<'a> {
                     return Err(projection);
                 }
             };
-            // Read borrowed fields before moving run_id and messages out.
             let content = response.output().to_string();
             let usage = RunUsage {
                 prompt_tokens: response.usage.request_tokens,
                 completion_tokens: response.usage.response_tokens,
             };
-            let inner_extras = AgentRunExtras {
-                run_id: response.run_id,
-                messages: response.messages,
-            };
-            *extras.lock().expect("extras slot should not be poisoned") = Some(inner_extras);
             Ok(RunOutput {
                 content,
                 reason: EndReason::Completed,
@@ -801,7 +741,7 @@ mod tests {
         read as read_meta, task as task_meta, write as write_meta,
     };
     use serde_json::json;
-    use serdes_ai::core::{ModelResponse, ModelSettings};
+    use serdes_ai::core::{ModelRequest, ModelResponse, ModelSettings};
     use std::collections::HashSet;
     use std::path::PathBuf;
     use std::sync::Mutex;
