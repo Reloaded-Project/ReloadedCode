@@ -297,6 +297,7 @@ mod tests {
         HookRunContext, HookSet, RunConfig, RunHook, RunHookFuture, RunOriginal,
     };
     use reloaded_code_core::{ToolCatalogEntry, ToolCatalogKind};
+    use rstest::rstest;
     use serde_json::json;
     use serdes_ai::core::messages::request::RetryPromptPart;
     use serdes_ai::core::{
@@ -310,167 +311,138 @@ mod tests {
     // Vendor event mapping
     // ========================================================================
 
-    #[test]
-    fn map_vendor_event_preserves_optional_variant_payloads() {
-        // Shared field shapes across variants compile even when
-        // mislabelled, so each mapping pins its variant identity.
-        let RunEvent::StepStart { step } =
-            map_vendor_event(AgentStreamEvent::RequestStart { step: 2 })
-        else {
-            panic!("request start should map to the step-start variant");
-        };
-        assert_eq!(step, 2);
-
-        let RunEvent::StepEnd { step } =
-            map_vendor_event(AgentStreamEvent::ResponseComplete { step: 2 })
-        else {
-            panic!("response complete should map to the step-end variant");
-        };
-        assert_eq!(step, 2);
-
-        let RunEvent::ContextInfo {
-            estimated_tokens,
-            request_bytes,
-            context_limit,
-        } = map_vendor_event(AgentStreamEvent::ContextInfo {
+    /// Optional events map field-for-field when the backend emits them;
+    /// absence is normal on other backends. Whole-event equality pins
+    /// variant identity too, so a mislabelled arm fails even when the
+    /// field shapes compile.
+    #[rstest]
+    #[case::step_start(
+        AgentStreamEvent::RequestStart { step: 2 },
+        RunEvent::StepStart { step: 2 }
+    )]
+    #[case::step_end(
+        AgentStreamEvent::ResponseComplete { step: 2 },
+        RunEvent::StepEnd { step: 2 }
+    )]
+    #[case::context_info(
+        AgentStreamEvent::ContextInfo {
             estimated_tokens: 128,
             request_bytes: 512,
             context_limit: Some(8192),
-        })
-        else {
-            panic!("context info should map");
-        };
-        assert_eq!((estimated_tokens, request_bytes), (128, 512));
-        assert_eq!(context_limit, Some(8192));
-
-        let RunEvent::ContextCompressed {
-            original_tokens,
-            compressed_tokens,
-            strategy,
-            messages_before,
-            messages_after,
-        } = map_vendor_event(AgentStreamEvent::ContextCompressed {
+        },
+        RunEvent::ContextInfo {
+            estimated_tokens: 128,
+            request_bytes: 512,
+            context_limit: Some(8192),
+        }
+    )]
+    #[case::context_compressed(
+        AgentStreamEvent::ContextCompressed {
             original_tokens: 10,
             compressed_tokens: 5,
             strategy: "truncate".into(),
             messages_before: 2,
             messages_after: 1,
-        })
-        else {
-            panic!("context compressed should map");
-        };
-        assert_eq!(
-            (
-                original_tokens,
-                compressed_tokens,
-                messages_before,
-                messages_after
-            ),
-            (10, 5, 2, 1)
-        );
-        assert_eq!(strategy, "truncate");
-
-        // The vendor also emits whole arguments as one delta, so this
-        // mapping runs on the mock path; pinned here with a fragment
-        // shape to prove pass-through.
-        let RunEvent::ToolCallDelta {
-            tool_call_id,
-            delta,
-        } = map_vendor_event(AgentStreamEvent::ToolCallDelta {
+        },
+        RunEvent::ContextCompressed {
+            original_tokens: 10,
+            compressed_tokens: 5,
+            strategy: "truncate".into(),
+            messages_before: 2,
+            messages_after: 1,
+        }
+    )]
+    // The vendor delivers whole arguments as one delta when the model
+    // does not stream fragments; fragment shape pinned for pass-through.
+    #[case::tool_call_delta(
+        AgentStreamEvent::ToolCallDelta {
             delta: "{\"a\":".into(),
             tool_call_id: Some("call_1".into()),
-        })
-        else {
-            panic!("tool call delta should map");
-        };
-        assert_eq!(tool_call_id.as_deref(), Some("call_1"));
-        assert_eq!(delta, "{\"a\":");
+        },
+        RunEvent::ToolCallDelta {
+            tool_call_id: Some("call_1".into()),
+            delta: "{\"a\":".into(),
+        }
+    )]
+    fn map_vendor_event_preserves_optional_variant_payloads(
+        #[case] event: AgentStreamEvent,
+        #[case] expected: RunEvent,
+    ) {
+        assert_eq!(map_vendor_event(event), expected);
     }
 
-    #[test]
-    fn map_vendor_event_preserves_mapped_variant_payloads() {
-        let RunEvent::Error { message } = map_vendor_event(AgentStreamEvent::Error {
-            message: "boom".into(),
-        }) else {
-            panic!("error event should map");
-        };
-        assert_eq!(message, "boom");
-
-        let RunEvent::Cancelled {
-            partial_text,
-            partial_thinking,
-            pending_tools,
-        } = map_vendor_event(AgentStreamEvent::Cancelled {
-            partial_text: Some("partial".into()),
-            partial_thinking: None,
-            pending_tools: vec!["read".into()],
-        })
-        else {
-            panic!("cancelled event should map");
-        };
-        assert_eq!(partial_text.as_deref(), Some("partial"));
-        assert!(partial_thinking.is_none());
-        assert_eq!(pending_tools, vec!["read".to_string()]);
-
-        // A mislabel of the thinking arm (both sides are bare text records)
-        // would compile, so pin the variant identity here.
-        let RunEvent::ThinkingDelta { text } =
-            map_vendor_event(AgentStreamEvent::ThinkingDelta { text: "hmm".into() })
-        else {
-            panic!("thinking delta should map to the thinking variant");
-        };
-        assert_eq!(text, "hmm");
-
-        // The call-start and call-complete arms share one field shape, so
-        // pin each variant identity and its id separately.
-        let RunEvent::ToolCallStart {
-            tool_name,
-            tool_call_id,
-        } = map_vendor_event(AgentStreamEvent::ToolCallStart {
+    /// Always-emitted events map field-for-field.
+    #[rstest]
+    #[case::run_start(
+        AgentStreamEvent::RunStart { run_id: "run_1".into() },
+        RunEvent::RunStart { run_id: "run_1".into() }
+    )]
+    #[case::text_delta(
+        AgentStreamEvent::TextDelta { text: "hello".into() },
+        RunEvent::TextDelta { text: "hello".into() }
+    )]
+    // Both text arms share one field shape; whole-event equality pins
+    // the thinking variant separately.
+    #[case::thinking_delta(
+        AgentStreamEvent::ThinkingDelta { text: "hmm".into() },
+        RunEvent::ThinkingDelta { text: "hmm".into() }
+    )]
+    // Call-start and call-complete share one field shape; each pinned.
+    #[case::tool_call_start(
+        AgentStreamEvent::ToolCallStart {
             tool_name: "read".into(),
             tool_call_id: Some("call_1".into()),
-        })
-        else {
-            panic!("tool call start should map to the start variant");
-        };
-        assert_eq!(
-            (tool_name.as_str(), tool_call_id.as_deref()),
-            ("read", Some("call_1"))
-        );
-
-        let RunEvent::ToolCallComplete {
-            tool_name,
-            tool_call_id,
-        } = map_vendor_event(AgentStreamEvent::ToolCallComplete {
+        },
+        RunEvent::ToolCallStart {
             tool_name: "read".into(),
             tool_call_id: Some("call_1".into()),
-        })
-        else {
-            panic!("tool call complete should map to the complete variant");
-        };
-        assert_eq!(
-            (tool_name.as_str(), tool_call_id.as_deref()),
-            ("read", Some("call_1"))
-        );
-
-        let RunEvent::ToolExecuted {
-            tool_name,
-            tool_call_id,
-            success,
-            error,
-        } = map_vendor_event(AgentStreamEvent::ToolExecuted {
+        }
+    )]
+    #[case::tool_call_complete(
+        AgentStreamEvent::ToolCallComplete {
+            tool_name: "read".into(),
+            tool_call_id: Some("call_1".into()),
+        },
+        RunEvent::ToolCallComplete {
+            tool_name: "read".into(),
+            tool_call_id: Some("call_1".into()),
+        }
+    )]
+    #[case::tool_executed(
+        AgentStreamEvent::ToolExecuted {
             tool_name: "read".into(),
             tool_call_id: Some("call_1".into()),
             success: false,
             error: Some("missing".into()),
-        })
-        else {
-            panic!("tool executed event should map");
-        };
-        assert_eq!(tool_name, "read");
-        assert_eq!(tool_call_id.as_deref(), Some("call_1"));
-        assert!(!success);
-        assert_eq!(error.as_deref(), Some("missing"));
+        },
+        RunEvent::ToolExecuted {
+            tool_name: "read".into(),
+            tool_call_id: Some("call_1".into()),
+            success: false,
+            error: Some("missing".into()),
+        }
+    )]
+    #[case::error(
+        AgentStreamEvent::Error { message: "boom".into() },
+        RunEvent::Error { message: "boom".into() }
+    )]
+    #[case::cancelled(
+        AgentStreamEvent::Cancelled {
+            partial_text: Some("partial".into()),
+            partial_thinking: None,
+            pending_tools: vec!["read".into()],
+        },
+        RunEvent::Cancelled {
+            partial_text: Some("partial".into()),
+            partial_thinking: None,
+            pending_tools: vec!["read".into()],
+        }
+    )]
+    fn map_vendor_event_preserves_mapped_variant_payloads(
+        #[case] event: AgentStreamEvent,
+        #[case] expected: RunEvent,
+    ) {
+        assert_eq!(map_vendor_event(event), expected);
     }
 
     // ========================================================================
