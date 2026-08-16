@@ -462,6 +462,11 @@ mod tests {
             ModelRequestPart::SystemPrompt(SystemPromptPart::new("sys")),
             ModelRequestPart::UserPrompt(UserPromptPart::new("read a.txt")),
             ModelRequestPart::ModelResponse(Box::new(response)),
+            // Thinking carries no distilled representation; the length
+            // assertion below proves it contributes no message.
+            ModelRequestPart::ModelResponse(Box::new(ModelResponse::with_parts(vec![
+                ModelResponsePart::thinking("internal"),
+            ]))),
             ModelRequestPart::ToolReturn(
                 ToolReturnPart::success("read_file", "contents").with_tool_call_id("call_1"),
             ),
@@ -475,8 +480,16 @@ mod tests {
                 "call_9",
             )),
         ]);
+        // A follow-up request with a multipart user prompt covers
+        // multi-request distillation and the parts-serialization branch.
+        let follow_up = ModelRequest::with_parts(vec![ModelRequestPart::UserPrompt(
+            UserPromptPart::new(UserContent::Parts(vec![
+                serdes_ai::core::UserContentPart::text("part one"),
+                serdes_ai::core::UserContentPart::text("part two"),
+            ])),
+        )]);
 
-        let messages = distill_messages(vec![request]);
+        let messages = distill_messages(vec![request, follow_up]);
 
         let expected = vec![
             RunMessage {
@@ -517,7 +530,7 @@ mod tests {
                 tool_result: None,
             },
         ];
-        assert_eq!(messages.len(), 6);
+        assert_eq!(messages.len(), 7);
         assert_eq!(messages[..5], expected[..]);
 
         // The builtin tool return distills as a Tool turn whose output is
@@ -534,38 +547,18 @@ mod tests {
             "serialized builtin content should stay observable: {}",
             builtin.output
         );
-    }
 
-    #[test]
-    fn distill_messages_serializes_multipart_user_prompts() {
-        let request = ModelRequest::with_parts(vec![ModelRequestPart::UserPrompt(
-            UserPromptPart::new(UserContent::Parts(vec![
-                serdes_ai::core::UserContentPart::text("part one"),
-                serdes_ai::core::UserContentPart::text("part two"),
-            ])),
-        )]);
-
-        let messages = distill_messages(vec![request]);
-
-        assert_eq!(messages.len(), 1);
-        assert_eq!(messages[0].role, RunMessageRole::User);
-        let text = messages[0]
+        // The multipart prompt from the follow-up request renders as
+        // serialized text so mixed content stays observable.
+        assert_eq!(messages[6].role, RunMessageRole::User);
+        let multipart = messages[6]
             .text
             .as_deref()
             .expect("multipart prompt should render as text");
         assert!(
-            text.contains("part one") && text.contains("part two"),
-            "serialized parts should stay observable: {text}"
+            multipart.contains("part one") && multipart.contains("part two"),
+            "serialized parts should stay observable: {multipart}"
         );
-    }
-
-    #[test]
-    fn distill_messages_skips_responses_without_distillable_content() {
-        let response = ModelResponse::with_parts(vec![ModelResponsePart::thinking("internal")]);
-        let request =
-            ModelRequest::with_parts(vec![ModelRequestPart::ModelResponse(Box::new(response))]);
-
-        assert!(distill_messages(vec![request]).is_empty());
     }
 
     // ========================================================================
@@ -726,7 +719,14 @@ mod tests {
         let hooks = HookSet::builder().run_hook(recorder.clone()).build();
         let hooked = streamed_agent(model, hooks);
 
-        let events = collect_events(&hooked, "hello").await;
+        // The multipart prompt doubles as stream-path acceptance
+        // coverage: structured prompts must stream to completion, and
+        // the model closure ignores prompt content.
+        let prompt = UserContent::Parts(vec![
+            serdes_ai::core::UserContentPart::text("hello"),
+            serdes_ai::core::UserContentPart::image_url("https://example.invalid/image.png"),
+        ]);
+        let events = collect_events(&hooked, prompt).await;
 
         let delta_count = events
             .iter()
@@ -767,83 +767,6 @@ mod tests {
             })
             .collect();
         assert_eq!(streamed_text, RESPONSE);
-    }
-
-    #[tokio::test]
-    async fn run_stream_run_complete_carries_real_run_id_and_faithful_transcript() {
-        // The model echoes the last user prompt so the transcript ties to
-        // the prompt text.
-        let model = Streamed::new(FunctionModel::new(|messages, _| {
-            let prompt = messages
-                .iter()
-                .rev()
-                .flat_map(|message| message.user_prompts())
-                .next()
-                .and_then(|prompt| prompt.content.as_text())
-                .unwrap_or_default()
-                .to_string();
-            ModelResponse::text(format!("echo: {prompt}"))
-        }));
-        let hooked = streamed_agent(model, HookSet::builder().build());
-
-        let events = collect_events(&hooked, "transcript probe").await;
-
-        let mut start_run_id = None;
-        let mut streamed_text = String::new();
-        let mut complete = None;
-        for event in events {
-            match event {
-                RunEvent::RunStart { run_id } => start_run_id = Some(run_id),
-                RunEvent::TextDelta { text } => streamed_text.push_str(&text),
-                RunEvent::RunComplete { run_id, messages } => {
-                    complete = Some((run_id, messages));
-                }
-                _ => {}
-            }
-        }
-        let (run_id, messages) = complete.expect("run should complete");
-        assert!(
-            !run_id.is_empty(),
-            "RunComplete must carry the inner run id"
-        );
-        assert_eq!(
-            start_run_id.as_deref(),
-            Some(run_id.as_str()),
-            "RunComplete id must match the started run"
-        );
-
-        // Transcript consistency: the user turn carries the prompt, the
-        // assistant turn carries exactly what was streamed.
-        let user_text = messages
-            .iter()
-            .find(|message| message.role == RunMessageRole::User)
-            .and_then(|message| message.text.as_deref());
-        assert_eq!(user_text, Some("transcript probe"));
-        let assistant_text = messages
-            .iter()
-            .find(|message| message.role == RunMessageRole::Assistant)
-            .and_then(|message| message.text.as_deref());
-        assert_eq!(assistant_text, Some(streamed_text.as_str()));
-    }
-
-    #[tokio::test]
-    async fn run_stream_accepts_multipart_prompt() {
-        let model = Streamed::new(FunctionModel::new(|_, _| ModelResponse::text("handled")));
-        let hooked = streamed_agent(model, HookSet::builder().build());
-
-        let prompt = UserContent::Parts(vec![
-            serdes_ai::core::UserContentPart::text("describe this"),
-            serdes_ai::core::UserContentPart::image_url("https://example.invalid/image.png"),
-        ]);
-
-        let events = collect_events(&hooked, prompt).await;
-
-        assert!(
-            events
-                .iter()
-                .any(|event| matches!(event, RunEvent::RunComplete { .. })),
-            "multipart prompt should stream to completion"
-        );
     }
 
     /// Stream window of the scripted ping call: the run's events plus
@@ -959,6 +882,19 @@ mod tests {
                 RunEvent::RunStart { run_id: started } if started == run_id
             )),
             "RunComplete id must match the started run"
+        );
+        assert!(
+            !run_id.is_empty(),
+            "RunComplete must carry the inner run id"
+        );
+        let user_text = messages
+            .iter()
+            .find(|message| message.role == RunMessageRole::User)
+            .and_then(|message| message.text.as_deref());
+        assert_eq!(
+            user_text,
+            Some("use the tool"),
+            "the user turn should carry the prompt verbatim"
         );
         let call_summary = messages
             .iter()
