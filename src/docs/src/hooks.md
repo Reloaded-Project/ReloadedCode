@@ -337,7 +337,7 @@ uppercase and suppresses the output-ready milestone
 | [`RunEventHook`]       | Observes, rewrites, or suppresses one streamed event. |
 | [`RunEventContext`]    | Agent and model names for the event's stream.         |
 | [`RunEvent`]           | Framework-owned event yielded by a run stream.        |
-| [`RunEventHookResult`] | Publish decision: publish, rewrite, or suppress.      |
+| [`RunEventHookResult`] | Publish, rewrite, suppress, or Err(ToolError).        |
 
 ### Container types
 
