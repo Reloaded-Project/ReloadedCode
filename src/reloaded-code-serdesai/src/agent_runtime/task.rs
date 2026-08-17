@@ -405,9 +405,13 @@ impl HookedAgent {
     /// [`UserContent`][serdes_ai::core::UserContent]; image and multi-part
     /// prompts pass through to the vendor unchanged.
     ///
-    /// Registered run hooks are not consulted on the streaming path;
-    /// preamble, system-prompt, and model-settings injection apply to
-    /// [`HookedAgent::run`] only.
+    /// # Remarks
+    ///
+    /// Registered run hooks are skipped on this path. The core run-hook
+    /// chain resolves to one completed `RunOutput`, so dispatching it here
+    /// would buffer the whole run before the first event and defeat
+    /// streaming. Preamble, system-prompt, and model-settings injection
+    /// therefore apply to [`HookedAgent::run`] only.
     ///
     /// # Errors
     ///
