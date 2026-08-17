@@ -856,7 +856,7 @@ mod tests {
         // transcript record must correlate on it.
         assert_eq!(
             streamed_call_id.as_deref(),
-            Some("call_mock"),
+            Some("call_mock_1"),
             "the scripted call id must stream through the start event"
         );
         let executed = position(&events, &|event| {

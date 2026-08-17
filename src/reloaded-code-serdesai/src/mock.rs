@@ -192,7 +192,7 @@ pub fn tool_then_text(
             ModelResponse::text(text)
         } else {
             // First call: emit a tool call so the agent executes the real tool.
-            tool_call_response(&tool_name, &args)
+            tool_call_response(&tool_name, &args, 0)
         }
     });
 
@@ -241,8 +241,8 @@ pub fn two_tools_then_text(
         let answered_calls = messages.iter().flat_map(|m| m.tool_returns()).count();
 
         match answered_calls {
-            0 => tool_call_response(&first_name, &first_args),
-            1 => tool_call_response(&second_name, &second_args),
+            0 => tool_call_response(&first_name, &first_args, 0),
+            1 => tool_call_response(&second_name, &second_args, 1),
             _ => {
                 let tool_results: String = messages
                     .iter()
@@ -339,13 +339,15 @@ fn response_to_stream_events(response: ModelResponse) -> Vec<ModelResponseStream
 /// Emits a tool-call response: a short text part, then the call that
 /// triggers the real tool.
 ///
-/// The call carries a fixed id so streamed events and transcripts expose
-/// the correlation key real providers assign.
-fn tool_call_response(tool_name: &str, args: &serde_json::Value) -> ModelResponse {
+/// The call id is `call_mock_{turn + 1}`, where `turn` is the 0-based
+/// scripted turn number, so each scripted call correlates separately in
+/// streamed events and transcripts.
+fn tool_call_response(tool_name: &str, args: &serde_json::Value, turn: usize) -> ModelResponse {
     ModelResponse::with_parts(vec![
         ModelResponsePart::text(format!("Calling {tool_name}...")),
         ModelResponsePart::ToolCall(
-            ToolCallPart::new(tool_name, args.clone()).with_tool_call_id("call_mock"),
+            ToolCallPart::new(tool_name, args.clone())
+                .with_tool_call_id(format!("call_mock_{}", turn + 1)),
         ),
     ])
     .with_finish_reason(FinishReason::ToolCall)
@@ -365,5 +367,59 @@ fn push_text_delta_events(events: &mut Vec<ModelResponseStreamEvent>, index: usi
             &remaining[..end],
         ));
         remaining = &remaining[end..];
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+    use serdes_ai::core::{ModelRequestPart, ToolReturnPart};
+
+    /// Id stamped on the first tool call in `response`, if it has one.
+    fn scripted_call_id(response: &ModelResponse) -> Option<&str> {
+        response.parts.iter().find_map(|part| match part {
+            ModelResponsePart::ToolCall(call) => call.tool_call_id.as_deref(),
+            _ => None,
+        })
+    }
+
+    /// Each scripted turn stamps its own call id, so two-call flows keep
+    /// distinct correlation keys in streamed events and transcripts.
+    #[tokio::test]
+    async fn two_tools_then_text_assigns_distinct_call_ids_per_turn() {
+        let model = two_tools_then_text(
+            ("read", json!({"file_path": "a.txt"})),
+            ("write", json!({"file_path": "b.txt", "content": "notes"})),
+            "Run finished.",
+        );
+
+        // No answered calls in an empty history: the first turn runs.
+        let first = model
+            .request(
+                &[],
+                &ModelSettings::default(),
+                &ModelRequestParameters::default(),
+            )
+            .await
+            .expect("first scripted turn should respond");
+
+        // One answered call in the history advances the script.
+        let history = vec![ModelRequest::with_parts(vec![
+            ModelRequestPart::ToolReturn(
+                ToolReturnPart::success("read", "fixture").with_tool_call_id("call_mock_1"),
+            ),
+        ])];
+        let second = model
+            .request(
+                &history,
+                &ModelSettings::default(),
+                &ModelRequestParameters::default(),
+            )
+            .await
+            .expect("second scripted turn should respond");
+
+        assert_eq!(scripted_call_id(&first), Some("call_mock_1"));
+        assert_eq!(scripted_call_id(&second), Some("call_mock_2"));
     }
 }
