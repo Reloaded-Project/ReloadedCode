@@ -574,7 +574,7 @@ mod tests {
     fn event_ctx() -> RunEventContext<'static> {
         RunEventContext {
             agent_name: "coder",
-            model_name: "gpt-4o",
+            model_name: "gpt-5.6-luna",
         }
     }
 
