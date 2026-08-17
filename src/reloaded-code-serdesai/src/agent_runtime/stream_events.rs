@@ -1567,6 +1567,12 @@ mod tests {
 
     /// Replaces run ids with a placeholder so event sequences from
     /// separate streams compare equal; run ids are random per run.
+    ///
+    /// `ContextInfo` telemetry is zeroed too: the estimate serializes
+    /// wall-clock part timestamps, whose RFC 3339 fractional-second
+    /// width (0/3/6/9 digits) can differ between the two streams, so
+    /// byte counts drift by a few bytes between otherwise identical
+    /// requests.
     fn normalized_events(events: &[RunEvent]) -> Vec<RunEvent> {
         events
             .iter()
@@ -1577,6 +1583,11 @@ mod tests {
                 RunEvent::RunComplete { messages, .. } => RunEvent::RunComplete {
                     run_id: "<run>".into(),
                     messages: messages.clone(),
+                },
+                RunEvent::ContextInfo { context_limit, .. } => RunEvent::ContextInfo {
+                    estimated_tokens: 0,
+                    request_bytes: 0,
+                    context_limit: *context_limit,
                 },
                 other => other.clone(),
             })
