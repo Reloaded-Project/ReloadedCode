@@ -11,8 +11,6 @@
 //! observe, rewrite, or suppress. It fires only on the streaming
 //! path; the run boundary hook [`RunHook`] fires only on `run()`.
 //!
-//! [`RunHook`]: crate::hooks::RunHook
-//!
 //! # Transcript distillation
 //!
 //! [`RunEvent::RunComplete`] carries a distilled transcript
@@ -25,6 +23,8 @@
 //!
 //! [`RunEvent`] is `#[non_exhaustive]`: variants may be appended
 //! without a breaking release. Consumers match it with a wildcard arm.
+//!
+//! [`RunHook`]: crate::hooks::RunHook
 
 use crate::ToolError;
 use serde::{Deserialize, Serialize};
@@ -243,10 +243,7 @@ pub struct RunToolResultSummary {
 ///
 /// Fires only on the streaming path: each event a run stream yields
 /// passes every registered run-event hook, in registration order,
-/// before the stream consumer sees it. It never fires during a
-/// non-streaming `run()`. A registered [`RunHook`] is inert on the
-/// streaming path - no preamble, system prompt, or settings injection
-/// happens there.
+/// before the stream consumer sees it.
 ///
 /// Per event, a hook may:
 /// - observe: return the event unchanged,

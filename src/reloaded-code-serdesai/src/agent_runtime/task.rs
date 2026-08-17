@@ -331,8 +331,6 @@ impl HookedAgent {
     /// [`RunEventHook`][event-hook] never fires here; it fires only on
     /// [`Self::run_stream`].
     ///
-    /// [event-hook]: reloaded_code_core::hooks::RunEventHook
-    ///
     /// The run-hook context carries a wrapper-generated `run_id`. The inner
     /// agent assigns its own id for tool hooks; SerdesAI `RunOptions` has no
     /// field to override it, so the two identifiers cannot be unified here.
@@ -344,6 +342,8 @@ impl HookedAgent {
     ///   and the failure reaches the caller untouched.
     /// - Returns [`serdes_ai::agent::AgentRunError::Other`] when a run hook
     ///   returns or substitutes its own error during dispatch.
+    ///
+    /// [event-hook]: reloaded_code_core::hooks::RunEventHook
     pub async fn run(
         &self,
         prompt: impl Into<String>,
@@ -413,32 +413,30 @@ impl HookedAgent {
     /// [`UserContent`][serdes_ai::core::UserContent]; image and multi-part
     /// prompts pass through to the vendor unchanged.
     ///
-    /// Mode-scoped hook points: each mapped event passes the registered
+    /// Each mapped event passes the registered
     /// [`RunEventHook`][event-hook] chain, in registration order, before the
     /// caller sees it, so a hook may rewrite or suppress it. With no
     /// run-event hooks registered the stream matches the unhooked mapping.
-    /// Registered run hooks stay inert on this path; see `# Remarks`.
     ///
-    /// [event-hook]: reloaded_code_core::hooks::RunEventHook
-    ///
-    /// # Remarks
-    ///
-    /// Registered run hooks are skipped on this path. The core run-hook
-    /// chain resolves to one completed `RunOutput`, so dispatching it here
-    /// would buffer the whole run before the first event and defeat
-    /// streaming. Preamble, system-prompt, and model-settings injection
-    /// therefore apply to [`HookedAgent::run`] only.
+    /// Run hooks ([`RunHook`][run-hook]) never fire here; they fire only
+    /// on [`Self::run`]. The run-hook chain resolves to one completed
+    /// `RunOutput`, so dispatching it would buffer the whole run before
+    /// the first event and defeat streaming. Preamble, system-prompt,
+    /// and model-settings injection therefore apply on that path only.
     ///
     /// # Errors
     ///
     /// - Returns the inner agent's [`serdes_ai::agent::AgentRunError`]
     ///   unchanged when starting the stream fails.
-    /// - The stream itself yields the inner error as an `Err` item when the
-    ///   run fails mid-stream; a vendor error event surfaces as the mapped
-    ///   [`RunEvent::Error`] variant instead.
+    /// - The stream yields the inner error as its final `Err` item when
+    ///   the run fails mid-stream; a vendor error event maps to
+    ///   [`RunEvent::Error`] before that final item.
     /// - The stream yields [`serdes_ai::agent::AgentRunError::Other`] as
     ///   its final item when a run-event hook fails; the stream ends after
     ///   that item.
+    ///
+    /// [event-hook]: reloaded_code_core::hooks::RunEventHook
+    /// [run-hook]: reloaded_code_core::hooks::RunHook
     pub async fn run_stream(
         &self,
         prompt: impl Into<serdes_ai::core::UserContent>,
