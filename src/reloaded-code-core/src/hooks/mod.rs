@@ -20,6 +20,13 @@
 //! - [`HookRunContext`] - Context given to hook run lifecycle events
 //! - [`EndReason`] - Why a run ended
 //!
+//! Run event types:
+//! - [`RunEvent`] - Framework-owned event yielded by run streams
+//! - [`RunMessage`] - Distilled transcript message in a completed run
+//! - [`RunMessageRole`] - Author role of a transcript message
+//! - [`RunToolCallSummary`] - Distilled tool call summary
+//! - [`RunToolResultSummary`] - Distilled tool result summary
+//!
 //! Observers are plain hooks: code before `original` is "start", code
 //! after is "end". They participate in the same hook chain.
 //!
@@ -37,11 +44,13 @@
 
 pub use self::builder::HookSetBuilder;
 pub use self::hook_set::HookSet;
+pub use self::run_event::*;
 pub use self::run_hook::*;
 pub use self::tool_hook::*;
 
 mod builder;
 mod hook_set;
+mod run_event;
 mod run_hook;
 mod tool_hook;
 

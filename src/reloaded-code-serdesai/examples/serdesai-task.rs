@@ -4,6 +4,10 @@
 //! orchestrator through [`AgentBuildContext::build`], and runs one
 //! prompt that should delegate exactly once to `reader`.
 //!
+//! Transcript tags carry the model-request step index (`<m0:...>`);
+//! step events are optional, so a backend that omits them prints every
+//! tag under step 0.
+//!
 //! Run: Edit the API_KEY_NAME and API_KEY_VALUE constants below, then:
 //!      cargo run --example serdesai-task -p reloaded-code-serdesai
 
@@ -11,8 +15,8 @@ use futures::StreamExt;
 use reloaded_code_agents::{AgentCatalog, AgentLoader, AgentRuntimeBuilder};
 use reloaded_code_core::{CredentialResolver, TaskInput, resolve_workspace_root};
 use reloaded_code_models_dev::ModelsDevCatalog;
-use reloaded_code_serdesai::{AgentBuildContext, AgentDefaults};
-use serdes_ai::{AgentStreamEvent, UserContent};
+use reloaded_code_serdesai::{AgentBuildContext, AgentDefaults, RunEvent};
+use serdes_ai::UserContent;
 use std::{
     fmt::Write,
     io::{self, Write as IoWrite},
@@ -101,18 +105,18 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     while let Some(event) = stream.next().await {
         match event? {
-            AgentStreamEvent::RequestStart { step } => {
+            RunEvent::StepStart { step } => {
                 close_stream_xml(&mut open_tag);
                 current_message_id = step;
                 request_count = request_count.saturating_add(1);
             }
-            AgentStreamEvent::ThinkingDelta { text } => {
+            RunEvent::ThinkingDelta { text } => {
                 write_stream_delta(&mut open_tag, current_message_id, "thinking", &text);
             }
-            AgentStreamEvent::TextDelta { text } => {
+            RunEvent::TextDelta { text } => {
                 write_stream_delta(&mut open_tag, current_message_id, "assistant", &text);
             }
-            AgentStreamEvent::ToolCallStart {
+            RunEvent::ToolCallStart {
                 tool_name,
                 tool_call_id,
             } => {
@@ -125,18 +129,18 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     args: String::new(),
                 });
             }
-            AgentStreamEvent::ToolCallDelta {
+            RunEvent::ToolCallDelta {
                 delta,
                 tool_call_id,
             } => {
                 // Accumulate streamed JSON args into the matching pending call.
-                if let Some(call) =
-                    find_pending_tool_call_mut(&mut pending_tool_calls, tool_call_id.as_deref())
+                if let Some(index) =
+                    pending_tool_call_index(&pending_tool_calls, tool_call_id.as_deref())
                 {
-                    call.args.push_str(&delta);
+                    pending_tool_calls[index].args.push_str(&delta);
                 }
             }
-            AgentStreamEvent::ToolCallComplete { tool_call_id, .. } => {
+            RunEvent::ToolCallComplete { tool_call_id, .. } => {
                 tool_call_count = tool_call_count.saturating_add(1);
                 if let Some(call) =
                     take_pending_tool_call(&mut pending_tool_calls, tool_call_id.as_deref())
@@ -150,10 +154,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     log_xml(call.message_id, tag, &content);
                 }
             }
-            AgentStreamEvent::ResponseComplete { .. } => {
+            RunEvent::StepEnd { .. } => {
                 close_stream_xml(&mut open_tag);
             }
-            AgentStreamEvent::RunComplete { .. } => {
+            RunEvent::RunComplete { .. } => {
                 close_stream_xml(&mut open_tag);
             }
             _ => {}
@@ -168,20 +172,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     );
 
     Ok(())
-}
-
-fn find_pending_tool_call_mut<'a>(
-    pending: &'a mut [PendingToolCall],
-    tool_call_id: Option<&str>,
-) -> Option<&'a mut PendingToolCall> {
-    // Most providers include a tool_call_id; fall back to the last pending call otherwise.
-    match tool_call_id {
-        Some(tool_call_id) => pending
-            .iter_mut()
-            .rev()
-            .find(|call| call.tool_call_id.as_deref() == Some(tool_call_id)),
-        None => pending.last_mut(),
-    }
 }
 
 fn log_xml(message_id: u32, tag: &str, content: &str) {
@@ -220,13 +210,7 @@ fn take_pending_tool_call(
     pending: &mut Vec<PendingToolCall>,
     tool_call_id: Option<&str>,
 ) -> Option<PendingToolCall> {
-    let index = match tool_call_id {
-        Some(tool_call_id) => pending
-            .iter()
-            .rposition(|call| call.tool_call_id.as_deref() == Some(tool_call_id)),
-        None => pending.len().checked_sub(1),
-    }?;
-    Some(pending.remove(index))
+    pending_tool_call_index(pending, tool_call_id).map(|index| pending.remove(index))
 }
 
 fn write_stream_delta(
@@ -257,6 +241,22 @@ fn close_stream_xml(open_tag: &mut Option<OpenStreamTag>) {
     if let Some(tag) = open_tag.take() {
         println!();
         println!("</{}>", tag.tag);
+    }
+}
+
+/// Index of the pending call an event addresses: match the call id
+/// from the newest call, or the last pending call when ids are absent.
+fn pending_tool_call_index(
+    pending: &[PendingToolCall],
+    tool_call_id: Option<&str>,
+) -> Option<usize> {
+    match tool_call_id {
+        // Most backends include a tool_call_id; fall back to the last
+        // pending call otherwise.
+        Some(tool_call_id) => pending
+            .iter()
+            .rposition(|call| call.tool_call_id.as_deref() == Some(tool_call_id)),
+        None => pending.len().checked_sub(1),
     }
 }
 

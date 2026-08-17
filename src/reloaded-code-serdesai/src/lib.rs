@@ -33,6 +33,13 @@ pub use reloaded_code_agents::{
     AgentDefaults, AgentRuntime, AgentRuntimeBuilder, ModelResolutionError, ResolvedModel,
     resolve_model_with_catalog,
 };
+/// Re-export [`RunEvent`], the framework-owned item type yielded by
+/// [`HookedAgent::run_stream`], together with its transcript payload
+/// types ([`RunMessage`], [`RunMessageRole`], [`RunToolCallSummary`],
+/// [`RunToolResultSummary`]).
+pub use reloaded_code_core::hooks::{
+    RunEvent, RunMessage, RunMessageRole, RunToolCallSummary, RunToolResultSummary,
+};
 
 pub mod agent_ext;
 pub mod agent_runtime;

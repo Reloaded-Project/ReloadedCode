@@ -6,7 +6,8 @@
 //!
 //! # Public API
 //! - [`AgentBuildContext`] - Shared context that builds runnable agents by name.
-//! - [`HookedAgent`] - Built agent wrapper that dispatches through run hooks.
+//! - [`HookedAgent`] - Built agent wrapper that dispatches `run()` through run
+//!   hooks and streams framework-owned events from `run_stream()`.
 //! - [`AgentBuildError`] - Build-time failures.
 
 pub use build::AgentBuildError;
@@ -20,6 +21,7 @@ pub(crate) use task::{TaskBuildContext, build_agent};
 mod build;
 mod model;
 mod provider_bridge;
+mod stream_events;
 mod task;
 #[cfg(test)]
 pub(crate) mod test_stubs;

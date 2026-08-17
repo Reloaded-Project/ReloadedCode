@@ -25,6 +25,7 @@ use async_trait::async_trait;
 use futures::stream;
 use serdes_ai::core::{
     FinishReason, ModelRequest, ModelResponse, ModelResponsePart, ModelResponseStreamEvent,
+    ToolCallPart,
 };
 use serdes_ai_models::Model as ModelTrait;
 pub use serdes_ai_models::{FunctionModel, MockModel, TestModel};
@@ -33,6 +34,13 @@ use serdes_ai::core::ModelSettings;
 use serdes_ai_models::{
     ModelCapability, ModelError, ModelProfile, ModelRequestParameters, StreamedResponse,
 };
+
+// ============================================================================
+// Private helpers
+// ============================================================================
+
+/// Characters per streamed text chunk; see [`response_to_stream_events`].
+const STREAM_CHUNK_CHARS: usize = 16;
 
 // ============================================================================
 // Streamed - wrapper that adds streaming support to any Model
@@ -184,7 +192,7 @@ pub fn tool_then_text(
             ModelResponse::text(text)
         } else {
             // First call: emit a tool call so the agent executes the real tool.
-            tool_call_response(&tool_name, &args)
+            tool_call_response(&tool_name, &args, 0)
         }
     });
 
@@ -233,8 +241,8 @@ pub fn two_tools_then_text(
         let answered_calls = messages.iter().flat_map(|m| m.tool_returns()).count();
 
         match answered_calls {
-            0 => tool_call_response(&first_name, &first_args),
-            1 => tool_call_response(&second_name, &second_args),
+            0 => tool_call_response(&first_name, &first_args, 0),
+            1 => tool_call_response(&second_name, &second_args, 1),
             _ => {
                 let tool_results: String = messages
                     .iter()
@@ -292,16 +300,37 @@ fn extract_tool_return_text(tr: &serdes_ai::core::ToolReturnPart) -> String {
     serde_json::to_string_pretty(&val).unwrap_or_else(|_| format!("{:?}", tr.content))
 }
 
-// ============================================================================
-// Private helpers
-// ============================================================================
-
 fn response_to_stream_events(response: ModelResponse) -> Vec<ModelResponseStreamEvent> {
-    let mut events = Vec::with_capacity(response.parts.len() * 2 + 1);
+    // Estimate: two boundary events per part plus one delta per chunk
+    // (byte length bounds the char-chunk count from above).
+    let estimated: usize = response
+        .parts
+        .iter()
+        .map(|part| match part {
+            ModelResponsePart::Text(text) => text.content.len() / STREAM_CHUNK_CHARS + 3,
+            _ => 3,
+        })
+        .sum();
+    let mut events = Vec::with_capacity(estimated);
 
     for (index, part) in response.parts.into_iter().enumerate() {
-        events.push(ModelResponseStreamEvent::part_start(index, part));
-        events.push(ModelResponseStreamEvent::part_end(index));
+        match part {
+            // Text streams incrementally: an empty start, then bounded
+            // chunks, so the agent layer surfaces multiple text deltas
+            // instead of one whole-part event.
+            ModelResponsePart::Text(text) => {
+                events.push(ModelResponseStreamEvent::part_start(
+                    index,
+                    ModelResponsePart::text(""),
+                ));
+                push_text_delta_events(&mut events, index, &text.content);
+                events.push(ModelResponseStreamEvent::part_end(index));
+            }
+            part => {
+                events.push(ModelResponseStreamEvent::part_start(index, part));
+                events.push(ModelResponseStreamEvent::part_end(index));
+            }
+        }
     }
 
     events
@@ -309,10 +338,88 @@ fn response_to_stream_events(response: ModelResponse) -> Vec<ModelResponseStream
 
 /// Emits a tool-call response: a short text part, then the call that
 /// triggers the real tool.
-fn tool_call_response(tool_name: &str, args: &serde_json::Value) -> ModelResponse {
+///
+/// The call id is `call_mock_{turn + 1}`, where `turn` is the 0-based
+/// scripted turn number, so each scripted call correlates separately in
+/// streamed events and transcripts.
+fn tool_call_response(tool_name: &str, args: &serde_json::Value, turn: usize) -> ModelResponse {
     ModelResponse::with_parts(vec![
         ModelResponsePart::text(format!("Calling {tool_name}...")),
-        ModelResponsePart::tool_call(tool_name, args.clone()),
+        ModelResponsePart::ToolCall(
+            ToolCallPart::new(tool_name, args.clone())
+                .with_tool_call_id(format!("call_mock_{}", turn + 1)),
+        ),
     ])
     .with_finish_reason(FinishReason::ToolCall)
+}
+
+/// Pushes one `text_delta` event per [`STREAM_CHUNK_CHARS`] character chunk
+/// of `text`, chunking on char boundaries so multi-byte text stays intact.
+fn push_text_delta_events(events: &mut Vec<ModelResponseStreamEvent>, index: usize, text: &str) {
+    let mut remaining = text;
+    while !remaining.is_empty() {
+        let end = remaining
+            .char_indices()
+            .nth(STREAM_CHUNK_CHARS)
+            .map_or(remaining.len(), |(offset, _)| offset);
+        events.push(ModelResponseStreamEvent::text_delta(
+            index,
+            &remaining[..end],
+        ));
+        remaining = &remaining[end..];
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+    use serdes_ai::core::{ModelRequestPart, ToolReturnPart};
+
+    /// Id stamped on the first tool call in `response`, if it has one.
+    fn scripted_call_id(response: &ModelResponse) -> Option<&str> {
+        response.parts.iter().find_map(|part| match part {
+            ModelResponsePart::ToolCall(call) => call.tool_call_id.as_deref(),
+            _ => None,
+        })
+    }
+
+    /// Each scripted turn stamps its own call id, so two-call flows keep
+    /// distinct correlation keys in streamed events and transcripts.
+    #[tokio::test]
+    async fn two_tools_then_text_assigns_distinct_call_ids_per_turn() {
+        let model = two_tools_then_text(
+            ("read", json!({"file_path": "a.txt"})),
+            ("write", json!({"file_path": "b.txt", "content": "notes"})),
+            "Run finished.",
+        );
+
+        // No answered calls in an empty history: the first turn runs.
+        let first = model
+            .request(
+                &[],
+                &ModelSettings::default(),
+                &ModelRequestParameters::default(),
+            )
+            .await
+            .expect("first scripted turn should respond");
+
+        // One answered call in the history advances the script.
+        let history = vec![ModelRequest::with_parts(vec![
+            ModelRequestPart::ToolReturn(
+                ToolReturnPart::success("read", "fixture").with_tool_call_id("call_mock_1"),
+            ),
+        ])];
+        let second = model
+            .request(
+                &history,
+                &ModelSettings::default(),
+                &ModelRequestParameters::default(),
+            )
+            .await
+            .expect("second scripted turn should respond");
+
+        assert_eq!(scripted_call_id(&first), Some("call_mock_1"));
+        assert_eq!(scripted_call_id(&second), Some("call_mock_2"));
+    }
 }
