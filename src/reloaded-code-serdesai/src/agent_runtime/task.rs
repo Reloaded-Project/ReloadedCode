@@ -1076,7 +1076,7 @@ mod tests {
 
     /// Model settings overrides: applied per run, merged over the agent's
     /// configured settings, with prompt-prepend behavior untouched.
-
+    ///
     /// Run hook that installs fixed model settings overrides before
     /// delegating to `original`.
     struct OverridingRunHook {
@@ -1188,17 +1188,18 @@ mod tests {
 
         hooked.run("hello", ()).await.expect("run should complete");
 
-        let seen = captured
-            .lock()
-            .expect("captured settings should not be poisoned");
-        assert_eq!(seen.len(), 1, "one model request should have been made");
-        assert_eq!(seen[0].temperature, Some(f64::from(0.9_f32)));
-        assert_eq!(
-            seen[0].top_p,
-            Some(f64::from(0.8_f32)),
-            "agent-configured top_p should be retained"
-        );
-        drop(seen);
+        {
+            let seen = captured
+                .lock()
+                .expect("captured settings should not be poisoned");
+            assert_eq!(seen.len(), 1, "one model request should have been made");
+            assert_eq!(seen[0].temperature, Some(f64::from(0.9_f32)));
+            assert_eq!(
+                seen[0].top_p,
+                Some(f64::from(0.8_f32)),
+                "agent-configured top_p should be retained"
+            );
+        }
 
         // Mirror direction: a top_p-only override replaces top_p and keeps
         // the agent-configured temperature.
@@ -1209,16 +1210,18 @@ mod tests {
 
         hooked.run("hello", ()).await.expect("run should complete");
 
-        let seen = captured
-            .lock()
-            .expect("captured settings should not be poisoned");
-        assert_eq!(seen.len(), 1, "one model request should have been made");
-        assert_eq!(seen[0].top_p, Some(f64::from(0.6_f32)));
-        assert_eq!(
-            seen[0].temperature,
-            Some(f64::from(0.3_f32)),
-            "agent-configured temperature should be retained"
-        );
+        {
+            let seen = captured
+                .lock()
+                .expect("captured settings should not be poisoned");
+            assert_eq!(seen.len(), 1, "one model request should have been made");
+            assert_eq!(seen[0].top_p, Some(f64::from(0.6_f32)));
+            assert_eq!(
+                seen[0].temperature,
+                Some(f64::from(0.3_f32)),
+                "agent-configured temperature should be retained"
+            );
+        }
     }
 
     #[tokio::test]

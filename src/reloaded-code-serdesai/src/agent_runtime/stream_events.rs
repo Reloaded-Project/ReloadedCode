@@ -653,7 +653,7 @@ mod tests {
 
         let messages = distill_messages(vec![request, follow_up]);
 
-        let expected = vec![
+        let expected = [
             RunMessage {
                 role: RunMessageRole::System,
                 text: Some("sys".into()),
@@ -1007,7 +1007,7 @@ mod tests {
 
     /// Index of the first event matching `predicate`.
     fn position(events: &[RunEvent], predicate: &dyn Fn(&RunEvent) -> bool) -> Option<usize> {
-        events.iter().position(|event| predicate(event))
+        events.iter().position(predicate)
     }
 
     #[tokio::test]
@@ -1120,7 +1120,7 @@ mod tests {
             .iter()
             .filter(|message| message.role == RunMessageRole::Assistant)
             .filter_map(|message| message.text.as_deref())
-            .last()
+            .next_back()
             .expect("closing assistant turn should carry text");
         assert_eq!(final_answer, streamed_answer);
     }
