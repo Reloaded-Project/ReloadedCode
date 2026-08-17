@@ -5,14 +5,13 @@
 //! event types stay inside this module; consumers of
 //! [`HookedAgent::run_stream`][task] only ever see [`RunEvent`] items.
 //!
-//! When run-event hooks are registered, [`RunEventStream`] also passes each
-//! mapped event through the [`RunEventHook`] chain before yielding it: a
-//! hook may rewrite or suppress the event, and a hook failure ends the
-//! stream with one [`AgentRunError`][error] item. With no run-event hooks
-//! registered, polling maps and yields directly.
+//! # Hooks
 //!
-//! [`RunEventHook`]: reloaded_code_core::hooks::RunEventHook
-//! [error]: serdes_ai::agent::AgentRunError
+//! With run-event hooks registered, each mapped event passes the
+//! [`RunEventHook`] chain before being yielded; a hook may rewrite the
+//! event, suppress it by returning `None`, or fail and end the stream
+//! with one [`AgentRunError`][error] item. Without hooks, polling maps
+//! and yields directly.
 //!
 //! # Optional events
 //!
@@ -30,6 +29,8 @@
 //! variant fails compilation here, keeping vendor coupling inside
 //! this module.
 //!
+//! [`RunEventHook`]: reloaded_code_core::hooks::RunEventHook
+//! [error]: serdes_ai::agent::AgentRunError
 //! [task]: super::task::HookedAgent::run_stream
 
 use futures::{Stream, StreamExt};
