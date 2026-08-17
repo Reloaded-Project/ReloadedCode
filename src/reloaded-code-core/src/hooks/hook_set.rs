@@ -115,8 +115,10 @@ impl HookSet {
     /// the event is returned unchanged without entering the chain.
     ///
     /// # Errors
-    /// Returns `ToolError` if any hook in the chain returns an error;
+    /// Returns [`ToolError`] if any hook in the chain returns an error;
     /// dispatch stops at the first error.
+    ///
+    /// [`ToolError`]: crate::ToolError
     #[inline]
     pub fn dispatch_run_event(
         &self,
