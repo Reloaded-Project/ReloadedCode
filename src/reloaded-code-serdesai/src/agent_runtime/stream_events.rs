@@ -27,9 +27,12 @@ use futures::{Stream, StreamExt};
 use reloaded_code_core::hooks::{
     RunEvent, RunMessage, RunMessageRole, RunToolCallSummary, RunToolResultSummary,
 };
-use serdes_ai::core::messages::{RetryContent, ToolCallArgs, ToolReturnContent};
+use serdes_ai::core::messages::{
+    AudioContent, DocumentContent, FileContent, ImageContent, RetryContent, ToolCallArgs,
+    ToolReturnContent, VideoContent,
+};
 use serdes_ai::core::{
-    ModelRequest, ModelRequestPart, ModelResponse, ModelResponsePart, UserContent,
+    ModelRequest, ModelRequestPart, ModelResponse, ModelResponsePart, UserContent, UserContentPart,
 };
 use serdes_ai::{AgentStream, AgentStreamEvent};
 use std::pin::Pin;
@@ -301,14 +304,45 @@ fn tool_result_message(tool_call_id: Option<String>, output: String) -> RunMessa
 
 /// Renders user prompt content as audit text.
 ///
-/// Plain text passes through; multi-part prompts are serialized so image
-/// and mixed content stay observable in the transcript.
+/// Plain text passes through; multi-part prompts are serialized so
+/// image and mixed content stay observable in the transcript. Inline
+/// binary parts collapse to a media type plus byte length placeholder
+/// so payloads never bloat the transcript.
 fn user_content_text(content: UserContent) -> String {
     match content {
         UserContent::Text(text) => text,
         UserContent::Parts(parts) => {
-            serde_json::to_string(&parts).unwrap_or_else(|_| format!("{parts:?}"))
+            // After the map: binary parts are placeholders; text and
+            // URL parts serialize exactly as before.
+            let redacted: Vec<_> = parts.iter().map(redact_binary_part).collect();
+            serde_json::to_string(&redacted).unwrap_or_else(|_| format!("{redacted:?}"))
         }
+    }
+}
+
+/// Serializes one prompt part for the audit trail.
+///
+/// Text and URL parts keep their JSON shape; binary parts become a
+/// placeholder carrying their media type and byte length.
+fn redact_binary_part(part: &UserContentPart) -> serde_json::Value {
+    let placeholder = |kind: &str, media_type: &str, bytes: usize| serde_json::json!({ "type": kind, "media_type": media_type, "bytes": bytes });
+    match part {
+        UserContentPart::Image {
+            image: ImageContent::Binary(binary),
+        } => placeholder("image", binary.media_type.mime_type(), binary.data.len()),
+        UserContentPart::Audio {
+            audio: AudioContent::Binary(binary),
+        } => placeholder("audio", binary.media_type.mime_type(), binary.data.len()),
+        UserContentPart::Video {
+            video: VideoContent::Binary(binary),
+        } => placeholder("video", binary.media_type.mime_type(), binary.data.len()),
+        UserContentPart::Document {
+            document: DocumentContent::Binary(binary),
+        } => placeholder("document", binary.media_type.mime_type(), binary.data.len()),
+        UserContentPart::File {
+            file: FileContent::Binary(binary),
+        } => placeholder("file", binary.mime_type.as_str(), binary.data.len()),
+        other => serde_json::to_value(other).unwrap_or(serde_json::Value::Null),
     }
 }
 
@@ -588,6 +622,41 @@ mod tests {
         assert!(
             multipart.contains("part one") && multipart.contains("part two"),
             "serialized parts should stay observable: {multipart}"
+        );
+    }
+
+    #[test]
+    fn user_content_text_redacts_binary_but_keeps_text_and_urls() {
+        use serdes_ai::core::messages::ImageMediaType;
+
+        // Base64 of the binary bytes must never reach the audit text.
+        let content = UserContent::parts(vec![
+            UserContentPart::text("look at this"),
+            UserContentPart::image_url("https://example.invalid/image.png"),
+            UserContentPart::image_binary(vec![1, 2, 3, 4], ImageMediaType::Png),
+            UserContentPart::File {
+                file: FileContent::binary(vec![9, 9], "application/pdf"),
+            },
+        ]);
+
+        let rendered = user_content_text(content);
+
+        assert!(
+            rendered.contains("look at this")
+                && rendered.contains("https://example.invalid/image.png"),
+            "text and URL parts keep their serialization: {rendered}"
+        );
+        assert!(
+            rendered.contains(r#""type":"image""#)
+                && rendered.contains(r#""media_type":"image/png""#)
+                && rendered.contains(r#""bytes":4"#)
+                && rendered.contains(r#""media_type":"application/pdf""#)
+                && rendered.contains(r#""bytes":2"#),
+            "binary parts render as media type plus length: {rendered}"
+        );
+        assert!(
+            !rendered.contains("AQIDBA==") && !rendered.contains("CQk="),
+            "base64 payloads must not leak: {rendered}"
         );
     }
 
