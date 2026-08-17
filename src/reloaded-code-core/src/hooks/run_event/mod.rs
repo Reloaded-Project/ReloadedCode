@@ -1,8 +1,17 @@
-//! Run event types: the framework-owned streaming item type.
+//! Run event types: the framework-owned streaming item type, plus the
+//! hook that intercepts each event before publication.
 //!
 //! [`RunEvent`] is the item type a run stream yields. Adapters
 //! translate their vendor-specific stream events into it, so consumers
 //! match one stable framework-owned enum instead of vendor types.
+//!
+//! # Run-event hooks
+//!
+//! [`RunEventHook`] sees each streamed event before publication:
+//! observe, rewrite, or suppress. It fires only on the streaming
+//! path; the run boundary hook [`RunHook`] fires only on `run()`.
+//!
+//! [`RunHook`]: crate::hooks::RunHook
 //!
 //! # Transcript distillation
 //!
@@ -17,7 +26,27 @@
 //! [`RunEvent`] is `#[non_exhaustive]`: variants may be appended
 //! without a breaking release. Consumers match it with a wildcard arm.
 
+use crate::ToolError;
 use serde::{Deserialize, Serialize};
+
+/// Static context for a run-event hook call.
+///
+/// Names only. The run id is deliberately absent: it is learnable
+/// from the [`RunEvent::RunStart`] and [`RunEvent::RunComplete`]
+/// events the stream itself yields.
+#[derive(Debug)]
+pub struct RunEventContext<'a> {
+    /// Name of the agent whose stream produced the event.
+    pub agent_name: &'a str,
+    /// Name of the model generating the event stream.
+    pub model_name: &'a str,
+}
+
+/// Publish decision for one event after the run-event hook chain.
+///
+/// `Ok(Some(event))` publishes the event, possibly rewritten by a
+/// hook; `Ok(None)` suppresses it; `Err` carries the first hook error.
+pub type RunEventHookResult = Result<Option<RunEvent>, ToolError>;
 
 /// Framework-owned event yielded by a run stream.
 ///
@@ -208,6 +237,34 @@ pub struct RunToolResultSummary {
     pub tool_call_id: Option<String>,
     /// Result payload rendered as text for display and audit.
     pub output: String,
+}
+
+/// Mode-scoped hook for streamed run events.
+///
+/// Fires only on the streaming path: each event a run stream yields
+/// passes every registered run-event hook, in registration order,
+/// before the stream consumer sees it. It never fires during a
+/// non-streaming `run()`. A registered [`RunHook`] is inert on the
+/// streaming path - no preamble, system prompt, or settings injection
+/// happens there.
+///
+/// Per event, a hook may:
+/// - observe: return the event unchanged,
+/// - rewrite: return a changed event,
+/// - suppress: return `Ok(None)`.
+///
+/// Hooks run synchronously at token rate, so per-event work stays
+/// cheap (plain string transforms). Each call sees exactly one event;
+/// a hook needing cross-event context buffers it internally.
+///
+/// [`RunHook`]: crate::hooks::RunHook
+pub trait RunEventHook: Send + Sync + 'static {
+    /// Observes, rewrites, or suppresses one streamed event.
+    ///
+    /// # Errors
+    /// Returns `ToolError` when the hook fails; dispatch stops at the
+    /// first error and returns it to the caller.
+    fn hook(&self, ctx: &RunEventContext<'_>, event: RunEvent) -> RunEventHookResult;
 }
 
 #[cfg(test)]

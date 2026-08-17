@@ -1,4 +1,5 @@
-//! Hook infrastructure for tool hooks and run lifecycle hooks.
+//! Hook infrastructure for tool hooks, run lifecycle hooks, and run
+//! event hooks.
 //!
 //! # Public API
 //!
@@ -26,6 +27,10 @@
 //! - [`RunMessageRole`] - Author role of a transcript message
 //! - [`RunToolCallSummary`] - Distilled tool call summary
 //! - [`RunToolResultSummary`] - Distilled tool result summary
+//!
+//! Run event hook types:
+//! - [`RunEventHook`] - Observes, rewrites, or suppresses streamed run events
+//! - [`RunEventContext`] - Agent and model names for a run-event hook call
 //!
 //! Observers are plain hooks: code before `original` is "start", code
 //! after is "end". They participate in the same hook chain.
