@@ -1493,14 +1493,20 @@ mod tests {
         // The second hook sees the first hook's rewrite, so every
         // published delta carries the tags in registration order; a
         // reversed order would yield "-second-first".
+        let mut checked_deltas = 0;
         for event in &events {
             if let RunEvent::TextDelta { text } = event {
+                checked_deltas += 1;
                 assert!(
                     text.ends_with("-first-second"),
                     "registration order must hold, got: {text}"
                 );
             }
         }
+        assert!(
+            checked_deltas > 0,
+            "the stream should publish at least one TextDelta, got: {events:?}"
+        );
     }
 
     #[tokio::test]
