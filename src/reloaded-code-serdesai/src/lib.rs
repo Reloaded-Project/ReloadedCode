@@ -36,9 +36,10 @@ pub use reloaded_code_agents::{
 /// Re-export [`RunEvent`], the framework-owned item type yielded by
 /// [`HookedAgent::run_stream`], together with its transcript payload
 /// types ([`RunMessage`], [`RunMessageRole`], [`RunToolCallSummary`],
-/// [`RunToolResultSummary`]).
+/// [`RunToolResultSummary`]), and [`RunEventHook`], the hook that
+/// intercepts each streamed event before publication.
 pub use reloaded_code_core::hooks::{
-    RunEvent, RunMessage, RunMessageRole, RunToolCallSummary, RunToolResultSummary,
+    RunEvent, RunEventHook, RunMessage, RunMessageRole, RunToolCallSummary, RunToolResultSummary,
 };
 
 pub mod agent_ext;

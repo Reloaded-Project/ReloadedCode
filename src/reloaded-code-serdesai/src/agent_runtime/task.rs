@@ -3,7 +3,8 @@
 //! # Public API
 //! - [`AgentBuildContext`] - Reusable shared inputs for building runnable agents.
 //! - [`HookedAgent`] - Built agent wrapper that dispatches `run()` through run
-//!   hooks and streams framework-owned events from `run_stream()`.
+//!   hooks and streams framework-owned events from `run_stream()`, passing
+//!   each through the registered run-event hooks.
 
 #[cfg(not(all(feature = "linux-bubblewrap", target_os = "linux")))]
 use super::build::Profile;
@@ -42,7 +43,8 @@ pub struct AgentBuildContext<C: CredentialLookup + Send + Sync + 'static = Crede
 /// `run()` dispatches through the core `HookSet::dispatch_run` hook chain
 /// when run hooks are registered and passes through directly otherwise.
 /// `run_stream()` streams framework-owned [`RunEvent`]s lazily mapped from
-/// the vendor stream; registered run hooks are not consulted on the
+/// the vendor stream and passes each through the registered run-event hook
+/// chain before publication; registered run hooks are not consulted on the
 /// streaming path, so run-hook config injection applies to `run()` only.
 pub struct HookedAgent {
     inner: Agent<(), String>,
@@ -325,6 +327,12 @@ impl HookedAgent {
     /// mutations to the prompt text, applies `model_settings_overrides` to
     /// the per-run model settings, and returns the result.
     ///
+    /// Mode-scoped: run hooks fire only on this path. A registered
+    /// [`RunEventHook`][event-hook] never fires here; it fires only on
+    /// [`Self::run_stream`].
+    ///
+    /// [event-hook]: reloaded_code_core::hooks::RunEventHook
+    ///
     /// The run-hook context carries a wrapper-generated `run_id`. The inner
     /// agent assigns its own id for tool hooks; SerdesAI `RunOptions` has no
     /// field to override it, so the two identifiers cannot be unified here.
@@ -405,6 +413,14 @@ impl HookedAgent {
     /// [`UserContent`][serdes_ai::core::UserContent]; image and multi-part
     /// prompts pass through to the vendor unchanged.
     ///
+    /// Mode-scoped hook points: each mapped event passes the registered
+    /// [`RunEventHook`][event-hook] chain, in registration order, before the
+    /// caller sees it, so a hook may rewrite or suppress it. With no
+    /// run-event hooks registered the stream matches the unhooked mapping.
+    /// Registered run hooks stay inert on this path; see `# Remarks`.
+    ///
+    /// [event-hook]: reloaded_code_core::hooks::RunEventHook
+    ///
     /// # Remarks
     ///
     /// Registered run hooks are skipped on this path. The core run-hook
@@ -420,6 +436,9 @@ impl HookedAgent {
     /// - The stream itself yields the inner error as an `Err` item when the
     ///   run fails mid-stream; a vendor error event surfaces as the mapped
     ///   [`RunEvent::Error`] variant instead.
+    /// - The stream yields [`serdes_ai::agent::AgentRunError::Other`] as
+    ///   its final item when a run-event hook fails; the stream ends after
+    ///   that item.
     pub async fn run_stream(
         &self,
         prompt: impl Into<serdes_ai::core::UserContent>,
@@ -429,7 +448,12 @@ impl HookedAgent {
         serdes_ai::agent::AgentRunError,
     > {
         let inner = self.inner.run_stream(prompt, deps).await?;
-        Ok(Box::pin(RunEventStream::new(inner)))
+        Ok(Box::pin(RunEventStream::new(
+            inner,
+            &self.hooks,
+            &self.agent_name,
+            &self.model_name,
+        )))
     }
 }
 

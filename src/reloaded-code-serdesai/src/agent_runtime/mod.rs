@@ -7,7 +7,8 @@
 //! # Public API
 //! - [`AgentBuildContext`] - Shared context that builds runnable agents by name.
 //! - [`HookedAgent`] - Built agent wrapper that dispatches `run()` through run
-//!   hooks and streams framework-owned events from `run_stream()`.
+//!   hooks and streams framework-owned events from `run_stream()`, passing
+//!   each through the registered run-event hooks.
 //! - [`AgentBuildError`] - Build-time failures.
 
 pub use build::AgentBuildError;
