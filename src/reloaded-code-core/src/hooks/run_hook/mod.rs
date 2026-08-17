@@ -141,11 +141,6 @@ pub trait RunExecutor: Send + Sync {
 
 /// Intercept hook for the full run lifecycle.
 ///
-/// Mode-scoped: fires only on the `run()` path. Streaming runs never
-/// dispatch it - there is no preamble, system prompt, or settings
-/// injection on the streaming path. Use [`RunEventHook`] to
-/// intercept streamed events instead.
-///
 /// Code before `original` = inject preamble, override config.
 /// Skip `original` = skip the run (return a synthetic `RunOutput`).
 /// Code after = observe the run result.
@@ -154,6 +149,11 @@ pub trait RunExecutor: Send + Sync {
 /// takes ownership, mutates, and passes to `original.call()`. The final
 /// [`RunExecutor`] consumes it: strings move into the framework's run
 /// options with zero clones.
+///
+/// # Remarks
+///
+/// Fires only on the `run()` path - never on streaming runs.
+/// Use [`RunEventHook`] to intercept streamed events.
 ///
 /// [`RunEventHook`]: crate::hooks::RunEventHook
 pub trait RunHook: Send + Sync + 'static {
