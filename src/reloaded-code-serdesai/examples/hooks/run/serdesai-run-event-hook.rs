@@ -3,10 +3,11 @@
 //! This example registers two `RunEventHook`s via
 //! `AgentRuntimeBuilder::hooks()`, builds an agent with
 //! `AgentBuildContext::with_model_override()` using a mock model, and
-//! consumes `HookedAgent::run_stream()`. One hook rewrites each text
-//! delta to uppercase; the other suppresses the output-ready milestone.
-//! The printed stream shows the rewritten text where the mock's raw
-//! response would be, and no output-ready line.
+//! consumes `HookedAgent::run_stream()`.
+//!
+//! One hook rewrites each text delta to uppercase; the other suppresses the
+//! output-ready milestone. The printed stream shows the rewritten text where
+//! the mock's raw response would be, and no output-ready line.
 //!
 //! Mode scoping: `RunEventHook` fires only on `run_stream()`. A
 //! registered `RunHook` stays inert on this path, so this example
