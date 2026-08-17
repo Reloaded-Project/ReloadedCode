@@ -76,7 +76,7 @@ serdes-ai-models = { version = "0.2.6", default-features = false }
 serdes-ai-streaming = "0.2"
 
 # Internal crates
-reloaded-code-core = { version = "0.2.2", path = "reloaded-code-core", default-features = false }
+reloaded-code-core = { version = "0.2.3", path = "reloaded-code-core", default-features = false }
 reloaded-code-bubblewrap = { version = "0.1.0", path = "reloaded-code-bubblewrap" }
 reloaded-code-agents = { version = "0.1.0", path = "reloaded-code-agents" }
 reloaded-code-models-dev = { version = "0.1.0", path = "reloaded-code-models-dev" }
