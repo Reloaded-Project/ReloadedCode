@@ -11,6 +11,12 @@ Hooks let your code see or change what an agent does.
   - Observe start and end: code before `original` is "start", code
     after is "end" (logging, metrics).
 
+- `RunEventHook` trait
+  - Fires only on `run_stream()`: observe, rewrite, or suppress each
+    streamed event before the consumer sees it.
+  - The scoping is symmetric: `RunHook`s stay inert on the streaming
+    path.
+
 ### Example programs
 
 - serdesai-run-hook
@@ -21,6 +27,13 @@ Hooks let your code see or change what an agent does.
   - Two `RunHook`s showing nesting order.
   - Registration order A -> B gives execution A-before, B-before, executor, B-after, A-after.
   - `cargo run --example serdesai-run-chain -p reloaded-code-serdesai --features mock`
+
+- serdesai-run-event-hook
+  - Two `RunEventHook`s on one streaming run: one rewrites each text
+    delta to uppercase, the other suppresses the output-ready
+    milestone; the printed stream shows the rewritten text and the
+    missing milestone.
+  - `cargo run --example serdesai-run-event-hook -p reloaded-code-serdesai --features mock`
 
 ## Tool hooks
 
