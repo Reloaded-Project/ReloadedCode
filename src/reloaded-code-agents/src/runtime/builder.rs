@@ -322,10 +322,10 @@ mod tests {
             fn hook<'a>(
                 &'a self,
                 ctx: &'a reloaded_code_core::HookRunContext<'a>,
-                config: reloaded_code_core::RunConfig,
+                _config: &'a reloaded_code_core::RunConfig,
                 original: reloaded_code_core::RunOriginal<'a>,
             ) -> reloaded_code_core::RunHookFuture<'a> {
-                original.call(ctx, config)
+                original.call(ctx)
             }
         }
 

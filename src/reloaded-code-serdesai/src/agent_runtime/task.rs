@@ -2,9 +2,10 @@
 //!
 //! # Public API
 //! - [`AgentBuildContext`] - Reusable shared inputs for building runnable agents.
-//! - [`HookedAgent`] - Built agent wrapper that dispatches `run()` through run
-//!   hooks and streams framework-owned events from `run_stream()`, passing
-//!   each through the registered run-event hooks.
+//! - [`HookedAgent`] - Built agent wrapper that dispatches `run()` through
+//!   the registered run-config and run hooks, resolves run-config hooks
+//!   once before `run_stream()` starts, and passes each streamed event
+//!   through the registered run-event hooks.
 
 #[cfg(not(all(feature = "linux-bubblewrap", target_os = "linux")))]
 use super::build::Profile;
@@ -20,12 +21,21 @@ use reloaded_code_core::hooks::{
     RunExecutor, RunHookFuture, RunOutput, RunUsage,
 };
 use reloaded_code_core::{CredentialLookup, CredentialResolver, models::ModelCatalog};
+use serdes_ai::core::{UserContent, UserContentPart};
 use serdes_ai::{Agent, AgentBuilder, RunOptions};
 #[cfg(any(test, feature = "mock"))]
 use serdes_ai_models::BoxedModel;
 use std::path::Path;
 use std::pin::Pin;
 use std::sync::{Arc, Mutex};
+
+/// Prefix marking a preamble message as system-role in the prompt text.
+const PREAMBLE_SYSTEM_PREFIX: &str = "[System] ";
+/// Prefix marking a preamble message as user-role in the prompt text.
+const PREAMBLE_USER_PREFIX: &str = "[User] ";
+/// Blank line separating two prompt sections, and the section head from
+/// the original prompt on both run paths.
+const SECTION_SEPARATOR: &str = "\n\n";
 
 /// Reusable shared inputs for building runnable SerdesAI agents.
 ///
@@ -40,12 +50,16 @@ pub struct AgentBuildContext<C: CredentialLookup + Send + Sync + 'static = Crede
 
 /// Lightweight newtype around a built SerdesAI `Agent`.
 ///
-/// `run()` dispatches through the core `HookSet::dispatch_run` hook chain
-/// when run hooks are registered and passes through directly otherwise.
-/// `run_stream()` streams framework-owned [`RunEvent`]s lazily mapped from
-/// the vendor stream and passes each through the registered run-event hook
-/// chain before publication; registered run hooks are not consulted on the
-/// streaming path, so run-hook config injection applies to `run()` only.
+/// Wraps both run paths with the runtime's registered hooks:
+///
+/// - [`Self::run`]: [`RunConfigHook`]s amend the run config,
+///   then the run hook chain drives the run. With neither hook kind
+///   registered, the inner agent runs directly.
+/// - [`Self::run_stream`]: the same run-config hooks fire once before the
+///   stream starts, then each mapped [`RunEvent`] passes the run-event
+///   hook chain.
+///
+/// [`RunConfigHook`]: reloaded_code_core::hooks::RunConfigHook
 pub struct HookedAgent {
     inner: Agent<(), String>,
     hooks: HookSet,
@@ -319,31 +333,37 @@ impl HookedAgent {
         self.inner.tools()
     }
 
-    /// Runs the agent with the given prompt, dispatching through run hooks.
+    /// Runs the agent with the given prompt, dispatching through the
+    /// registered run-config and run hooks.
     ///
-    /// When no run hooks are registered this delegates directly to the inner
-    /// agent for zero overhead. Otherwise it builds a `RunConfig`, runs the
-    /// hook chain, applies any `preamble_messages` or `system_prompt`
-    /// mutations to the prompt text, applies `model_settings_overrides` to
-    /// the per-run model settings, and returns the result.
+    /// With no run-config or run hooks registered this delegates directly
+    /// to the inner agent. Otherwise [`RunConfigHook`][config-hook]s amend
+    /// the run config first; the run hook chain then observes the final
+    /// config.
     ///
-    /// Mode-scoped: run hooks fire only on this path. A registered
-    /// [`RunEventHook`][event-hook] never fires here; it fires only on
-    /// [`Self::run_stream`].
+    /// Run hooks fire only on this path. Run-config hooks fire here and
+    /// on [`Self::run_stream`]. Run-event hooks
+    /// ([`RunEventHook`][event-hook]) fire only on [`Self::run_stream`].
     ///
-    /// The run-hook context carries a wrapper-generated `run_id`. The inner
-    /// agent assigns its own id for tool hooks; SerdesAI `RunOptions` has no
-    /// field to override it, so the two identifiers cannot be unified here.
+    /// The hook context carries a wrapper-generated `run_id`. The inner
+    /// agent assigns its own id for tool hooks; SerdesAI `RunOptions` has
+    /// no field to override it, so the two cannot be unified.
     ///
     /// # Errors
     ///
     /// - Returns the inner agent's [`serdes_ai::agent::AgentRunError`]
-    ///   unchanged when the inner agent fails (direct run or hooked run)
-    ///   and the failure reaches the caller untouched.
-    /// - Returns [`serdes_ai::agent::AgentRunError::Other`] when a run hook
-    ///   returns or substitutes its own error during dispatch.
+    ///   unchanged when the inner agent fails and the failure reaches the
+    ///   caller untouched.
+    /// - Returns [`serdes_ai::agent::AgentRunError::Other`] when a
+    ///   run-config hook or run hook returns or substitutes its own error
+    ///   during dispatch.
+    /// - With no run hooks registered, a failing run-config hook is
+    ///   labeled `run config hook error`.
+    /// - With run hooks registered, any dispatch failure that is not the
+    ///   untouched inner error is labeled `run hook error`.
     ///
     /// [event-hook]: reloaded_code_core::hooks::RunEventHook
+    /// [config-hook]: reloaded_code_core::hooks::RunConfigHook
     pub async fn run(
         &self,
         prompt: impl Into<String>,
@@ -359,14 +379,15 @@ impl HookedAgent {
     /// - Returns the inner agent's [`serdes_ai::agent::AgentRunError`]
     ///   unchanged when the inner agent fails (direct run or hooked run)
     ///   and the failure reaches the caller untouched.
-    /// - Returns [`serdes_ai::agent::AgentRunError::Other`] when a run hook
-    ///   returns or substitutes its own error during dispatch.
+    /// - Returns [`serdes_ai::agent::AgentRunError::Other`] when a
+    ///   run-config hook or run hook returns or substitutes its own error
+    ///   during dispatch.
     async fn run_hooked(
         &self,
         prompt: String,
         deps: (),
     ) -> Result<HookedAgentRunResult, serdes_ai::agent::AgentRunError> {
-        if self.hooks.run_hooks_is_empty() {
+        if self.hooks.run_hooks_is_empty() && self.hooks.run_config_hooks_is_empty() {
             let response = self.inner.run(prompt, deps).await?;
             let serdes_ai::agent::AgentRunResult { output, .. } = response;
             return Ok(HookedAgentRunResult { content: output });
@@ -396,7 +417,13 @@ impl HookedAgent {
         // and only label the error hook-origin otherwise.
         let output = match self.hooks.dispatch_run(&ctx, config, &executor).await {
             Ok(output) => output,
-            Err(dispatched) => return Err(restore_run_error(dispatched, &error_slot)),
+            Err(dispatched) => {
+                return Err(restore_run_error(
+                    dispatched,
+                    &error_slot,
+                    !self.hooks.run_hooks_is_empty(),
+                ));
+            }
         };
 
         Ok(HookedAgentRunResult::from_run_output(output))
@@ -405,27 +432,33 @@ impl HookedAgent {
     /// Runs the agent in streaming mode, yielding framework-owned
     /// [`RunEvent`]s.
     ///
-    /// Starts the inner agent's stream and lazily maps each vendor event as
-    /// the stream is polled, so real incremental text and thinking deltas
-    /// reach the caller as they arrive. The mapped
-    /// [`RunEvent::RunComplete`] carries the inner run's id and a distilled
-    /// transcript. The prompt accepts full
-    /// [`UserContent`][serdes_ai::core::UserContent]; image and multi-part
-    /// prompts pass through to the vendor unchanged.
+    /// Starts the inner agent's stream and lazily maps each vendor event
+    /// as the stream is polled, so real incremental text and thinking
+    /// deltas reach the caller as they arrive. The mapped
+    /// [`RunEvent::RunComplete`] carries the inner run's id and a
+    /// distilled transcript. The prompt accepts full [`UserContent`];
+    /// image and multi-part prompts keep their parts when no sections
+    /// are injected.
     ///
-    /// Each mapped event passes the registered
-    /// [`RunEventHook`][event-hook] chain, in registration order, before the
-    /// caller sees it, so a hook may rewrite or suppress it. With no
-    /// run-event hooks registered the stream matches the unhooked mapping.
+    /// # Hooks
     ///
-    /// Run hooks ([`RunHook`][run-hook]) never fire here; they fire only
-    /// on [`Self::run`]. The run-hook chain resolves to one completed
-    /// `RunOutput`, so dispatching it would buffer the whole run before
-    /// the first event and defeat streaming. Preamble, system-prompt,
-    /// and model-settings injection therefore apply on that path only.
+    /// - **Run-event**: each mapped event passes the registered
+    ///   [`RunEventHook`][event-hook] chain, in registration order,
+    ///   before the caller sees it; a hook may rewrite or suppress it.
+    /// - **Run-config**: [`RunConfigHook`][config-hook]s fire once
+    ///   before the stream starts. The system prompt and preamble
+    ///   messages become a leading text part of the prompt;
+    ///   model-settings overrides merge field-wise over the
+    ///   agent's configured settings.
+    /// - **Run**: [`RunHook`][run-hook]s never fire here; they fire
+    ///   only on [`Self::run`], because dispatching them would buffer
+    ///   the whole run before the first event.
     ///
     /// # Errors
     ///
+    /// - Returns [`serdes_ai::agent::AgentRunError::Other`] labeled
+    ///   `run config hook error: ...` when a run-config hook fails; the
+    ///   failure surfaces from this start call before any event exists.
     /// - Returns the inner agent's [`serdes_ai::agent::AgentRunError`]
     ///   unchanged when starting the stream fails.
     /// - The stream yields the inner error as its final `Err` item when
@@ -437,6 +470,7 @@ impl HookedAgent {
     ///
     /// [event-hook]: reloaded_code_core::hooks::RunEventHook
     /// [run-hook]: reloaded_code_core::hooks::RunHook
+    /// [config-hook]: reloaded_code_core::hooks::RunConfigHook
     pub async fn run_stream(
         &self,
         prompt: impl Into<serdes_ai::core::UserContent>,
@@ -445,7 +479,51 @@ impl HookedAgent {
         Pin<Box<dyn Stream<Item = Result<RunEvent, serdes_ai::agent::AgentRunError>> + Send>>,
         serdes_ai::agent::AgentRunError,
     > {
-        let inner = self.inner.run_stream(prompt, deps).await?;
+        // Run hooks never fire on the stream, so only the config chain
+        // gates the pre-pass; an empty config chain streams the inner
+        // agent directly, exactly like the unhooked path.
+        if self.hooks.run_config_hooks_is_empty() {
+            let inner = self.inner.run_stream(prompt, deps).await?;
+            return Ok(Box::pin(RunEventStream::new(
+                inner,
+                &self.hooks,
+                &self.agent_name,
+                &self.model_name,
+            )));
+        }
+
+        // Wrapper-assigned run id for the hook context. The inner agent
+        // generates its own id for the streamed run; see the `run` doc
+        // comment.
+        let run_id = serdes_ai::agent::generate_run_id();
+        let ctx = HookRunContext {
+            agent_name: &self.agent_name,
+            run_id: &run_id,
+            model_name: &self.model_name,
+        };
+
+        // Config resolution completes once, before the stream starts;
+        // its failure aborts the start call instead of surfacing
+        // mid-stream.
+        let config = self
+            .hooks
+            .dispatch_run_config(&ctx, RunConfig::default())
+            .await
+            .map_err(|dispatched| {
+                serdes_ai::agent::AgentRunError::Other(anyhow::anyhow!(
+                    "run config hook error: {dispatched}"
+                ))
+            })?;
+
+        let prompt = prepend_section_head(prompt.into(), run_config_head(&config));
+        let inner = match run_options_with_overrides(&self.inner, config.model_settings_overrides) {
+            Some(options) => {
+                self.inner
+                    .run_stream_with_options(prompt, deps, options)
+                    .await?
+            }
+            None => self.inner.run_stream(prompt, deps).await?,
+        };
         Ok(Box::pin(RunEventStream::new(
             inner,
             &self.hooks,
@@ -551,21 +629,11 @@ impl<'a> RunExecutor for SerdesRunExecutor<'a> {
         let agent = self.agent;
         let mut prompt = self.prompt.clone();
 
-        // Apply RunConfig modifications that can be expressed by prepending
-        // to the prompt text. Order: system prompt, preamble messages in
-        // configured order, then the original prompt.
-        let mut sections: Vec<String> = Vec::new();
-        if let Some(sys) = &config.system_prompt {
-            sections.push(sys.clone());
-        }
-        for msg in &config.preamble_messages {
-            match msg.role {
-                PreambleRole::System => sections.push(format!("[System] {}", msg.content)),
-                PreambleRole::User => sections.push(format!("[User] {}", msg.content)),
-            }
-        }
-        if !sections.is_empty() {
-            prompt = format!("{}\n\n{prompt}", sections.join("\n\n"));
+        // Config sections render textually before the prompt: system
+        // prompt first, then preamble messages in configured order,
+        // then the original prompt.
+        if let Some(head) = run_config_head(&config) {
+            prompt = format!("{head}{SECTION_SEPARATOR}{prompt}");
         }
 
         let error = Arc::clone(&self.error);
@@ -684,17 +752,43 @@ where
     Ok(HookedAgent::new(agent, hooks, name.to_string(), model_name))
 }
 
+/// Prepends a config-injected head (from [`run_config_head`]) to a
+/// `run_stream` prompt as its own leading text part, so the original
+/// prompt content follows it unchanged.
+///
+/// The head goes in as a separate part because stream prompts carry
+/// full [`UserContent`]: a text prompt becomes two parts, head first,
+/// and a multi-part prompt keeps its parts with the head inserted at
+/// index zero, so image and other parts survive. A `None` head
+/// returns the prompt unchanged.
+fn prepend_section_head(prompt: UserContent, head: Option<String>) -> UserContent {
+    let Some(head) = head else {
+        return prompt;
+    };
+    let head_part = UserContentPart::text(format!("{head}{SECTION_SEPARATOR}"));
+    match prompt {
+        UserContent::Text(text) => UserContent::Parts(vec![head_part, UserContentPart::text(text)]),
+        UserContent::Parts(mut parts) => {
+            parts.insert(0, head_part);
+            UserContent::Parts(parts)
+        }
+    }
+}
+
 /// Recovers the failure from a failed run dispatch.
 ///
 /// Restores the captured inner-agent [`AgentRunError`] when the hook chain
 /// propagated its projection untouched. Any other dispatched error reached
 /// the caller through a hook returning or substituting its own error, so it
-/// is labeled as hook-origin.
+/// is labeled as hook-origin. With no run hooks registered, only the
+/// run-config chain can have produced the error, so it carries the
+/// config-hook label; otherwise the run-hook label applies.
 ///
 /// [`AgentRunError`]: serdes_ai::agent::AgentRunError
 fn restore_run_error(
     dispatched: reloaded_code_core::ToolError,
     captured: &Mutex<Option<serdes_ai::agent::AgentRunError>>,
+    run_hooks_registered: bool,
 ) -> serdes_ai::agent::AgentRunError {
     let captured = captured
         .lock()
@@ -702,10 +796,64 @@ fn restore_run_error(
         .take();
     match captured {
         Some(inner) if run_error_projection(&inner).to_string() == dispatched.to_string() => inner,
-        _ => {
+        _ if run_hooks_registered => {
             serdes_ai::agent::AgentRunError::Other(anyhow::anyhow!("run hook error: {dispatched}"))
         }
+        _ => serdes_ai::agent::AgentRunError::Other(anyhow::anyhow!(
+            "run config hook error: {dispatched}"
+        )),
     }
+}
+
+/// Builds the leading text placed in front of the user's prompt when a
+/// run config injects a system prompt or preamble messages.
+///
+/// The head starts with the system prompt, then preamble messages in
+/// configured order, tagged `[System]` or `[User]` by role. A blank
+/// line separates consecutive sections.
+///
+/// Returns `None` when the config injects nothing, leaving the prompt
+/// unchanged. [`SerdesRunExecutor::execute`] and
+/// [`HookedAgent::run_stream`] share this builder, so both run paths
+/// prepend the same head bytes.
+fn run_config_head(config: &RunConfig) -> Option<String> {
+    let section_count =
+        config.preamble_messages.len() + usize::from(config.system_prompt.is_some());
+    if section_count == 0 {
+        return None;
+    }
+    // Capacity: every section's content plus the longest role prefix and
+    // one blank-line separator per section; a slight overestimate is
+    // harmless.
+    let estimated_len = (PREAMBLE_SYSTEM_PREFIX.len() + SECTION_SEPARATOR.len()) * section_count
+        + config.system_prompt.as_ref().map_or(0, String::len)
+        + config
+            .preamble_messages
+            .iter()
+            .map(|message| message.content.len())
+            .sum::<usize>();
+    let mut head = String::with_capacity(estimated_len);
+    let mut first_section = true;
+    if let Some(system_prompt) = &config.system_prompt {
+        head.push_str(system_prompt);
+        first_section = false;
+    }
+    for message in &config.preamble_messages {
+        // One blank line between every section pair, whatever the
+        // section content, so empty sections keep their separator and
+        // the rendered bytes stay stable.
+        if !first_section {
+            head.push_str(SECTION_SEPARATOR);
+        }
+        first_section = false;
+        let prefix = match message.role {
+            PreambleRole::System => PREAMBLE_SYSTEM_PREFIX,
+            PreambleRole::User => PREAMBLE_USER_PREFIX,
+        };
+        head.push_str(prefix);
+        head.push_str(&message.content);
+    }
+    Some(head)
 }
 
 /// Builds per-run [`RunOptions`] that merge [`ModelSettingsOverrides`] over
@@ -759,8 +907,8 @@ mod tests {
     use reloaded_code_agents::{AgentCatalog, AgentDefaults, AgentMode, AgentRuntimeBuilder};
     use reloaded_code_core::ToolOutput;
     use reloaded_code_core::hooks::{
-        ModelSettingsOverrides, PreambleMessage, PreambleRole, RunHook, RunOriginal,
-        ToolCallContext, ToolHook, ToolHookFuture, ToolOriginal, ToolRequest,
+        ModelSettingsOverrides, PreambleMessage, PreambleRole, RunConfigHook, RunConfigHookFuture,
+        RunHook, RunOriginal, ToolCallContext, ToolHook, ToolHookFuture, ToolOriginal, ToolRequest,
     };
     use reloaded_code_core::permissions::{ExpandError, PermissionAction};
     use reloaded_code_core::tool_metadata::{
@@ -1077,55 +1225,56 @@ mod tests {
     /// Model settings overrides: applied per run, merged over the agent's
     /// configured settings, with prompt-prepend behavior untouched.
     ///
-    /// Run hook that installs fixed model settings overrides before
-    /// delegating to `original`.
-    struct OverridingRunHook {
+    /// Run-config hook that installs fixed model settings overrides.
+    struct OverridingConfigHook {
         temperature: Option<f32>,
         top_p: Option<f32>,
     }
 
-    impl RunHook for OverridingRunHook {
-        fn hook<'a>(
+    impl RunConfigHook for OverridingConfigHook {
+        fn configure<'a>(
             &'a self,
-            ctx: &'a HookRunContext<'a>,
-            mut config: RunConfig,
-            original: RunOriginal<'a>,
-        ) -> RunHookFuture<'a> {
-            config.model_settings_overrides = Some(ModelSettingsOverrides {
-                temperature: self.temperature,
-                top_p: self.top_p,
-            });
-            original.call(ctx, config)
+            _ctx: &'a HookRunContext<'a>,
+            config: &'a mut RunConfig,
+        ) -> RunConfigHookFuture<'a> {
+            let temperature = self.temperature;
+            let top_p = self.top_p;
+            Box::pin(async move {
+                config.model_settings_overrides =
+                    Some(ModelSettingsOverrides { temperature, top_p });
+                Ok(())
+            })
         }
     }
 
-    /// Run hook that injects prompt sections plus a temperature override
-    /// before delegating to `original`.
-    struct PromptAndSettingsOverrideRunHook;
+    /// Run-config hook that injects prompt sections plus a temperature
+    /// override.
+    struct PromptAndSettingsOverrideConfigHook;
 
-    impl RunHook for PromptAndSettingsOverrideRunHook {
-        fn hook<'a>(
+    impl RunConfigHook for PromptAndSettingsOverrideConfigHook {
+        fn configure<'a>(
             &'a self,
-            ctx: &'a HookRunContext<'a>,
-            mut config: RunConfig,
-            original: RunOriginal<'a>,
-        ) -> RunHookFuture<'a> {
-            config.system_prompt = Some("agent system override".into());
-            config.preamble_messages = vec![
-                PreambleMessage {
-                    role: PreambleRole::System,
-                    content: "sys note".into(),
-                },
-                PreambleMessage {
-                    role: PreambleRole::User,
-                    content: "user note".into(),
-                },
-            ];
-            config.model_settings_overrides = Some(ModelSettingsOverrides {
-                temperature: Some(0.9),
-                top_p: None,
-            });
-            original.call(ctx, config)
+            _ctx: &'a HookRunContext<'a>,
+            config: &'a mut RunConfig,
+        ) -> RunConfigHookFuture<'a> {
+            Box::pin(async move {
+                config.system_prompt = Some("agent system override".into());
+                config.preamble_messages = vec![
+                    PreambleMessage {
+                        role: PreambleRole::System,
+                        content: "sys note".into(),
+                    },
+                    PreambleMessage {
+                        role: PreambleRole::User,
+                        content: "user note".into(),
+                    },
+                ];
+                config.model_settings_overrides = Some(ModelSettingsOverrides {
+                    temperature: Some(0.9),
+                    top_p: None,
+                });
+                Ok(())
+            })
         }
     }
 
@@ -1133,7 +1282,7 @@ mod tests {
     /// top_p 0.8, running a model that records the [`ModelSettings`] of every
     /// request and echoes the last user prompt.
     fn hooked_agent_with_settings_capture(
-        hook: impl RunHook + 'static,
+        hooks: HookSet,
     ) -> (HookedAgent, Arc<Mutex<Vec<ModelSettings>>>) {
         let captured: Arc<Mutex<Vec<ModelSettings>>> = Arc::new(Mutex::new(Vec::new()));
         let seen = Arc::clone(&captured);
@@ -1152,7 +1301,6 @@ mod tests {
             ModelResponse::text(last_user)
         });
 
-        let hooks = HookSet::builder().run_hook(hook).build();
         let mut defaults = AgentDefaults::with_model("openrouter/openai/gpt-4.1-mini");
         defaults.temperature = Some(0.3);
         defaults.top_p = Some(0.8);
@@ -1181,10 +1329,14 @@ mod tests {
 
     #[tokio::test]
     async fn model_settings_override_replaces_only_the_overridden_setting_in_request() {
-        let (hooked, captured) = hooked_agent_with_settings_capture(OverridingRunHook {
-            temperature: Some(0.9),
-            top_p: None,
-        });
+        let (hooked, captured) = hooked_agent_with_settings_capture(
+            HookSet::builder()
+                .run_config_hook(OverridingConfigHook {
+                    temperature: Some(0.9),
+                    top_p: None,
+                })
+                .build(),
+        );
 
         hooked.run("hello", ()).await.expect("run should complete");
 
@@ -1203,10 +1355,14 @@ mod tests {
 
         // Mirror direction: a top_p-only override replaces top_p and keeps
         // the agent-configured temperature.
-        let (hooked, captured) = hooked_agent_with_settings_capture(OverridingRunHook {
-            temperature: None,
-            top_p: Some(0.6),
-        });
+        let (hooked, captured) = hooked_agent_with_settings_capture(
+            HookSet::builder()
+                .run_config_hook(OverridingConfigHook {
+                    temperature: None,
+                    top_p: Some(0.6),
+                })
+                .build(),
+        );
 
         hooked.run("hello", ()).await.expect("run should complete");
 
@@ -1227,14 +1383,20 @@ mod tests {
     #[tokio::test]
     async fn run_without_model_settings_overrides_uses_agent_configured_settings() {
         // Absent overrides: `RunConfig::default()` flows through untouched.
-        let (hooked, captured) = hooked_agent_with_settings_capture(PassthroughRunHook);
+        let (hooked, captured) = hooked_agent_with_settings_capture(
+            HookSet::builder().run_hook(PassthroughRunHook).build(),
+        );
         hooked.run("hello", ()).await.expect("run should complete");
 
         // All-None overrides: no field is set, so agent settings apply as-is.
-        let (hooked, captured_empty) = hooked_agent_with_settings_capture(OverridingRunHook {
-            temperature: None,
-            top_p: None,
-        });
+        let (hooked, captured_empty) = hooked_agent_with_settings_capture(
+            HookSet::builder()
+                .run_config_hook(OverridingConfigHook {
+                    temperature: None,
+                    top_p: None,
+                })
+                .build(),
+        );
         hooked.run("hello", ()).await.expect("run should complete");
 
         let expected = ModelSettings {
@@ -1256,8 +1418,11 @@ mod tests {
 
     #[tokio::test]
     async fn prompt_sections_are_unchanged_when_model_settings_overrides_are_present() {
-        let (hooked, captured) =
-            hooked_agent_with_settings_capture(PromptAndSettingsOverrideRunHook);
+        let (hooked, captured) = hooked_agent_with_settings_capture(
+            HookSet::builder()
+                .run_config_hook(PromptAndSettingsOverrideConfigHook)
+                .build(),
+        );
 
         let output = hooked
             .run("base prompt", ())
@@ -1283,6 +1448,62 @@ mod tests {
             Some(f64::from(0.8_f32)),
             "agent-configured top_p should be retained"
         );
+    }
+
+    /// Run-config hook that records each dispatch it observes and injects
+    /// one preamble section, standing in for config-hooks-only
+    /// registrations.
+    struct RecordingConfigHook {
+        fires: Arc<Mutex<Vec<String>>>,
+    }
+
+    impl RunConfigHook for RecordingConfigHook {
+        fn configure<'a>(
+            &'a self,
+            ctx: &'a HookRunContext<'a>,
+            config: &'a mut RunConfig,
+        ) -> RunConfigHookFuture<'a> {
+            Box::pin(async move {
+                self.fires
+                    .lock()
+                    .expect("fires should not be poisoned")
+                    .push(ctx.run_id.to_string());
+                config.preamble_messages.push(PreambleMessage {
+                    role: PreambleRole::User,
+                    content: "config-only note".into(),
+                });
+                Ok(())
+            })
+        }
+    }
+
+    #[tokio::test]
+    async fn run_applies_config_hooks_when_no_run_hooks_are_registered() {
+        // A config-hooks-only registration leaves the run-hook chain
+        // empty, so the dispatch gate must still route through the hook
+        // machinery instead of taking the direct fast path.
+        let fires = Arc::new(Mutex::new(Vec::new()));
+        let (hooked, _captured) = hooked_agent_with_settings_capture(
+            HookSet::builder()
+                .run_config_hook(RecordingConfigHook {
+                    fires: Arc::clone(&fires),
+                })
+                .build(),
+        );
+
+        let output = hooked
+            .run("base prompt", ())
+            .await
+            .expect("run should complete")
+            .into_output();
+
+        assert_eq!(
+            output, "[User] config-only note\n\nbase prompt",
+            "the config hook's preamble section must reach the model request"
+        );
+        let fires = fires.lock().expect("fires should not be poisoned");
+        assert_eq!(fires.len(), 1, "the config hook must fire exactly once");
+        assert!(!fires[0].is_empty(), "the hook context must carry a run id");
     }
 
     /// Model whose every request fails, so the inner agent run surfaces a
@@ -1340,10 +1561,10 @@ mod tests {
         fn hook<'a>(
             &'a self,
             ctx: &'a HookRunContext<'a>,
-            config: RunConfig,
+            _config: &'a RunConfig,
             original: RunOriginal<'a>,
         ) -> RunHookFuture<'a> {
-            original.call(ctx, config)
+            original.call(ctx)
         }
     }
 
@@ -1354,7 +1575,7 @@ mod tests {
         fn hook<'a>(
             &'a self,
             _ctx: &'a HookRunContext<'a>,
-            _config: RunConfig,
+            _config: &'a RunConfig,
             _original: RunOriginal<'a>,
         ) -> RunHookFuture<'a> {
             Box::pin(async {
@@ -1373,16 +1594,33 @@ mod tests {
         fn hook<'a>(
             &'a self,
             ctx: &'a HookRunContext<'a>,
-            config: RunConfig,
+            _config: &'a RunConfig,
             original: RunOriginal<'a>,
         ) -> RunHookFuture<'a> {
             Box::pin(async move {
-                match original.call(ctx, config).await {
+                match original.call(ctx).await {
                     Err(_) => Err(reloaded_code_core::ToolError::Execution(
                         "policy veto".into(),
                     )),
                     ok => ok,
                 }
+            })
+        }
+    }
+
+    /// Run-config hook that fails its configuration step.
+    struct FailingConfigHook;
+
+    impl RunConfigHook for FailingConfigHook {
+        fn configure<'a>(
+            &'a self,
+            _ctx: &'a HookRunContext<'a>,
+            _config: &'a mut RunConfig,
+        ) -> RunConfigHookFuture<'a> {
+            Box::pin(async {
+                Err(reloaded_code_core::ToolError::Execution(
+                    "config hook rejected the run".into(),
+                ))
             })
         }
     }
@@ -1439,7 +1677,7 @@ mod tests {
         // failures must keep the same untouched-projection handling as
         // plain runs.
         let hooks = HookSet::builder()
-            .run_hook(OverridingRunHook {
+            .run_config_hook(OverridingConfigHook {
                 temperature: Some(0.9),
                 top_p: None,
             })
@@ -1583,6 +1821,58 @@ mod tests {
             other => {
                 panic!("hook-substituted failure must not surface the inner error, got: {other:?}")
             }
+        }
+    }
+
+    #[tokio::test]
+    async fn run_failure_is_labeled_config_hook_error_when_config_hook_fails() {
+        // The config hook fails before the run chain or the model starts,
+        // so the model is never invoked and the failure can only be
+        // config-hook-origin.
+        let hooks = HookSet::builder()
+            .run_config_hook(FailingConfigHook)
+            .build();
+
+        let runtime = AgentRuntimeBuilder::new()
+            .catalog(AgentCatalog::from_entries([agent(
+                "caller",
+                AgentMode::Primary,
+                allow_tools(&[]),
+                "prompt",
+            )]))
+            .defaults(AgentDefaults::with_model("openrouter/openai/gpt-4.1-mini"))
+            .hooks(hooks)
+            .build()
+            .expect("runtime should build");
+
+        let context = AgentBuildContext::new(
+            Arc::new(runtime),
+            Arc::new(catalog()),
+            Arc::new(credentials()),
+            workspace_root(),
+        )
+        .with_model_override(crate::mock::MockModel::new("unused").with_text_response("unused"));
+        let hooked = context.build("caller").expect("build should succeed");
+
+        let err = hooked
+            .run("trigger the config hook failure", ())
+            .await
+            .err()
+            .expect("run should fail");
+
+        match err {
+            serdes_ai::agent::AgentRunError::Other(source) => {
+                let message = source.to_string();
+                assert!(
+                    message.contains("run config hook error"),
+                    "config-hook failure should be labeled as such: {message}"
+                );
+                assert!(
+                    message.contains("config hook rejected the run"),
+                    "dispatched config-hook error should be preserved: {message}"
+                );
+            }
+            other => panic!("config-hook failure should surface as Other, got: {other:?}"),
         }
     }
 }

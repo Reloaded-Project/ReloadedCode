@@ -2,52 +2,41 @@
 //!
 //! This example registers a `RunHook` via `AgentRuntimeBuilder::hooks()`,
 //! builds an agent with `AgentBuildContext::with_model_override()` using a
-//! mock model, and runs it. The hook injects a system preamble via
-//! `RunConfig` and prints a confirmation message.
+//! mock model, and runs it. The hook prints a confirmation message.
 //!
 //! Expected output:
 //!   Built agent with 0 tools.
-//!   [PreambleInjector] injecting preamble for agent=hook-demo
+//!   [RunLogger] run starting for agent=hook-demo
 //!   Output: Mock response
 //!
 //! Run with:
 //!   cargo run --example serdesai-run-hook -p reloaded-code-serdesai --features mock
 
 use reloaded_code_agents::AgentCatalog;
-use reloaded_code_core::{
-    HookRunContext, HookSet, PreambleMessage, PreambleRole, RunConfig, RunHook, RunHookFuture,
-    RunOriginal,
-};
+use reloaded_code_core::{HookRunContext, HookSet, RunConfig, RunHook, RunHookFuture, RunOriginal};
 
 #[path = "../shared.rs"]
 mod shared;
 
-struct PreambleInjector;
+struct RunLogger;
 
-impl RunHook for PreambleInjector {
+impl RunHook for RunLogger {
     fn hook<'a>(
         &'a self,
         ctx: &'a HookRunContext<'a>,
-        mut config: RunConfig,
+        _config: &'a RunConfig,
         original: RunOriginal<'a>,
     ) -> RunHookFuture<'a> {
         Box::pin(async move {
-            println!(
-                "[PreambleInjector] injecting preamble for agent={}",
-                ctx.agent_name
-            );
-            config.preamble_messages.push(PreambleMessage {
-                role: PreambleRole::System,
-                content: "You are a helpful assistant.".into(),
-            });
-            original.call(ctx, config).await
+            println!("[RunLogger] run starting for agent={}", ctx.agent_name);
+            original.call(ctx).await
         })
     }
 }
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let hooks = HookSet::builder().run_hook(PreambleInjector).build();
+    let hooks = HookSet::builder().run_hook(RunLogger).build();
 
     let catalog = AgentCatalog::from_entries([shared::agent_config(
         "hook-demo",

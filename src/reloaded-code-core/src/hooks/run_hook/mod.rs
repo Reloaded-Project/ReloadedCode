@@ -9,18 +9,27 @@
 //! A run holds N steps. One step = one LLM request plus the tool calls
 //! it triggers. A run with no tool calls is a single step.
 //!
-//! A run hook wraps that whole boundary. Code before `original` runs
-//! before the first step: inject preamble messages, override the system
-//! prompt or model settings.
+//! # The run boundary
 //!
-//! Code after `original` sees the finished [`RunOutput`]. Skipping
-//! `original` skips the run and returns a synthetic result instead.
+//! A run hook wraps that whole boundary. Code before `original` runs
+//! before the first step and observes the final config read-only;
+//! code after sees the finished [`RunOutput`]. Skipping `original`
+//! skips the run and returns a synthetic result instead.
+//!
+//! # Hook ownership
+//!
+//! [`RunConfigHook`] amends config before the run. [`RunHook`]
+//! controls run lifecycle on `run()` only. [`RunEventHook`] owns
+//! streamed events.
+//!
+//! # Run identity
 //!
 //! Each run carries a `run_id` (see [`HookRunContext`]). Tool hooks
 //! fire inside a run, once per tool call, under the same `run_id`.
 //!
 //! Next: see [`ToolHook`] for the innermost intercept point.
 //!
+//! [`RunEventHook`]: crate::hooks::RunEventHook
 //! [`ToolHook`]: crate::hooks::ToolHook
 
 use crate::ToolError;
@@ -29,16 +38,8 @@ use std::future::Future;
 use std::pin::Pin;
 use std::sync::Arc;
 
-/// Mutable config a RunHook can change before calling original.
-#[derive(Default)]
-pub struct RunConfig {
-    /// Override the agent's default system prompt.
-    pub system_prompt: Option<String>,
-    /// Preamble messages injected before the user prompt.
-    pub preamble_messages: Vec<PreambleMessage>,
-    /// Model settings overrides (temperature, top_p, etc.).
-    pub model_settings_overrides: Option<ModelSettingsOverrides>,
-}
+/// Boxed future returned by [`RunConfigHook::configure`].
+pub type RunConfigHookFuture<'a> = Pin<Box<dyn Future<Output = RunResult<()>> + Send + 'a>>;
 
 /// Boxed future returned by [`RunHook::hook`] and [`RunExecutor::execute`].
 pub type RunHookFuture<'a> = Pin<Box<dyn Future<Output = RunResult<RunOutput>> + Send + 'a>>;
@@ -46,13 +47,16 @@ pub type RunHookFuture<'a> = Pin<Box<dyn Future<Output = RunResult<RunOutput>> +
 /// Managed trampoline to the next hook or real run executor.
 ///
 /// `RunOriginal` is consumed by [`call`], so normal hooks call
-/// the continuation once.
+/// the continuation once. It carries a shared view of the final
+/// [`RunConfig`]; the chain end hands the executor an owned clone
+/// of it (the only copy on the config flow).
 ///
 /// [`call`]: Self::call
 pub struct RunOriginal<'a> {
     chain: &'a [Arc<dyn RunHook>],
     index: usize,
     real_run: &'a dyn RunExecutor,
+    config: &'a RunConfig,
 }
 
 /// Compact event callback. Name preserved - compact is its own concept, distinct from "run".
@@ -69,22 +73,20 @@ pub struct HookRunContext<'a> {
     pub model_name: &'a str,
 }
 
-/// Model-level settings that a RunHook can override.
-#[derive(Default)]
-pub struct ModelSettingsOverrides {
-    /// Temperature override.
-    pub temperature: Option<f32>,
-    /// Top-p override.
-    pub top_p: Option<f32>,
-}
-
-/// Preamble message injected before the user's prompt.
-#[derive(Debug, Clone)]
-pub struct PreambleMessage {
-    /// Role of the preamble message.
-    pub role: PreambleRole,
-    /// Content of the preamble message.
-    pub content: String,
+/// Run config: system prompt, preamble messages, model settings.
+///
+/// A [`RunConfigHook`] amends this config before the run; a [`RunHook`]
+/// observes the final config read-only. `Clone` exists for the
+/// chain-end hand-off: the trampoline clones once per run; every
+/// other path moves the config.
+#[derive(Default, Clone)]
+pub struct RunConfig {
+    /// Override the agent's default system prompt.
+    pub system_prompt: Option<String>,
+    /// Preamble messages injected before the user prompt.
+    pub preamble_messages: Vec<PreambleMessage>,
+    /// Model settings overrides (temperature, top_p, etc.).
+    pub model_settings_overrides: Option<ModelSettingsOverrides>,
 }
 
 /// Result of a completed run. Framework-agnostic distillation of the agent output.
@@ -112,13 +114,24 @@ pub enum EndReason {
     Failed,
 }
 
-/// Role for a preamble message.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum PreambleRole {
-    /// System-level instruction.
-    System,
-    /// User-level context.
-    User,
+/// Model-level settings that a run config hook can override.
+///
+/// Derives `Clone` together with [`RunConfig`].
+#[derive(Default, Clone)]
+pub struct ModelSettingsOverrides {
+    /// Temperature override.
+    pub temperature: Option<f32>,
+    /// Top-p override.
+    pub top_p: Option<f32>,
+}
+
+/// Preamble message injected before the user's prompt.
+#[derive(Debug, Clone)]
+pub struct PreambleMessage {
+    /// Role of the preamble message.
+    pub role: PreambleRole,
+    /// Content of the preamble message.
+    pub content: String,
 }
 
 /// Token usage for a completed run.
@@ -130,9 +143,45 @@ pub struct RunUsage {
     pub completion_tokens: u64,
 }
 
+/// Role for a preamble message.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PreambleRole {
+    /// System-level instruction.
+    System,
+    /// User-level context.
+    User,
+}
+
+/// Hook that amends a run's config before the run starts.
+///
+/// `configure` mutates the [`RunConfig`] in place. Hooks run in
+/// registration order; each hook sees every earlier hook's
+/// mutations. Config hooks fire on both run paths (`run()` and
+/// `run_stream()`); on `run()` they run before the run hook chain.
+///
+/// # Remarks
+///
+/// `configure` is async so a hook can fetch remote resources (prompt
+/// templates, feature flags). The future is boxed once per hook per
+/// run.
+pub trait RunConfigHook: Send + Sync + 'static {
+    /// Amends the run config in place.
+    ///
+    /// # Errors
+    /// Returns [`ToolError`] when the hook fails. The chain stops at the
+    /// first error and the run does not start.
+    ///
+    /// [`ToolError`]: crate::ToolError
+    fn configure<'a>(
+        &'a self,
+        ctx: &'a HookRunContext<'a>,
+        config: &'a mut RunConfig,
+    ) -> RunConfigHookFuture<'a>;
+}
+
 /// Final callable used when the hook chain reaches the real run executor.
 pub trait RunExecutor: Send + Sync {
-    /// Executes the real run.
+    /// Executes the real run with the final, owned [`RunConfig`].
     ///
     /// # Errors
     /// Returns `ToolError` if the real run executor encounters an error.
@@ -141,14 +190,12 @@ pub trait RunExecutor: Send + Sync {
 
 /// Intercept hook for the full run lifecycle.
 ///
-/// Code before `original` = inject preamble, override config.
+/// Code before `original` = observe the run before it starts.
 /// Skip `original` = skip the run (return a synthetic `RunOutput`).
 /// Code after = observe the run result.
 ///
-/// `config` is owned (same as `ToolRequest` in `ToolHook`). Each hook
-/// takes ownership, mutates, and passes to `original.call()`. The final
-/// [`RunExecutor`] consumes it: strings move into the framework's run
-/// options with zero clones.
+/// `config` is a read-only view of the final [`RunConfig`]. To
+/// change it, register a [`RunConfigHook`].
 ///
 /// # Remarks
 ///
@@ -164,41 +211,53 @@ pub trait RunHook: Send + Sync + 'static {
     fn hook<'a>(
         &'a self,
         ctx: &'a HookRunContext<'a>,
-        config: RunConfig,
+        config: &'a RunConfig,
         original: RunOriginal<'a>,
     ) -> RunHookFuture<'a>;
 }
 
 impl<'a> RunOriginal<'a> {
-    /// Creates a trampoline over the provided hook chain and real run executor.
+    /// Creates a trampoline over the provided hook chain, final
+    /// config, and real run executor.
     #[inline]
     #[must_use]
-    pub fn new(chain: &'a [Arc<dyn RunHook>], real_run: &'a dyn RunExecutor) -> Self {
+    pub fn new(
+        chain: &'a [Arc<dyn RunHook>],
+        real_run: &'a dyn RunExecutor,
+        config: &'a RunConfig,
+    ) -> Self {
         Self {
             chain,
             index: 0,
             real_run,
+            config,
         }
     }
 
-    /// Calls the next hook, or the real run executor when no hooks remain.
+    /// Calls the next hook, or the real run executor when no hooks
+    /// remain.
+    ///
+    /// The chain end hands the executor an owned clone of the final
+    /// config: the single copy on the config flow when run hooks are
+    /// registered.
     ///
     /// # Errors
     /// Returns `ToolError` if a downstream hook or the real executor returns an error.
     #[inline]
-    pub fn call(self, ctx: &'a HookRunContext<'a>, config: RunConfig) -> RunHookFuture<'a> {
+    pub fn call(self, ctx: &'a HookRunContext<'a>) -> RunHookFuture<'a> {
         if let Some(hook) = self.chain.get(self.index) {
             hook.hook(
                 ctx,
-                config,
+                self.config,
                 Self {
                     chain: self.chain,
                     index: self.index + 1,
                     real_run: self.real_run,
+                    config: self.config,
                 },
             )
         } else {
-            self.real_run.execute(ctx, config)
+            self.real_run.execute(ctx, self.config.clone())
         }
     }
 }
@@ -214,7 +273,7 @@ impl fmt::Debug for RunOriginal<'_> {
 
 impl<F> RunHook for F
 where
-    F: for<'a> Fn(&'a HookRunContext<'a>, RunConfig, RunOriginal<'a>) -> RunHookFuture<'a>
+    F: for<'a> Fn(&'a HookRunContext<'a>, &'a RunConfig, RunOriginal<'a>) -> RunHookFuture<'a>
         + Send
         + Sync
         + 'static,
@@ -223,7 +282,7 @@ where
     fn hook<'a>(
         &'a self,
         ctx: &'a HookRunContext<'a>,
-        config: RunConfig,
+        config: &'a RunConfig,
         original: RunOriginal<'a>,
     ) -> RunHookFuture<'a> {
         self(ctx, config, original)
@@ -289,7 +348,7 @@ mod tests {
             fn hook<'a>(
                 &'a self,
                 _ctx: &'a HookRunContext<'a>,
-                _config: RunConfig,
+                _config: &'a RunConfig,
                 _original: RunOriginal<'a>,
             ) -> RunHookFuture<'a> {
                 Box::pin(async {
@@ -307,9 +366,10 @@ mod tests {
             run_id: "r1",
             model_name: "gpt-4o",
         };
+        let config = RunConfig::default();
         let hook: Arc<dyn RunHook> = Arc::new(MockHook);
         let output = hook
-            .hook(&ctx, RunConfig::default(), RunOriginal::new(&[], &RealRun))
+            .hook(&ctx, &config, RunOriginal::new(&[], &RealRun, &config))
             .await
             .unwrap();
         assert_eq!(output.content, "mock");
@@ -339,8 +399,9 @@ mod tests {
             run_id: "r1",
             model_name: "gpt-4o",
         };
-        let original = RunOriginal::new(&[], &RealRun);
-        let output = original.call(&ctx, RunConfig::default()).await.unwrap();
+        let config = RunConfig::default();
+        let original = RunOriginal::new(&[], &RealRun, &config);
+        let output = original.call(&ctx).await.unwrap();
         assert_eq!(output.content, "real");
     }
 
@@ -363,7 +424,8 @@ mod tests {
             }
         }
         let chain: Vec<Arc<dyn RunHook>> = vec![];
-        let original = RunOriginal::new(&chain, &RealRun);
+        let config = RunConfig::default();
+        let original = RunOriginal::new(&chain, &RealRun, &config);
         let debug = format!("{:?}", original);
         assert!(debug.contains("RunOriginal"));
         assert!(debug.contains("chain_len"));

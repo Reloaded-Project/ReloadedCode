@@ -2886,7 +2886,7 @@ dependencies = [
 
 [[package]]
 name = "reloaded-code-core"
-version = "0.2.3"
+version = "0.3.0"
 dependencies = [
  "ahash",
  "bitcode",
@@ -2962,7 +2962,7 @@ dependencies = [
 
 [[package]]
 name = "reloaded-code-serdesai"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "ahash",
  "anyhow",

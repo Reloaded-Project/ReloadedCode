@@ -455,12 +455,14 @@ mod tests {
     use futures::StreamExt;
     use reloaded_code_agents::{AgentCatalog, AgentDefaults, AgentMode, AgentRuntimeBuilder};
     use reloaded_code_core::hooks::{
-        HookRunContext, HookSet, RunConfig, RunEventContext, RunEventHook, RunEventHookResult,
+        HookRunContext, HookSet, ModelSettingsOverrides, PreambleMessage, PreambleRole, RunConfig,
+        RunConfigHook, RunConfigHookFuture, RunEventContext, RunEventHook, RunEventHookResult,
         RunHook, RunHookFuture, RunOriginal,
     };
     use reloaded_code_core::{ToolCatalogEntry, ToolCatalogKind, ToolError};
     use rstest::rstest;
     use serde_json::json;
+    use serdes_ai::core::ModelSettings;
     use serdes_ai::core::messages::request::RetryPromptPart;
     use serdes_ai::core::{
         BuiltinToolReturnContent, BuiltinToolReturnPart, SystemPromptPart, ToolReturnPart,
@@ -773,14 +775,14 @@ mod tests {
         fn hook<'a>(
             &'a self,
             ctx: &'a HookRunContext<'a>,
-            config: RunConfig,
+            _config: &'a RunConfig,
             original: RunOriginal<'a>,
         ) -> RunHookFuture<'a> {
             self.dispatches
                 .lock()
                 .expect("dispatches should not be poisoned")
                 .push(ctx.run_id.to_string());
-            original.call(ctx, config)
+            original.call(ctx)
         }
     }
 
@@ -1251,6 +1253,385 @@ mod tests {
                 serdes_ai::agent::AgentRunError::Model(ModelError::Api { .. })
             ),
             "inner model failure should keep its variant, got: {error:?}"
+        );
+    }
+
+    // ========================================================================
+    // Run-config hook pre-pass
+    // ========================================================================
+
+    /// Section head [`SectionInjectingConfigHook`] produces: system
+    /// prompt, then preamble messages in configured order with their
+    /// role prefixes. Byte-identical to the prepended sections the
+    /// `run()` path produces from the same config; stream assertions
+    /// append the blank-line separator the head part carries.
+    const SECTION_HEAD: &str = "agent system override\n\n[System] sys note\n\n[User] user note";
+
+    /// Run-config hook that records its dispatch on a shared timeline
+    /// plus the identity fields of the first hook context it observes.
+    struct TimelineConfigHook {
+        timeline: Arc<Mutex<Vec<&'static str>>>,
+        context: Arc<Mutex<Option<(String, String, String)>>>,
+    }
+
+    impl RunConfigHook for TimelineConfigHook {
+        fn configure<'a>(
+            &'a self,
+            ctx: &'a HookRunContext<'a>,
+            _config: &'a mut RunConfig,
+        ) -> RunConfigHookFuture<'a> {
+            Box::pin(async move {
+                self.timeline
+                    .lock()
+                    .expect("timeline should not be poisoned")
+                    .push("config");
+                let mut context = self
+                    .context
+                    .lock()
+                    .expect("context record should not be poisoned");
+                if context.is_none() {
+                    *context = Some((
+                        ctx.agent_name.to_string(),
+                        ctx.model_name.to_string(),
+                        ctx.run_id.to_string(),
+                    ));
+                }
+                Ok(())
+            })
+        }
+    }
+
+    /// Run-event hook that records each published event on the shared
+    /// timeline.
+    struct TimelineEventHook {
+        timeline: Arc<Mutex<Vec<&'static str>>>,
+    }
+
+    impl RunEventHook for TimelineEventHook {
+        fn hook(&self, _ctx: &RunEventContext<'_>, event: RunEvent) -> RunEventHookResult {
+            self.timeline
+                .lock()
+                .expect("timeline should not be poisoned")
+                .push("event");
+            Ok(Some(event))
+        }
+    }
+
+    /// Run-config hook that injects one system prompt plus a system-role
+    /// and a user-role preamble message.
+    struct SectionInjectingConfigHook;
+
+    impl RunConfigHook for SectionInjectingConfigHook {
+        fn configure<'a>(
+            &'a self,
+            _ctx: &'a HookRunContext<'a>,
+            config: &'a mut RunConfig,
+        ) -> RunConfigHookFuture<'a> {
+            Box::pin(async move {
+                config.system_prompt = Some("agent system override".into());
+                config.preamble_messages = vec![
+                    PreambleMessage {
+                        role: PreambleRole::System,
+                        content: "sys note".into(),
+                    },
+                    PreambleMessage {
+                        role: PreambleRole::User,
+                        content: "user note".into(),
+                    },
+                ];
+                Ok(())
+            })
+        }
+    }
+
+    /// Run-config hook that installs a temperature override only.
+    struct TemperatureOverrideConfigHook;
+
+    impl RunConfigHook for TemperatureOverrideConfigHook {
+        fn configure<'a>(
+            &'a self,
+            _ctx: &'a HookRunContext<'a>,
+            config: &'a mut RunConfig,
+        ) -> RunConfigHookFuture<'a> {
+            Box::pin(async move {
+                config.model_settings_overrides = Some(ModelSettingsOverrides {
+                    temperature: Some(0.9),
+                    top_p: None,
+                });
+                Ok(())
+            })
+        }
+    }
+
+    /// Run-config hook that fails its configuration step.
+    struct FailingStreamConfigHook;
+
+    impl RunConfigHook for FailingStreamConfigHook {
+        fn configure<'a>(
+            &'a self,
+            _ctx: &'a HookRunContext<'a>,
+            _config: &'a mut RunConfig,
+        ) -> RunConfigHookFuture<'a> {
+            Box::pin(async {
+                Err(ToolError::Execution(
+                    "stream config hook rejected the run".into(),
+                ))
+            })
+        }
+    }
+
+    /// One captured streamed model request: its settings and prompt.
+    struct CapturedStreamRequest {
+        settings: ModelSettings,
+        prompt: UserContent,
+    }
+
+    /// Builds a hooked `caller` agent with agent-level settings
+    /// temperature 0.3 and top_p 0.8, streaming a model that records
+    /// every request's settings and prompt content and answers with
+    /// text.
+    fn streamed_agent_with_request_capture(
+        hooks: HookSet,
+    ) -> (HookedAgent, Arc<Mutex<Vec<CapturedStreamRequest>>>) {
+        let captured: Arc<Mutex<Vec<CapturedStreamRequest>>> = Arc::new(Mutex::new(Vec::new()));
+        let seen = Arc::clone(&captured);
+        let model = Streamed::new(FunctionModel::new(move |messages, settings| {
+            let prompt = messages
+                .iter()
+                .rev()
+                .flat_map(|message| message.user_prompts())
+                .next()
+                .map(|part| part.content.clone())
+                .expect("streamed request should carry a user prompt");
+            seen.lock()
+                .expect("captured requests should not be poisoned")
+                .push(CapturedStreamRequest {
+                    settings: settings.clone(),
+                    prompt,
+                });
+            ModelResponse::text("streamed answer")
+        }));
+
+        let mut defaults = AgentDefaults::with_model("openrouter/openai/gpt-4.1-mini");
+        defaults.temperature = Some(0.3);
+        defaults.top_p = Some(0.8);
+        let runtime = AgentRuntimeBuilder::new()
+            .catalog(AgentCatalog::from_entries([agent(
+                "caller",
+                AgentMode::Primary,
+                allow_tools(&[]),
+                "prompt",
+            )]))
+            .defaults(defaults)
+            .hooks(hooks)
+            .build()
+            .expect("runtime should build");
+
+        let context = AgentBuildContext::new(
+            Arc::new(runtime),
+            Arc::new(catalog()),
+            Arc::new(credentials()),
+            workspace_root(),
+        )
+        .with_model_override(model);
+        let hooked = context.build("caller").expect("build should succeed");
+        (hooked, captured)
+    }
+
+    #[tokio::test]
+    async fn run_stream_fires_config_hook_once_before_the_first_event() {
+        let timeline = Arc::new(Mutex::new(Vec::new()));
+        let context = Arc::new(Mutex::new(None));
+        let hooks = HookSet::builder()
+            .run_config_hook(TimelineConfigHook {
+                timeline: Arc::clone(&timeline),
+                context: Arc::clone(&context),
+            })
+            .run_event_hook(TimelineEventHook {
+                timeline: Arc::clone(&timeline),
+            })
+            .build();
+        let hooked = streamed_agent(
+            Streamed::new(FunctionModel::new(|_, _| ModelResponse::text("answer"))),
+            hooks,
+        );
+
+        let events = collect_events(&hooked, "hello").await;
+        assert!(
+            matches!(events.last(), Some(RunEvent::RunComplete { .. })),
+            "the stream should complete: {events:?}"
+        );
+
+        let timeline = timeline.lock().expect("timeline should not be poisoned");
+        assert_eq!(
+            timeline.first(),
+            Some(&"config"),
+            "config resolution must precede every streamed event: {timeline:?}"
+        );
+        assert_eq!(
+            timeline.iter().filter(|mark| **mark == "config").count(),
+            1,
+            "the config hook must fire exactly once per stream: {timeline:?}"
+        );
+        assert!(
+            timeline.len() > 1,
+            "the stream should publish events after config resolution: {timeline:?}"
+        );
+        drop(timeline);
+
+        // The hook context carries the wrapper's identity fields; the
+        // model name comes from the catalog-resolved model, not the
+        // mock override that serves the requests.
+        let (agent_name, model_name, run_id) = context
+            .lock()
+            .expect("context record should not be poisoned")
+            .clone()
+            .expect("the config hook should have observed a context");
+        assert_eq!(agent_name, "caller");
+        assert_eq!(model_name, "openai/gpt-4.1-mini");
+        assert!(!run_id.is_empty(), "the hook context must carry a run id");
+    }
+
+    #[tokio::test]
+    async fn run_stream_prepends_sections_as_leading_text_part_on_text_prompts() {
+        let (hooked, captured) = streamed_agent_with_request_capture(
+            HookSet::builder()
+                .run_config_hook(SectionInjectingConfigHook)
+                .build(),
+        );
+
+        let events = collect_events(&hooked, "base prompt").await;
+        assert!(
+            matches!(events.last(), Some(RunEvent::RunComplete { .. })),
+            "the stream should complete: {events:?}"
+        );
+
+        let seen = captured
+            .lock()
+            .expect("captured requests should not be poisoned");
+        assert_eq!(
+            seen.len(),
+            1,
+            "one streamed model request should have been made"
+        );
+        assert_eq!(
+            seen[0].prompt,
+            UserContent::Parts(vec![
+                UserContentPart::text(format!("{SECTION_HEAD}\n\n")),
+                UserContentPart::text("base prompt"),
+            ]),
+            "a text prompt must become two parts with the section head, \
+             separator included, first"
+        );
+    }
+
+    #[tokio::test]
+    async fn run_stream_keeps_multipart_prompt_parts_with_section_head_first() {
+        let (hooked, captured) = streamed_agent_with_request_capture(
+            HookSet::builder()
+                .run_config_hook(SectionInjectingConfigHook)
+                .build(),
+        );
+
+        let prompt = UserContent::Parts(vec![
+            UserContentPart::text("hello"),
+            UserContentPart::image_url("https://example.invalid/image.png"),
+        ]);
+        let events = collect_events(&hooked, prompt).await;
+        assert!(
+            matches!(events.last(), Some(RunEvent::RunComplete { .. })),
+            "the stream should complete: {events:?}"
+        );
+
+        let seen = captured
+            .lock()
+            .expect("captured requests should not be poisoned");
+        assert_eq!(
+            seen.len(),
+            1,
+            "one streamed model request should have been made"
+        );
+        assert_eq!(
+            seen[0].prompt,
+            UserContent::Parts(vec![
+                UserContentPart::text(format!("{SECTION_HEAD}\n\n")),
+                UserContentPart::text("hello"),
+                UserContentPart::image_url("https://example.invalid/image.png"),
+            ]),
+            "multipart prompts must keep their parts with the head, \
+             separator included, at index zero"
+        );
+    }
+
+    #[tokio::test]
+    async fn run_stream_merges_settings_overrides_over_agent_settings_on_the_request() {
+        let (hooked, captured) = streamed_agent_with_request_capture(
+            HookSet::builder()
+                .run_config_hook(TemperatureOverrideConfigHook)
+                .build(),
+        );
+
+        let events = collect_events(&hooked, "hello").await;
+        assert!(
+            matches!(events.last(), Some(RunEvent::RunComplete { .. })),
+            "the stream should complete: {events:?}"
+        );
+
+        let seen = captured
+            .lock()
+            .expect("captured requests should not be poisoned");
+        assert_eq!(
+            seen.len(),
+            1,
+            "one streamed model request should have been made"
+        );
+        assert_eq!(seen[0].settings.temperature, Some(f64::from(0.9_f32)));
+        assert_eq!(
+            seen[0].settings.top_p,
+            Some(f64::from(0.8_f32)),
+            "agent-configured top_p should be retained on the streamed request"
+        );
+        assert_eq!(
+            seen[0].prompt,
+            UserContent::Text("hello".into()),
+            "a config hook injecting no sections must leave the prompt untouched"
+        );
+    }
+
+    #[tokio::test]
+    async fn run_stream_config_hook_error_returns_err_from_start_with_no_events() {
+        let (hooked, captured) = streamed_agent_with_request_capture(
+            HookSet::builder()
+                .run_config_hook(FailingStreamConfigHook)
+                .build(),
+        );
+
+        let error = hooked
+            .run_stream("base prompt", ())
+            .await
+            .err()
+            .expect("the start call should fail");
+
+        match error {
+            serdes_ai::agent::AgentRunError::Other(source) => {
+                let message = source.to_string();
+                assert!(
+                    message.contains("run config hook error"),
+                    "config-hook failure should be labeled as such: {message}"
+                );
+                assert!(
+                    message.contains("stream config hook rejected the run"),
+                    "the hook's error text should be preserved: {message}"
+                );
+            }
+            other => panic!("config-hook failure should surface as Other, got: {other:?}"),
+        }
+        assert!(
+            captured
+                .lock()
+                .expect("captured requests should not be poisoned")
+                .is_empty(),
+            "no model request may start when config resolution fails"
         );
     }
 
