@@ -13,6 +13,12 @@
 //! before the first step: inject preamble messages, override the system
 //! prompt or model settings.
 //!
+//! Config injection has a dedicated hook point: [`RunConfigHook`]
+//! amends the [`RunConfig`] before the first step, on both run paths
+//! (`run()` and `run_stream()`). [`RunHook`] owns run lifecycle control
+//! (skip, substitute, post-observe) on `run()` only, and
+//! [`RunEventHook`] owns streamed events.
+//!
 //! Code after `original` sees the finished [`RunOutput`]. Skipping
 //! `original` skips the run and returns a synthetic result instead.
 //!
@@ -21,6 +27,7 @@
 //!
 //! Next: see [`ToolHook`] for the innermost intercept point.
 //!
+//! [`RunEventHook`]: crate::hooks::RunEventHook
 //! [`ToolHook`]: crate::hooks::ToolHook
 
 use crate::ToolError;
@@ -39,6 +46,9 @@ pub struct RunConfig {
     /// Model settings overrides (temperature, top_p, etc.).
     pub model_settings_overrides: Option<ModelSettingsOverrides>,
 }
+
+/// Boxed future returned by [`RunConfigHook::configure`].
+pub type RunConfigHookFuture<'a> = Pin<Box<dyn Future<Output = RunResult<()>> + Send + 'a>>;
 
 /// Boxed future returned by [`RunHook::hook`] and [`RunExecutor::execute`].
 pub type RunHookFuture<'a> = Pin<Box<dyn Future<Output = RunResult<RunOutput>> + Send + 'a>>;
@@ -128,6 +138,41 @@ pub struct RunUsage {
     pub prompt_tokens: u64,
     /// Tokens consumed in the completion.
     pub completion_tokens: u64,
+}
+
+/// Hook that amends a run's config before the run starts.
+///
+/// `configure` mutates the [`RunConfig`] in place: system prompt,
+/// preamble messages, model settings overrides. Hooks run in
+/// registration order; each hook sees the mutations of every earlier
+/// hook.
+///
+/// Config hooks fire before the run hook chain and before the first
+/// model request or streamed event, on both run paths: `run()` and
+/// `run_stream()`. Lifecycle control stays with [`RunHook`] (skip,
+/// substitute, post-observe, `run()` only); streamed events stay with
+/// [`RunEventHook`].
+///
+/// # Remarks
+///
+/// `configure` is async so a hook can fetch remote resources (prompt
+/// templates, feature flags) before the run starts. The returned
+/// future is boxed once per hook per run, never per event.
+///
+/// [`RunEventHook`]: crate::hooks::RunEventHook
+pub trait RunConfigHook: Send + Sync + 'static {
+    /// Amends the run config in place.
+    ///
+    /// # Errors
+    /// Returns [`ToolError`] when the hook fails. The chain stops at the
+    /// first error and the run does not start.
+    ///
+    /// [`ToolError`]: crate::ToolError
+    fn configure<'a>(
+        &'a self,
+        ctx: &'a HookRunContext<'a>,
+        config: &'a mut RunConfig,
+    ) -> RunConfigHookFuture<'a>;
 }
 
 /// Final callable used when the hook chain reaches the real run executor.

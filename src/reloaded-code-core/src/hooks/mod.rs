@@ -12,6 +12,8 @@
 //! - [`ToolExecutor`] - Final callable used at the end of the hook chain
 //!
 //! Run hook types:
+//! - [`RunConfigHook`] - Amends a run's config before the run starts
+//! - [`RunConfigHookFuture`] - Boxed future returned by [`RunConfigHook::configure`]
 //! - [`RunHook`] - Intercepts a run and may call [`RunOriginal`]
 //! - [`RunHookFuture`] - Boxed future returned by [`RunHook::hook`]
 //! - [`RunOriginal`] - Managed trampoline to the next hook or real run executor
