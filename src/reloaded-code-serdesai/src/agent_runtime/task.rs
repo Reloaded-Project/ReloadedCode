@@ -445,7 +445,7 @@ impl HookedAgent {
     /// reach the caller as they arrive. The mapped
     /// [`RunEvent::RunComplete`] carries the inner run's id and a distilled
     /// transcript. The prompt accepts full
-    /// [`UserContent`][serdes_ai::core::UserContent]; image and multi-part
+    /// [`UserContent`]; image and multi-part
     /// prompts keep their parts when no sections are injected.
     ///
     /// Each mapped event passes the registered
