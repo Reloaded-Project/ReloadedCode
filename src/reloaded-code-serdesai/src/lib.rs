@@ -33,15 +33,6 @@ pub use reloaded_code_agents::{
     AgentDefaults, AgentRuntime, AgentRuntimeBuilder, ModelResolutionError, ResolvedModel,
     resolve_model_with_catalog,
 };
-/// Re-export [`RunEvent`], the framework-owned item type yielded by
-/// [`HookedAgent::run_stream`], together with its transcript payload
-/// types ([`RunMessage`], [`RunMessageRole`], [`RunToolCallSummary`],
-/// [`RunToolResultSummary`]), and [`RunEventHook`], the hook that
-/// intercepts each streamed event before publication, together with its
-/// [`RunEventContext`] and [`RunEventHookResult`] call types. Also
-/// re-exports [`RunConfigHook`], the hook that amends a run's config
-/// (system prompt, preamble messages, model settings) before the run
-/// starts, together with its [`RunConfigHookFuture`] call type.
 pub use reloaded_code_core::hooks::{
     RunConfigHook, RunConfigHookFuture, RunEvent, RunEventContext, RunEventHook,
     RunEventHookResult, RunMessage, RunMessageRole, RunToolCallSummary, RunToolResultSummary,
