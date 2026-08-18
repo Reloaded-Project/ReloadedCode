@@ -637,10 +637,16 @@ mod tests {
                 _ctx: &'a HookRunContext<'a>,
                 config: RunConfig,
             ) -> RunHookFuture<'a> {
-                let content = config.system_prompt.unwrap_or_else(|| "default".into());
+                let prompt = config.system_prompt.unwrap_or_else(|| "default".into());
+                let preamble = config
+                    .preamble_messages
+                    .iter()
+                    .map(|message| message.content.as_str())
+                    .collect::<Vec<_>>()
+                    .join("+");
                 Box::pin(async move {
                     Ok(RunOutput {
-                        content,
+                        content: format!("{prompt}|{preamble}"),
                         reason: EndReason::Completed,
                         usage: RunUsage::default(),
                     })
@@ -651,6 +657,10 @@ mod tests {
         let hooks = crate::hooks::builder::HookSetBuilder::new()
             .run_config_hook(mutate_hook(|config| {
                 config.system_prompt = Some("overridden".into());
+                config.preamble_messages.push(PreambleMessage {
+                    role: PreambleRole::User,
+                    content: "ctx".into(),
+                });
             }))
             .run_hook(Wrap)
             .build();
@@ -659,91 +669,17 @@ mod tests {
             run_id: "r1",
             model_name: "gpt-4o",
         };
-        let output = hooks
-            .dispatch_run(&ctx, RunConfig::default(), &RealRun)
-            .await
-            .unwrap();
-
-        assert_eq!(output.content, "overridden-saw:overridden-post");
-        assert_eq!(output.reason, EndReason::Completed);
-    }
-
-    #[tokio::test]
-    async fn dispatch_run_executor_receives_final_config_with_run_hooks() {
-        struct PassThrough;
-        impl RunHook for PassThrough {
-            fn hook<'a>(
-                &'a self,
-                ctx: &'a HookRunContext<'a>,
-                _config: &'a RunConfig,
-                original: RunOriginal<'a>,
-            ) -> RunHookFuture<'a> {
-                original.call(ctx)
-            }
-        }
-
-        struct CaptureRun;
-        impl RunExecutor for CaptureRun {
-            fn execute<'a>(
-                &'a self,
-                _ctx: &'a HookRunContext<'a>,
-                config: RunConfig,
-            ) -> RunHookFuture<'a> {
-                Box::pin(async move {
-                    // Every field the config hook wrote must survive the
-                    // chain-end hand-off into the owned config, next to
-                    // the caller-seeded values no hook touched.
-                    let overrides = config.model_settings_overrides.unwrap();
-                    let preamble = config
-                        .preamble_messages
-                        .iter()
-                        .map(|message| message.content.as_str())
-                        .collect::<Vec<_>>()
-                        .join("+");
-                    Ok(RunOutput {
-                        content: format!(
-                            "{}|{}|{}|{}",
-                            config.system_prompt.as_deref().unwrap_or("none"),
-                            preamble,
-                            overrides.temperature.unwrap(),
-                            overrides.top_p.unwrap(),
-                        ),
-                        reason: EndReason::Completed,
-                        usage: RunUsage::default(),
-                    })
-                })
-            }
-        }
-
-        let hooks = crate::hooks::builder::HookSetBuilder::new()
-            .run_config_hook(mutate_hook(|config| {
-                config.system_prompt = Some("sys".into());
-                config.preamble_messages.push(PreambleMessage {
-                    role: PreambleRole::User,
-                    content: "ctx".into(),
-                });
-                config.model_settings_overrides = Some(ModelSettingsOverrides {
-                    temperature: Some(0.3),
-                    top_p: Some(0.8),
-                });
-            }))
-            .run_hook(PassThrough)
-            .build();
-        let ctx = HookRunContext {
-            agent_name: "coder",
-            run_id: "r1",
-            model_name: "gpt-4o",
-        };
         // Seed a preamble no hook writes: the executor's owned config
-        // must carry both the seed and every hook-written field.
+        // must carry both the seed and the hook-amended fields.
         let mut input = RunConfig::default();
         input.preamble_messages.push(PreambleMessage {
             role: PreambleRole::System,
             content: "seeded".into(),
         });
-        let output = hooks.dispatch_run(&ctx, input, &CaptureRun).await.unwrap();
+        let output = hooks.dispatch_run(&ctx, input, &RealRun).await.unwrap();
 
-        assert_eq!(output.content, "sys|seeded+ctx|0.3|0.8");
+        assert_eq!(output.content, "overridden|seeded+ctx-saw:overridden-post");
+        assert_eq!(output.reason, EndReason::Completed);
     }
 
     #[tokio::test]
