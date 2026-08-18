@@ -3,9 +3,6 @@
 //! This example registers a `RunConfigHook` via `AgentRuntimeBuilder::hooks()`
 //! that injects a preamble message into every run's config, then runs the
 //! same agent through `HookedAgent::run()` and `HookedAgent::run_stream()`.
-//! The mock model echoes the last user prompt it received, so both printed
-//! prompts show the injected `[System]` section ahead of the original prompt
-//! text: config injection applies on both run paths.
 //!
 //! Mode scoping: `RunConfigHook` fires on `run()` and `run_stream()`.
 //! `RunHook` keeps lifecycle control on `run()` only; run the
