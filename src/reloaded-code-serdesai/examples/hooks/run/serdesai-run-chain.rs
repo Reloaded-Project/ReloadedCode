@@ -27,12 +27,12 @@ impl RunHook for FirstHook {
     fn hook<'a>(
         &'a self,
         _ctx: &'a HookRunContext<'a>,
-        config: RunConfig,
+        _config: &'a RunConfig,
         original: RunOriginal<'a>,
     ) -> RunHookFuture<'a> {
         Box::pin(async move {
             println!("[FirstHook] before");
-            let output = original.call(_ctx, config).await?;
+            let output = original.call(_ctx).await?;
             println!("[FirstHook] after");
             Ok(output)
         })
@@ -43,12 +43,12 @@ impl RunHook for SecondHook {
     fn hook<'a>(
         &'a self,
         ctx: &'a HookRunContext<'a>,
-        config: RunConfig,
+        _config: &'a RunConfig,
         original: RunOriginal<'a>,
     ) -> RunHookFuture<'a> {
         Box::pin(async move {
             println!("[SecondHook] before");
-            let output = original.call(ctx, config).await?;
+            let output = original.call(ctx).await?;
             println!("[SecondHook] after");
             Ok(output)
         })

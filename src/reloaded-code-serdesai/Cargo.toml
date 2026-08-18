@@ -104,6 +104,11 @@ rstest = { workspace = true }
 reloaded-code-models-dev = { workspace = true }
 
 [[example]]
+name = "serdesai-run-config-hook"
+path = "examples/hooks/run/serdesai-run-config-hook.rs"
+required-features = ["mock"]
+
+[[example]]
 name = "serdesai-run-hook"
 path = "examples/hooks/run/serdesai-run-hook.rs"
 required-features = ["mock"]
