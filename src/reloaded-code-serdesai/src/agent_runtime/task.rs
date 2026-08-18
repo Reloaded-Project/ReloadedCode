@@ -50,16 +50,16 @@ pub struct AgentBuildContext<C: CredentialLookup + Send + Sync + 'static = Crede
 
 /// Lightweight newtype around a built SerdesAI `Agent`.
 ///
-/// `run()` dispatches through the core `HookSet::dispatch_run` hook chain
-/// when run-config or run hooks are registered and passes through directly
-/// otherwise; registered [`RunConfigHook`][config-hook]s amend the run
-/// config before the run hook chain observes it. `run_stream()` resolves
-/// the same run-config hooks once before the stream starts, then streams
-/// framework-owned [`RunEvent`]s lazily mapped from the vendor stream and
-/// passes each through the registered run-event hook chain before
-/// publication. Run hooks keep lifecycle control on `run()` only.
+/// Wraps both run paths with the runtime's registered hooks:
 ///
-/// [config-hook]: reloaded_code_core::hooks::RunConfigHook
+/// - [`Self::run`]: [`RunConfigHook`]s amend the run config,
+///   then the run hook chain drives the run. With neither hook kind
+///   registered, the inner agent runs directly.
+/// - [`Self::run_stream`]: the same run-config hooks fire once before the
+///   stream starts, then each mapped [`RunEvent`] passes the run-event
+///   hook chain.
+///
+/// [`RunConfigHook`]: reloaded_code_core::hooks::RunConfigHook
 pub struct HookedAgent {
     inner: Agent<(), String>,
     hooks: HookSet,
@@ -77,10 +77,9 @@ pub struct HookedAgentRunResult {
 ///
 /// Applies `RunConfig::preamble_messages` and `system_prompt` to the prompt
 /// text before calling the agent, because the built agent does not support
-/// runtime mutation of those fields. The section text comes from
-/// [`run_config_head`], the one builder both run paths share. Applies
-/// `model_settings_overrides` to the per-run model settings via
-/// [`RunOptions`], merged over the agent's configured settings.
+/// runtime mutation of those fields. Applies `model_settings_overrides` to
+/// the per-run model settings via [`RunOptions`], merged over the agent's
+/// configured settings.
 ///
 /// On inner failure the hook chain sees a [`ToolError::Execution`] projection
 /// while the original [`AgentRunError`] is parked in `error`; the dispatch
@@ -337,38 +336,31 @@ impl HookedAgent {
     /// Runs the agent with the given prompt, dispatching through the
     /// registered run-config and run hooks.
     ///
-    /// When no run-config or run hooks are registered this delegates
-    /// directly to the inner agent for zero overhead. Otherwise the
-    /// registered [`RunConfigHook`][config-hook]s amend the run config
-    /// first: system prompt, preamble messages, and model-settings
-    /// overrides. The run hook chain then observes the final config, and
-    /// the executor applies any `preamble_messages` or `system_prompt`
-    /// mutations to the prompt text and `model_settings_overrides` to the
-    /// per-run model settings before calling the agent.
+    /// With no run-config or run hooks registered this delegates directly
+    /// to the inner agent. Otherwise [`RunConfigHook`][config-hook]s amend
+    /// the run config first; the run hook chain then observes the final
+    /// config.
     ///
-    /// Mode-scoped: run hooks fire only on this path. Run-config hooks
-    /// fire on this path and on [`Self::run_stream`]. A registered
-    /// [`RunEventHook`][event-hook] never fires here; it fires only on
-    /// [`Self::run_stream`].
+    /// Run hooks fire only on this path. Run-config hooks fire here and
+    /// on [`Self::run_stream`]. Run-event hooks
+    /// ([`RunEventHook`][event-hook]) fire only on [`Self::run_stream`].
     ///
     /// The hook context carries a wrapper-generated `run_id`. The inner
-    /// agent assigns its own id for tool hooks; SerdesAI `RunOptions` has no
-    /// field to override it, so the two identifiers cannot be unified here.
+    /// agent assigns its own id for tool hooks; SerdesAI `RunOptions` has
+    /// no field to override it, so the two cannot be unified.
     ///
     /// # Errors
     ///
     /// - Returns the inner agent's [`serdes_ai::agent::AgentRunError`]
-    ///   unchanged when the inner agent fails (direct run or hooked run)
-    ///   and the failure reaches the caller untouched.
+    ///   unchanged when the inner agent fails and the failure reaches the
+    ///   caller untouched.
     /// - Returns [`serdes_ai::agent::AgentRunError::Other`] when a
     ///   run-config hook or run hook returns or substitutes its own error
     ///   during dispatch.
-    /// - Hook-origin labels depend on registration. With no run hooks
-    ///   registered, a failing run-config hook is labeled
-    ///   `run config hook error`. With run hooks registered as well, a
-    ///   dispatch failure that is not the untouched inner error is
-    ///   labeled `run hook error`; the underlying error text identifies
-    ///   its source.
+    /// - With no run hooks registered, a failing run-config hook is
+    ///   labeled `run config hook error`.
+    /// - With run hooks registered, any dispatch failure that is not the
+    ///   untouched inner error is labeled `run hook error`.
     ///
     /// [event-hook]: reloaded_code_core::hooks::RunEventHook
     /// [config-hook]: reloaded_code_core::hooks::RunConfigHook
@@ -440,33 +432,27 @@ impl HookedAgent {
     /// Runs the agent in streaming mode, yielding framework-owned
     /// [`RunEvent`]s.
     ///
-    /// Starts the inner agent's stream and lazily maps each vendor event as
-    /// the stream is polled, so real incremental text and thinking deltas
-    /// reach the caller as they arrive. The mapped
-    /// [`RunEvent::RunComplete`] carries the inner run's id and a distilled
-    /// transcript. The prompt accepts full
-    /// [`UserContent`]; image and multi-part
-    /// prompts keep their parts when no sections are injected.
+    /// Starts the inner agent's stream and lazily maps each vendor event
+    /// as the stream is polled, so real incremental text and thinking
+    /// deltas reach the caller as they arrive. The mapped
+    /// [`RunEvent::RunComplete`] carries the inner run's id and a
+    /// distilled transcript. The prompt accepts full [`UserContent`];
+    /// image and multi-part prompts keep their parts when no sections
+    /// are injected.
     ///
-    /// Each mapped event passes the registered
-    /// [`RunEventHook`][event-hook] chain, in registration order, before the
-    /// caller sees it, so a hook may rewrite or suppress it. With no
-    /// run-event hooks registered the stream matches the unhooked mapping.
+    /// # Hooks
     ///
-    /// Registered [`RunConfigHook`][config-hook]s fire once here, before
-    /// the stream starts, so config injection applies on both run paths:
-    /// an injected system prompt and preamble messages are prepended to
-    /// the prompt as a leading text part (textual prepend, not a true
-    /// system message, same as [`Self::run`]), and model-settings
-    /// overrides merge field-wise over the agent's configured settings.
-    /// The config-hook context carries a wrapper-generated `run_id`; the
-    /// inner agent assigns its own id for the streamed run, and the two
-    /// cannot be unified (see [`Self::run`]).
-    ///
-    /// Run hooks ([`RunHook`][run-hook]) never fire here; they fire only
-    /// on [`Self::run`]. The run-hook chain resolves to one completed
-    /// `RunOutput`, so dispatching it would buffer the whole run before
-    /// the first event and defeat streaming.
+    /// - **Run-event**: each mapped event passes the registered
+    ///   [`RunEventHook`][event-hook] chain, in registration order,
+    ///   before the caller sees it; a hook may rewrite or suppress it.
+    /// - **Run-config**: [`RunConfigHook`][config-hook]s fire once
+    ///   before the stream starts. The system prompt and preamble
+    ///   messages become a leading text part of the prompt;
+    ///   model-settings overrides merge field-wise over the
+    ///   agent's configured settings.
+    /// - **Run**: [`RunHook`][run-hook]s never fire here; they fire
+    ///   only on [`Self::run`], because dispatching them would buffer
+    ///   the whole run before the first event.
     ///
     /// # Errors
     ///
@@ -766,10 +752,14 @@ where
     Ok(HookedAgent::new(agent, hooks, name.to_string(), model_name))
 }
 
-/// Prepends a section head to a stream prompt as the leading text part.
+/// Prepends a config-injected head (from [`run_config_head`]) to a
+/// `run_stream` prompt as its own leading text part, so the original
+/// prompt content follows it unchanged.
 ///
-/// Text prompts become two parts, head first; multi-part prompts keep
-/// their parts with the head inserted at index zero. A `None` head
+/// The head goes in as a separate part because stream prompts carry
+/// full [`UserContent`]: a text prompt becomes two parts, head first,
+/// and a multi-part prompt keeps its parts with the head inserted at
+/// index zero, so image and other parts survive. A `None` head
 /// returns the prompt unchanged.
 fn prepend_section_head(prompt: UserContent, head: Option<String>) -> UserContent {
     let Some(head) = head else {
@@ -815,15 +805,17 @@ fn restore_run_error(
     }
 }
 
-/// Renders a run config's prompt sections as one leading head string.
+/// Builds the leading text placed in front of the user's prompt when a
+/// run config injects a system prompt or preamble messages.
 ///
-/// The system prompt comes first, then preamble messages in configured
-/// order with their `[System]`/`[User]` prefixes, separated by blank
-/// lines. Returns `None` when the config contributes no section, so
-/// prompts without config injection stay untouched.
-/// [`SerdesRunExecutor::execute`] and [`HookedAgent::run_stream`] share
-/// this one builder, keeping the section bytes identical on both run
-/// paths.
+/// The head starts with the system prompt, then preamble messages in
+/// configured order, tagged `[System]` or `[User]` by role. A blank
+/// line separates consecutive sections.
+///
+/// Returns `None` when the config injects nothing, leaving the prompt
+/// unchanged. [`SerdesRunExecutor::execute`] and
+/// [`HookedAgent::run_stream`] share this builder, so both run paths
+/// prepend the same head bytes.
 fn run_config_head(config: &RunConfig) -> Option<String> {
     let section_count =
         config.preamble_messages.len() + usize::from(config.system_prompt.is_some());
