@@ -532,12 +532,14 @@ mod tests {
             }
         }
 
-        let mut input = RunConfig::default();
-        input.system_prompt = Some("sys".into());
-        input.preamble_messages.push(PreambleMessage {
-            role: PreambleRole::System,
-            content: "ctx".into(),
-        });
+        let input = RunConfig {
+            system_prompt: Some("sys".into()),
+            preamble_messages: vec![PreambleMessage {
+                role: PreambleRole::System,
+                content: "ctx".into(),
+            }],
+            ..RunConfig::default()
+        };
 
         // Other hook chains registered, config chain empty: the config
         // bypasses the chain untouched.
