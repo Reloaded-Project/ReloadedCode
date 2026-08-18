@@ -1263,7 +1263,8 @@ mod tests {
     /// Section head [`SectionInjectingConfigHook`] produces: system
     /// prompt, then preamble messages in configured order with their
     /// role prefixes. Byte-identical to the prepended sections the
-    /// `run()` path produces from the same config.
+    /// `run()` path produces from the same config; stream assertions
+    /// append the blank-line separator the head part carries.
     const SECTION_HEAD: &str = "agent system override\n\n[System] sys note\n\n[User] user note";
 
     /// Run-config hook that records its dispatch on a shared timeline
@@ -1516,10 +1517,11 @@ mod tests {
         assert_eq!(
             seen[0].prompt,
             UserContent::Parts(vec![
-                UserContentPart::text(SECTION_HEAD),
+                UserContentPart::text(format!("{SECTION_HEAD}\n\n")),
                 UserContentPart::text("base prompt"),
             ]),
-            "a text prompt must become two parts with the section head first"
+            "a text prompt must become two parts with the section head, \
+             separator included, first"
         );
     }
 
@@ -1552,11 +1554,12 @@ mod tests {
         assert_eq!(
             seen[0].prompt,
             UserContent::Parts(vec![
-                UserContentPart::text(SECTION_HEAD),
+                UserContentPart::text(format!("{SECTION_HEAD}\n\n")),
                 UserContentPart::text("hello"),
                 UserContentPart::image_url("https://example.invalid/image.png"),
             ]),
-            "multipart prompts must keep their parts with the head at index zero"
+            "multipart prompts must keep their parts with the head, \
+             separator included, at index zero"
         );
     }
 

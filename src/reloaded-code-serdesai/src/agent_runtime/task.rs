@@ -34,7 +34,7 @@ const PREAMBLE_SYSTEM_PREFIX: &str = "[System] ";
 /// Prefix marking a preamble message as user-role in the prompt text.
 const PREAMBLE_USER_PREFIX: &str = "[User] ";
 /// Blank line separating two prompt sections, and the section head from
-/// the original prompt on the `run()` path.
+/// the original prompt on both run paths.
 const SECTION_SEPARATOR: &str = "\n\n";
 
 /// Reusable shared inputs for building runnable SerdesAI agents.
@@ -765,7 +765,7 @@ fn prepend_section_head(prompt: UserContent, head: Option<String>) -> UserConten
     let Some(head) = head else {
         return prompt;
     };
-    let head_part = UserContentPart::text(head);
+    let head_part = UserContentPart::text(format!("{head}{SECTION_SEPARATOR}"));
     match prompt {
         UserContent::Text(text) => UserContent::Parts(vec![head_part, UserContentPart::text(text)]),
         UserContent::Parts(mut parts) => {
