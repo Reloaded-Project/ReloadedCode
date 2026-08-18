@@ -129,13 +129,9 @@ impl HookSet {
 
     /// Dispatches a run through the config and run hook chains.
     ///
-    /// Config hooks run first, in registration order, amending
-    /// `config`. The run chain then runs with a shared view of the
-    /// final config and hands the executor an owned clone at its end.
-    /// When config hooks are registered but no run hooks are, the
-    /// owned final config goes straight to the executor. If neither
-    /// chain has hooks, the executor is called directly with the
-    /// original owned config.
+    /// Config hooks run first, amending `config`. The run chain then
+    /// runs with a shared view of the final config, which the executor
+    /// receives as an owned clone. Empty chains are skipped.
     ///
     /// # Errors
     /// Returns [`ToolError`] if a config hook, any run hook in the
