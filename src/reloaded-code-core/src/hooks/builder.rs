@@ -1,6 +1,6 @@
 //! HookSetBuilder — builder for constructing a [`HookSet`].
 
-use crate::hooks::{HookSet, RunHook, SessionCompactFn, ToolHook, INLINE_CAP};
+use crate::hooks::{HookSet, RunEventHook, RunHook, SessionCompactFn, ToolHook, INLINE_CAP};
 use std::fmt;
 use std::sync::Arc;
 use tinyvec::TinyVec;
@@ -10,6 +10,7 @@ use tinyvec::TinyVec;
 pub struct HookSetBuilder {
     pub(super) tool_hooks: Vec<Arc<dyn ToolHook>>,
     pub(super) run_hooks: Vec<Arc<dyn RunHook>>,
+    pub(super) run_event_hooks: Vec<Arc<dyn RunEventHook>>,
     pub(super) session_compact: TinyVec<[Option<SessionCompactFn>; INLINE_CAP]>,
 }
 
@@ -67,6 +68,26 @@ impl HookSetBuilder {
         self
     }
 
+    /// Registers a run-event hook.
+    ///
+    /// Hooks run in registration order on every streamed event,
+    /// before the stream consumer sees it. Streaming path only:
+    /// run-event hooks never fire during a non-streaming `run()`.
+    #[inline]
+    #[must_use]
+    pub fn run_event_hook(mut self, hook: impl RunEventHook) -> Self {
+        self.run_event_hooks.push(Arc::new(hook));
+        self
+    }
+
+    /// Registers an already shared run-event hook.
+    #[inline]
+    #[must_use]
+    pub fn shared_run_event_hook(mut self, hook: Arc<dyn RunEventHook>) -> Self {
+        self.run_event_hooks.push(hook);
+        self
+    }
+
     /// Builds the `HookSet` from the configured hooks.
     #[inline]
     #[must_use]
@@ -74,6 +95,7 @@ impl HookSetBuilder {
         HookSet {
             tool_hooks: self.tool_hooks,
             run_hooks: self.run_hooks,
+            run_event_hooks: self.run_event_hooks,
             session_compact: self.session_compact,
         }
     }
@@ -84,6 +106,7 @@ impl fmt::Debug for HookSetBuilder {
         f.debug_struct("HookSetBuilder")
             .field("tool_hooks", &self.tool_hooks.len())
             .field("run_hooks", &self.run_hooks.len())
+            .field("run_event_hooks", &self.run_event_hooks.len())
             .field("session_compact", &self.session_compact.len())
             .finish()
     }
@@ -92,6 +115,7 @@ impl fmt::Debug for HookSetBuilder {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::hooks::run_event::{RunEvent, RunEventContext, RunEventHook, RunEventHookResult};
     use crate::hooks::run_hook::{HookRunContext, RunConfig, RunHookFuture, RunOriginal};
     use crate::hooks::tool_hook::{ToolCallContext, ToolHookFuture, ToolOriginal, ToolRequest};
 
@@ -167,9 +191,51 @@ mod tests {
     }
 
     #[test]
+    fn run_event_hook_registration_makes_hook_set_non_empty() {
+        struct NoopEvent;
+        impl RunEventHook for NoopEvent {
+            fn hook(&self, _ctx: &RunEventContext<'_>, event: RunEvent) -> RunEventHookResult {
+                Ok(Some(event))
+            }
+        }
+
+        let hooks = HookSetBuilder::new().run_event_hook(NoopEvent).build();
+        assert!(!hooks.is_empty());
+        assert!(!hooks.run_event_hooks_is_empty());
+    }
+
+    #[test]
+    fn shared_run_event_hook_registration() {
+        struct NoopEvent;
+        impl RunEventHook for NoopEvent {
+            fn hook(&self, _ctx: &RunEventContext<'_>, event: RunEvent) -> RunEventHookResult {
+                Ok(Some(event))
+            }
+        }
+
+        let shared: Arc<dyn RunEventHook> = Arc::new(NoopEvent);
+        let hooks = HookSetBuilder::new().shared_run_event_hook(shared).build();
+        assert!(!hooks.run_event_hooks_is_empty());
+    }
+
+    #[test]
     fn builder_debug_includes_run_hooks() {
         let builder = HookSetBuilder::new();
         let debug = format!("{:?}", builder);
         assert!(debug.contains("run_hooks"));
+    }
+
+    #[test]
+    fn builder_debug_includes_run_event_hooks() {
+        struct NoopEvent;
+        impl RunEventHook for NoopEvent {
+            fn hook(&self, _ctx: &RunEventContext<'_>, event: RunEvent) -> RunEventHookResult {
+                Ok(Some(event))
+            }
+        }
+
+        let builder = HookSetBuilder::new().run_event_hook(NoopEvent);
+        let debug = format!("{builder:?}");
+        assert!(debug.contains("run_event_hooks: 1"));
     }
 }

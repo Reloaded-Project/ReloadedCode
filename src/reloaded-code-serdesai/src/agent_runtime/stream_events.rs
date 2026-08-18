@@ -5,6 +5,14 @@
 //! event types stay inside this module; consumers of
 //! [`HookedAgent::run_stream`][task] only ever see [`RunEvent`] items.
 //!
+//! # Hooks
+//!
+//! With run-event hooks registered, each mapped event passes the
+//! [`RunEventHook`] chain before being yielded; a hook may rewrite the
+//! event, suppress it by returning `None`, or fail and end the stream
+//! with one [`AgentRunError`][error] item. Without hooks, polling maps
+//! and yields directly.
+//!
 //! # Optional events
 //!
 //! Step boundaries, context telemetry, and streamed tool-call
@@ -21,11 +29,14 @@
 //! variant fails compilation here, keeping vendor coupling inside
 //! this module.
 //!
+//! [`RunEventHook`]: reloaded_code_core::hooks::RunEventHook
+//! [error]: serdes_ai::agent::AgentRunError
 //! [task]: super::task::HookedAgent::run_stream
 
 use futures::{Stream, StreamExt};
 use reloaded_code_core::hooks::{
-    RunEvent, RunMessage, RunMessageRole, RunToolCallSummary, RunToolResultSummary,
+    HookSet, RunEvent, RunEventContext, RunMessage, RunMessageRole, RunToolCallSummary,
+    RunToolResultSummary,
 };
 use serdes_ai::core::messages::{
     AudioContent, DocumentContent, FileContent, ImageContent, RetryContent, ToolCallArgs,
@@ -44,15 +55,58 @@ use std::task::{Context, Poll};
 /// Polling this stream drives the vendor stream, which the vendor already
 /// runs on its own background task; no channel, spawn, or shared agent
 /// handle is added on this side.
+///
+/// When run-event hooks are registered, each mapped event passes the
+/// [`RunEventHook`] chain before it is yielded: a hook may rewrite or
+/// suppress it, and a hook failure yields one [`AgentRunError::Other`]
+/// item after which the stream ends.
+///
+/// [`RunEventHook`]: reloaded_code_core::hooks::RunEventHook
+/// [`AgentRunError::Other`]: serdes_ai::agent::AgentRunError::Other
 pub(super) struct RunEventStream {
     /// Owned vendor stream, driven by the vendor's own background task.
     inner: AgentStream,
+    /// Run-event hook chain plus the names each hook call receives.
+    /// `None` when no run-event hooks are registered, so polling maps
+    /// and yields directly without hook work.
+    dispatch: Option<RunEventDispatch>,
+    /// Set once a run-event hook failure was yielded; every later poll
+    /// ends the stream.
+    terminated: bool,
+}
+
+/// Owned run-event hook dispatch state for one stream.
+struct RunEventDispatch {
+    /// Registered hooks; only the run-event chain is consulted here.
+    hooks: HookSet,
+    /// Static agent and model names each hook context carries.
+    agent_name: String,
+    model_name: String,
 }
 
 impl RunEventStream {
-    /// Wraps an already-started vendor stream.
-    pub(super) fn new(inner: AgentStream) -> Self {
-        Self { inner }
+    /// Wraps an already-started vendor stream, applying the agent's
+    /// run-event hook chain to each mapped event.
+    ///
+    /// The stream takes ownership of a hook chain only when one is
+    /// registered; an empty chain keeps polling on the direct mapping
+    /// path with no per-event hook work.
+    pub(super) fn new(
+        inner: AgentStream,
+        hooks: &HookSet,
+        agent_name: &str,
+        model_name: &str,
+    ) -> Self {
+        let dispatch = (!hooks.run_event_hooks_is_empty()).then(|| RunEventDispatch {
+            hooks: hooks.clone(),
+            agent_name: agent_name.to_owned(),
+            model_name: model_name.to_owned(),
+        });
+        Self {
+            inner,
+            dispatch,
+            terminated: false,
+        }
     }
 }
 
@@ -60,14 +114,57 @@ impl Stream for RunEventStream {
     type Item = Result<RunEvent, serdes_ai::agent::AgentRunError>;
 
     fn poll_next(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
-        let inner = &mut self.get_mut().inner;
-        match inner.poll_next_unpin(cx) {
-            Poll::Ready(Some(Ok(event))) => Poll::Ready(Some(Ok(map_vendor_event(event)))),
-            Poll::Ready(Some(Err(error))) => Poll::Ready(Some(Err(error))),
-            Poll::Ready(None) => Poll::Ready(None),
-            Poll::Pending => Poll::Pending,
+        let this = self.get_mut();
+        if this.terminated {
+            return Poll::Ready(None);
+        }
+        let Some(dispatch) = this.dispatch.as_ref() else {
+            // Empty chain: identical to the direct mapping path.
+            return match this.inner.poll_next_unpin(cx) {
+                Poll::Ready(Some(Ok(event))) => Poll::Ready(Some(Ok(map_vendor_event(event)))),
+                Poll::Ready(Some(Err(error))) => Poll::Ready(Some(Err(error))),
+                Poll::Ready(None) => Poll::Ready(None),
+                Poll::Pending => Poll::Pending,
+            };
+        };
+        // A suppressed event must not surface, so keep polling until an
+        // event publishes; the surrounding events keep their order.
+        loop {
+            match this.inner.poll_next_unpin(cx) {
+                Poll::Pending => return Poll::Pending,
+                Poll::Ready(None) => return Poll::Ready(None),
+                Poll::Ready(Some(Err(error))) => return Poll::Ready(Some(Err(error))),
+                Poll::Ready(Some(Ok(event))) => {
+                    let ctx = RunEventContext {
+                        agent_name: &dispatch.agent_name,
+                        model_name: &dispatch.model_name,
+                    };
+                    match dispatch
+                        .hooks
+                        .dispatch_run_event(&ctx, map_vendor_event(event))
+                    {
+                        Ok(Some(event)) => return Poll::Ready(Some(Ok(event))),
+                        Ok(None) => continue,
+                        Err(error) => {
+                            this.terminated = true;
+                            return Poll::Ready(Some(Err(hook_error_item(error))));
+                        }
+                    }
+                }
+            }
         }
     }
+}
+
+/// Converts a run-event hook failure into the stream's error item.
+///
+/// Follows the `run()` path's hook-error translation: the failure is
+/// labeled hook-origin and carried as [`AgentRunError::Other`]. The
+/// stream ends after yielding it.
+///
+/// [`AgentRunError::Other`]: serdes_ai::agent::AgentRunError::Other
+fn hook_error_item(error: reloaded_code_core::ToolError) -> serdes_ai::agent::AgentRunError {
+    serdes_ai::agent::AgentRunError::Other(anyhow::anyhow!("run event hook error: {error}"))
 }
 
 /// Maps one vendor event to its framework-owned counterpart.
@@ -358,9 +455,10 @@ mod tests {
     use futures::StreamExt;
     use reloaded_code_agents::{AgentCatalog, AgentDefaults, AgentMode, AgentRuntimeBuilder};
     use reloaded_code_core::hooks::{
-        HookRunContext, HookSet, RunConfig, RunHook, RunHookFuture, RunOriginal,
+        HookRunContext, HookSet, RunConfig, RunEventContext, RunEventHook, RunEventHookResult,
+        RunHook, RunHookFuture, RunOriginal,
     };
-    use reloaded_code_core::{ToolCatalogEntry, ToolCatalogKind};
+    use reloaded_code_core::{ToolCatalogEntry, ToolCatalogKind, ToolError};
     use rstest::rstest;
     use serde_json::json;
     use serdes_ai::core::messages::request::RetryPromptPart;
@@ -555,7 +653,7 @@ mod tests {
 
         let messages = distill_messages(vec![request, follow_up]);
 
-        let expected = vec![
+        let expected = [
             RunMessage {
                 role: RunMessageRole::System,
                 text: Some("sys".into()),
@@ -909,7 +1007,7 @@ mod tests {
 
     /// Index of the first event matching `predicate`.
     fn position(events: &[RunEvent], predicate: &dyn Fn(&RunEvent) -> bool) -> Option<usize> {
-        events.iter().position(|event| predicate(event))
+        events.iter().position(predicate)
     }
 
     #[tokio::test]
@@ -1022,7 +1120,7 @@ mod tests {
             .iter()
             .filter(|message| message.role == RunMessageRole::Assistant)
             .filter_map(|message| message.text.as_deref())
-            .last()
+            .next_back()
             .expect("closing assistant turn should carry text");
         assert_eq!(final_answer, streamed_answer);
     }
@@ -1153,6 +1251,379 @@ mod tests {
                 serdes_ai::agent::AgentRunError::Model(ModelError::Api { .. })
             ),
             "inner model failure should keep its variant, got: {error:?}"
+        );
+    }
+
+    // ========================================================================
+    // Run-event hook chain
+    // ========================================================================
+
+    /// Uppercases every text delta before publication.
+    struct UpperCaseDelta;
+
+    impl RunEventHook for UpperCaseDelta {
+        fn hook(&self, _ctx: &RunEventContext<'_>, event: RunEvent) -> RunEventHookResult {
+            match event {
+                RunEvent::TextDelta { text } => Ok(Some(RunEvent::TextDelta {
+                    text: text.to_uppercase(),
+                })),
+                other => Ok(Some(other)),
+            }
+        }
+    }
+
+    /// Suppresses every text delta.
+    struct SuppressTextDelta;
+
+    impl RunEventHook for SuppressTextDelta {
+        fn hook(&self, _ctx: &RunEventContext<'_>, event: RunEvent) -> RunEventHookResult {
+            match event {
+                RunEvent::TextDelta { .. } => Ok(None),
+                other => Ok(Some(other)),
+            }
+        }
+    }
+
+    /// Fails on the first text delta it sees.
+    struct FailOnTextDelta;
+
+    impl RunEventHook for FailOnTextDelta {
+        fn hook(&self, _ctx: &RunEventContext<'_>, event: RunEvent) -> RunEventHookResult {
+            match event {
+                RunEvent::TextDelta { .. } => {
+                    Err(ToolError::validation("event hook rejected the delta"))
+                }
+                other => Ok(Some(other)),
+            }
+        }
+    }
+
+    /// Appends a fixed tag to every text delta.
+    struct TagDelta(&'static str);
+
+    impl RunEventHook for TagDelta {
+        fn hook(&self, _ctx: &RunEventContext<'_>, event: RunEvent) -> RunEventHookResult {
+            match event {
+                RunEvent::TextDelta { text } => Ok(Some(RunEvent::TextDelta {
+                    text: format!("{text}-{}", self.0),
+                })),
+                other => Ok(Some(other)),
+            }
+        }
+    }
+
+    /// Records the variant name of every event the chain consults plus
+    /// the static names of the first hook context. Clones share the
+    /// records so the test can register one copy and inspect another.
+    #[derive(Clone, Default)]
+    struct EventObserver {
+        variants: Arc<Mutex<Vec<&'static str>>>,
+        context_names: Arc<Mutex<Option<(String, String)>>>,
+    }
+
+    impl RunEventHook for EventObserver {
+        fn hook(&self, ctx: &RunEventContext<'_>, event: RunEvent) -> RunEventHookResult {
+            let variant = match &event {
+                RunEvent::RunStart { .. } => "RunStart",
+                RunEvent::ToolCallStart { .. } => "ToolCallStart",
+                RunEvent::ToolExecuted { .. } => "ToolExecuted",
+                RunEvent::TextDelta { .. } => "TextDelta",
+                RunEvent::OutputReady => "OutputReady",
+                RunEvent::RunComplete { .. } => "RunComplete",
+                _ => "other",
+            };
+            self.variants
+                .lock()
+                .expect("variants should not be poisoned")
+                .push(variant);
+            let mut names = self
+                .context_names
+                .lock()
+                .expect("context names should not be poisoned");
+            if names.is_none() {
+                *names = Some((ctx.agent_name.to_string(), ctx.model_name.to_string()));
+            }
+            Ok(Some(event))
+        }
+    }
+
+    #[tokio::test]
+    async fn run_stream_publishes_only_the_rewritten_delta_text() {
+        const RESPONSE: &str = "secret payload words";
+        let hooks = HookSet::builder().run_event_hook(UpperCaseDelta).build();
+        let hooked = streamed_agent(
+            Streamed::new(FunctionModel::new(move |_, _| {
+                ModelResponse::text(RESPONSE)
+            })),
+            hooks,
+        );
+
+        let events = collect_events(&hooked, "hello").await;
+
+        // The original text never surfaces, in whole or per chunk.
+        for event in &events {
+            if let RunEvent::TextDelta { text } = event {
+                assert_eq!(
+                    text,
+                    &text.to_uppercase(),
+                    "the consumer must only see the rewritten delta: {text}"
+                );
+            }
+        }
+        let streamed_text: String = events
+            .iter()
+            .filter_map(|event| match event {
+                RunEvent::TextDelta { text } => Some(text.as_str()),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(streamed_text, RESPONSE.to_uppercase());
+    }
+
+    #[tokio::test]
+    async fn run_stream_suppression_hides_event_and_keeps_neighbor_order() {
+        let hooks = HookSet::builder().run_event_hook(SuppressTextDelta).build();
+        let hooked = streamed_agent(
+            Streamed::new(FunctionModel::new(move |_, _| {
+                ModelResponse::text("hidden words")
+            })),
+            hooks,
+        );
+
+        let events = collect_events(&hooked, "hello").await;
+
+        assert!(
+            !events
+                .iter()
+                .any(|event| matches!(event, RunEvent::TextDelta { .. })),
+            "suppressed deltas must never reach the consumer"
+        );
+        // The surrounding milestones keep their order.
+        assert!(matches!(events.first(), Some(RunEvent::RunStart { .. })));
+        let output_ready = position(&events, &|event| matches!(event, RunEvent::OutputReady))
+            .expect("output-ready should survive suppression");
+        let complete = position(&events, &|event| {
+            matches!(event, RunEvent::RunComplete { .. })
+        })
+        .expect("run should complete");
+        assert_eq!(
+            complete,
+            events.len() - 1,
+            "RunComplete should be the last event"
+        );
+        assert!(
+            output_ready < complete,
+            "output-ready must stay before completion"
+        );
+    }
+
+    #[tokio::test]
+    async fn run_stream_hook_error_yields_other_item_and_ends_the_stream() {
+        let hooks = HookSet::builder().run_event_hook(FailOnTextDelta).build();
+        let hooked = streamed_agent(
+            Streamed::new(FunctionModel::new(move |_, _| {
+                ModelResponse::text("first words then more")
+            })),
+            hooks,
+        );
+
+        let mut stream = hooked
+            .run_stream("hello", ())
+            .await
+            .expect("stream should start");
+        let mut items = Vec::new();
+        while let Some(item) = stream.next().await {
+            items.push(item);
+        }
+
+        // The error item is the last item the stream ever yields.
+        let error = match items.last().expect("stream should yield the hook error") {
+            Err(error) => error,
+            Ok(event) => panic!("the final item should be the hook error, got: {event:?}"),
+        };
+        match error {
+            serdes_ai::agent::AgentRunError::Other(source) => {
+                let message = source.to_string();
+                assert!(
+                    message.contains("run event hook error"),
+                    "hook failure should be labeled hook-origin: {message}"
+                );
+                assert!(
+                    message.contains("event hook rejected the delta"),
+                    "the hook's error text should be preserved: {message}"
+                );
+            }
+            other => panic!("hook failure should surface as Other, got: {other:?}"),
+        }
+        assert_eq!(
+            items.iter().filter(|item| item.is_err()).count(),
+            1,
+            "the hook error must be the only error item"
+        );
+        // Events before the failing delta were published, and the run
+        // never completes after the failure.
+        let published: Vec<_> = items.iter().filter_map(|item| item.as_ref().ok()).collect();
+        assert!(
+            matches!(published.first(), Some(RunEvent::RunStart { .. })),
+            "events before the failing delta should have been published"
+        );
+        assert!(
+            !published
+                .iter()
+                .any(|event| matches!(event, RunEvent::OutputReady | RunEvent::RunComplete { .. })),
+            "the stream must end before the run completes: {published:?}"
+        );
+    }
+
+    #[tokio::test]
+    async fn run_stream_applies_run_event_hooks_in_registration_order() {
+        let hooks = HookSet::builder()
+            .run_event_hook(TagDelta("first"))
+            .run_event_hook(TagDelta("second"))
+            .build();
+        let hooked = streamed_agent(
+            Streamed::new(FunctionModel::new(move |_, _| {
+                ModelResponse::text("chunked text")
+            })),
+            hooks,
+        );
+
+        let events = collect_events(&hooked, "hello").await;
+
+        // The second hook sees the first hook's rewrite, so every
+        // published delta carries the tags in registration order; a
+        // reversed order would yield "-second-first".
+        let mut checked_deltas = 0;
+        for event in &events {
+            if let RunEvent::TextDelta { text } = event {
+                checked_deltas += 1;
+                assert!(
+                    text.ends_with("-first-second"),
+                    "registration order must hold, got: {text}"
+                );
+            }
+        }
+        assert!(
+            checked_deltas > 0,
+            "the stream should publish at least one TextDelta, got: {events:?}"
+        );
+    }
+
+    #[tokio::test]
+    async fn run_stream_consults_the_hook_chain_for_every_streamed_event() {
+        let observer = EventObserver::default();
+        // The scripted ping flow streams every milestone kind: run and
+        // step boundaries, context telemetry, text deltas, and the full
+        // tool-call lifecycle.
+        let hooked = streamed_agent_with_ping_tool(
+            tool_then_text("ping", json!({"target": "example.com"}), "after the tool"),
+            HookSet::builder().run_event_hook(observer.clone()).build(),
+        );
+
+        let events = collect_events(&hooked, "use the tool").await;
+
+        // Non-delta milestones pass the chain too, in published order;
+        // dispatching only deltas would leave these unobserved.
+        let variants = observer
+            .variants
+            .lock()
+            .expect("variants should not be poisoned")
+            .clone();
+        for milestone in [
+            "RunStart",
+            "ToolCallStart",
+            "ToolExecuted",
+            "OutputReady",
+            "RunComplete",
+        ] {
+            assert!(
+                variants.contains(&milestone),
+                "the chain must be consulted for {milestone}: {variants:?}"
+            );
+        }
+        assert_eq!(
+            variants.last(),
+            Some(&"RunComplete"),
+            "the chain must observe the final event"
+        );
+        assert_eq!(
+            events.len(),
+            variants.len(),
+            "the pass-through hook must observe every published event exactly once"
+        );
+
+        // The hook context carries the agent's static names; the model
+        // name comes from the catalog-resolved model, not the mock
+        // override that serves the requests.
+        let (agent_name, model_name) = observer
+            .context_names
+            .lock()
+            .expect("context names should not be poisoned")
+            .clone()
+            .expect("the hook should have observed a context");
+        assert_eq!(agent_name, "caller");
+        assert_eq!(model_name, "openai/gpt-4.1-mini");
+    }
+
+    /// Replaces run ids with a placeholder so event sequences from
+    /// separate streams compare equal; run ids are random per run.
+    ///
+    /// `ContextInfo` telemetry is zeroed too: the estimate serializes
+    /// wall-clock part timestamps, whose RFC 3339 fractional-second
+    /// width (0/3/6/9 digits) can differ between the two streams, so
+    /// byte counts drift by a few bytes between otherwise identical
+    /// requests.
+    fn normalized_events(events: &[RunEvent]) -> Vec<RunEvent> {
+        events
+            .iter()
+            .map(|event| match event {
+                RunEvent::RunStart { .. } => RunEvent::RunStart {
+                    run_id: "<run>".into(),
+                },
+                RunEvent::RunComplete { messages, .. } => RunEvent::RunComplete {
+                    run_id: "<run>".into(),
+                    messages: messages.clone(),
+                },
+                RunEvent::ContextInfo { context_limit, .. } => RunEvent::ContextInfo {
+                    estimated_tokens: 0,
+                    request_bytes: 0,
+                    context_limit: *context_limit,
+                },
+                other => other.clone(),
+            })
+            .collect()
+    }
+
+    #[tokio::test]
+    async fn run_stream_without_run_event_hooks_matches_unhooked_stream() {
+        const RESPONSE: &str = "equivalence probe text";
+        // Same deterministic model twice: once with no hooks at all, once
+        // with a non-empty hook set that registers no run-event hooks, so
+        // the empty-chain predicate is the only difference.
+        let plain = streamed_agent(
+            Streamed::new(FunctionModel::new(move |_, _| {
+                ModelResponse::text(RESPONSE)
+            })),
+            HookSet::builder().build(),
+        );
+        let inert = streamed_agent(
+            Streamed::new(FunctionModel::new(move |_, _| {
+                ModelResponse::text(RESPONSE)
+            })),
+            HookSet::builder()
+                .run_hook(DispatchRecorder {
+                    dispatches: Arc::new(Mutex::new(Vec::new())),
+                })
+                .build(),
+        );
+
+        let plain_events = collect_events(&plain, "hello").await;
+        let inert_events = collect_events(&inert, "hello").await;
+
+        assert_eq!(
+            normalized_events(&plain_events),
+            normalized_events(&inert_events),
+            "an empty run-event chain must stream the unhooked sequence"
         );
     }
 }

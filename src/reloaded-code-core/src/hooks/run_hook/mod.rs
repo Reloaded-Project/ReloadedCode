@@ -149,6 +149,13 @@ pub trait RunExecutor: Send + Sync {
 /// takes ownership, mutates, and passes to `original.call()`. The final
 /// [`RunExecutor`] consumes it: strings move into the framework's run
 /// options with zero clones.
+///
+/// # Remarks
+///
+/// Fires only on the `run()` path - never on streaming runs.
+/// Use [`RunEventHook`] to intercept streamed events.
+///
+/// [`RunEventHook`]: crate::hooks::RunEventHook
 pub trait RunHook: Send + Sync + 'static {
     /// Intercepts a run.
     ///

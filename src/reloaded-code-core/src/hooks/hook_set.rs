@@ -1,8 +1,9 @@
 //! HookSet — container and dispatch for all registered hooks and lifecycle events.
 
 use crate::hooks::{
-    HookRunContext, RunConfig, RunExecutor, RunHook, RunHookFuture, RunOriginal, SessionCompactFn,
-    ToolCallContext, ToolExecutor, ToolHook, ToolHookFuture, ToolOriginal, ToolRequest, INLINE_CAP,
+    HookRunContext, RunConfig, RunEvent, RunEventContext, RunEventHook, RunEventHookResult,
+    RunExecutor, RunHook, RunHookFuture, RunOriginal, SessionCompactFn, ToolCallContext,
+    ToolExecutor, ToolHook, ToolHookFuture, ToolOriginal, ToolRequest, INLINE_CAP,
 };
 use std::fmt;
 use std::sync::Arc;
@@ -13,6 +14,7 @@ use tinyvec::TinyVec;
 pub struct HookSet {
     pub(super) tool_hooks: Vec<Arc<dyn ToolHook>>,
     pub(super) run_hooks: Vec<Arc<dyn RunHook>>,
+    pub(super) run_event_hooks: Vec<Arc<dyn RunEventHook>>,
     pub(super) session_compact: TinyVec<[Option<SessionCompactFn>; INLINE_CAP]>,
 }
 
@@ -21,7 +23,10 @@ impl HookSet {
     #[inline]
     #[must_use]
     pub fn is_empty(&self) -> bool {
-        self.tool_hooks.is_empty() && self.run_hooks.is_empty() && self.session_compact.is_empty()
+        self.tool_hooks.is_empty()
+            && self.run_hooks.is_empty()
+            && self.run_event_hooks.is_empty()
+            && self.session_compact.is_empty()
     }
 
     /// Returns `true` if no tool hooks are registered.
@@ -36,6 +41,13 @@ impl HookSet {
     #[must_use]
     pub fn run_hooks_is_empty(&self) -> bool {
         self.run_hooks.is_empty()
+    }
+
+    /// Returns `true` if no run-event hooks are registered.
+    #[inline]
+    #[must_use]
+    pub fn run_event_hooks_is_empty(&self) -> bool {
+        self.run_event_hooks.is_empty()
     }
 
     /// Returns registered tool hooks in dispatch order.
@@ -95,6 +107,36 @@ impl HookSet {
         RunOriginal::new(&self.run_hooks, real_run).call(ctx, config)
     }
 
+    /// Dispatches one streamed run event through the run-event hook chain.
+    ///
+    /// Hooks apply in registration order; each hook receives the
+    /// previous hook's output event. A suppression from any hook ends
+    /// the chain for that event. If no run-event hooks are registered,
+    /// the event is returned unchanged without entering the chain.
+    ///
+    /// # Errors
+    /// Returns [`ToolError`] if any hook in the chain returns an error;
+    /// dispatch stops at the first error.
+    ///
+    /// [`ToolError`]: crate::ToolError
+    #[inline]
+    pub fn dispatch_run_event(
+        &self,
+        ctx: &RunEventContext<'_>,
+        mut event: RunEvent,
+    ) -> RunEventHookResult {
+        if self.run_event_hooks.is_empty() {
+            return Ok(Some(event));
+        }
+        for hook in &self.run_event_hooks {
+            match hook.hook(ctx, event)? {
+                Some(next) => event = next,
+                None => return Ok(None),
+            }
+        }
+        Ok(Some(event))
+    }
+
     /// Dispatches compact events. Name preserved — compact is its own concept, distinct from "run".
     #[inline]
     pub fn dispatch_session_compact(&self, ctx: &HookRunContext<'_>) {
@@ -109,6 +151,7 @@ impl fmt::Debug for HookSet {
         f.debug_struct("HookSet")
             .field("tool_hooks", &self.tool_hooks.len())
             .field("run_hooks", &self.run_hooks.len())
+            .field("run_event_hooks", &self.run_event_hooks.len())
             .field("session_compact", &self.session_compact.len())
             .finish()
     }
@@ -117,10 +160,11 @@ impl fmt::Debug for HookSet {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::hooks::run_event::{RunEvent, RunEventContext, RunEventHook, RunEventHookResult};
     use crate::hooks::run_hook::{
         EndReason, RunConfig, RunExecutor, RunHook, RunHookFuture, RunOriginal, RunOutput, RunUsage,
     };
-    use crate::ToolOutput;
+    use crate::{ToolError, ToolOutput};
     use serde_json::json;
     use std::sync::atomic::{AtomicUsize, Ordering};
 
@@ -523,6 +567,150 @@ mod tests {
                 "first-after".to_string(),
             ]
         );
+    }
+
+    // --- Run event dispatch tests ---------------------------------------------
+
+    fn event_ctx() -> RunEventContext<'static> {
+        RunEventContext {
+            agent_name: "coder",
+            model_name: "gpt-5.6-luna",
+        }
+    }
+
+    #[test]
+    fn dispatch_run_event_empty_chain_returns_event_unchanged() {
+        let hooks = HookSet::default();
+        assert!(hooks.run_event_hooks_is_empty());
+        let event = RunEvent::TextDelta { text: "hi".into() };
+        let decision = hooks
+            .dispatch_run_event(&event_ctx(), event.clone())
+            .unwrap();
+        assert_eq!(decision, Some(event));
+    }
+
+    #[test]
+    fn dispatch_run_event_rewrite_publishes_rewritten_event() {
+        struct UpperCase;
+        impl RunEventHook for UpperCase {
+            fn hook(&self, _ctx: &RunEventContext<'_>, event: RunEvent) -> RunEventHookResult {
+                match event {
+                    RunEvent::TextDelta { text } => Ok(Some(RunEvent::TextDelta {
+                        text: text.to_uppercase(),
+                    })),
+                    other => Ok(Some(other)),
+                }
+            }
+        }
+
+        let hooks = HookSet::builder().run_event_hook(UpperCase).build();
+        let decision = hooks
+            .dispatch_run_event(&event_ctx(), RunEvent::TextDelta { text: "raw".into() })
+            .unwrap();
+        assert_eq!(decision, Some(RunEvent::TextDelta { text: "RAW".into() }));
+    }
+
+    #[test]
+    fn dispatch_run_event_suppression_stops_the_chain() {
+        struct SuppressText;
+        impl RunEventHook for SuppressText {
+            fn hook(&self, _ctx: &RunEventContext<'_>, event: RunEvent) -> RunEventHookResult {
+                match event {
+                    RunEvent::TextDelta { .. } => Ok(None),
+                    other => Ok(Some(other)),
+                }
+            }
+        }
+        struct MustNotRun;
+        impl RunEventHook for MustNotRun {
+            fn hook(&self, _ctx: &RunEventContext<'_>, _event: RunEvent) -> RunEventHookResult {
+                panic!("later hooks must not see a suppressed event");
+            }
+        }
+
+        let hooks = HookSet::builder()
+            .run_event_hook(SuppressText)
+            .run_event_hook(MustNotRun)
+            .build();
+        let decision = hooks
+            .dispatch_run_event(
+                &event_ctx(),
+                RunEvent::TextDelta {
+                    text: "secret".into(),
+                },
+            )
+            .unwrap();
+        assert_eq!(decision, None);
+    }
+
+    #[test]
+    fn dispatch_run_event_applies_hooks_in_registration_order() {
+        struct Tag(&'static str);
+        impl RunEventHook for Tag {
+            fn hook(&self, _ctx: &RunEventContext<'_>, event: RunEvent) -> RunEventHookResult {
+                match event {
+                    RunEvent::TextDelta { text } => Ok(Some(RunEvent::TextDelta {
+                        text: format!("{text}-{}", self.0),
+                    })),
+                    other => Ok(Some(other)),
+                }
+            }
+        }
+
+        let hooks = HookSet::builder()
+            .run_event_hook(Tag("first"))
+            .run_event_hook(Tag("second"))
+            .build();
+        let decision = hooks
+            .dispatch_run_event(&event_ctx(), RunEvent::TextDelta { text: "x".into() })
+            .unwrap();
+        // The second hook must see the first hook's rewrite, proving
+        // registration order.
+        assert_eq!(
+            decision,
+            Some(RunEvent::TextDelta {
+                text: "x-first-second".into()
+            })
+        );
+    }
+
+    #[test]
+    fn dispatch_run_event_error_propagates_and_stops_the_chain() {
+        struct Fail;
+        impl RunEventHook for Fail {
+            fn hook(&self, _ctx: &RunEventContext<'_>, _event: RunEvent) -> RunEventHookResult {
+                Err(ToolError::validation("hook rejected the event"))
+            }
+        }
+        struct MustNotRun;
+        impl RunEventHook for MustNotRun {
+            fn hook(&self, _ctx: &RunEventContext<'_>, _event: RunEvent) -> RunEventHookResult {
+                panic!("later hooks must not run after a hook error");
+            }
+        }
+
+        let hooks = HookSet::builder()
+            .run_event_hook(Fail)
+            .run_event_hook(MustNotRun)
+            .build();
+        let error = hooks
+            .dispatch_run_event(&event_ctx(), RunEvent::OutputReady)
+            .unwrap_err();
+        assert!(matches!(error, ToolError::Validation { .. }));
+    }
+
+    #[test]
+    fn hook_set_debug_includes_run_event_hooks_count() {
+        struct Passthrough;
+        impl RunEventHook for Passthrough {
+            fn hook(&self, _ctx: &RunEventContext<'_>, event: RunEvent) -> RunEventHookResult {
+                Ok(Some(event))
+            }
+        }
+
+        let hooks = HookSet::builder().run_event_hook(Passthrough).build();
+        let debug = format!("{hooks:?}");
+        assert!(debug.contains("run_event_hooks: 1"));
     }
 
     #[tokio::test]

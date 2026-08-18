@@ -3,7 +3,8 @@
 //! # Public API
 //! - [`AgentBuildContext`] - Reusable shared inputs for building runnable agents.
 //! - [`HookedAgent`] - Built agent wrapper that dispatches `run()` through run
-//!   hooks and streams framework-owned events from `run_stream()`.
+//!   hooks and streams framework-owned events from `run_stream()`, passing
+//!   each through the registered run-event hooks.
 
 #[cfg(not(all(feature = "linux-bubblewrap", target_os = "linux")))]
 use super::build::Profile;
@@ -42,7 +43,8 @@ pub struct AgentBuildContext<C: CredentialLookup + Send + Sync + 'static = Crede
 /// `run()` dispatches through the core `HookSet::dispatch_run` hook chain
 /// when run hooks are registered and passes through directly otherwise.
 /// `run_stream()` streams framework-owned [`RunEvent`]s lazily mapped from
-/// the vendor stream; registered run hooks are not consulted on the
+/// the vendor stream and passes each through the registered run-event hook
+/// chain before publication; registered run hooks are not consulted on the
 /// streaming path, so run-hook config injection applies to `run()` only.
 pub struct HookedAgent {
     inner: Agent<(), String>,
@@ -325,6 +327,10 @@ impl HookedAgent {
     /// mutations to the prompt text, applies `model_settings_overrides` to
     /// the per-run model settings, and returns the result.
     ///
+    /// Mode-scoped: run hooks fire only on this path. A registered
+    /// [`RunEventHook`][event-hook] never fires here; it fires only on
+    /// [`Self::run_stream`].
+    ///
     /// The run-hook context carries a wrapper-generated `run_id`. The inner
     /// agent assigns its own id for tool hooks; SerdesAI `RunOptions` has no
     /// field to override it, so the two identifiers cannot be unified here.
@@ -336,6 +342,8 @@ impl HookedAgent {
     ///   and the failure reaches the caller untouched.
     /// - Returns [`serdes_ai::agent::AgentRunError::Other`] when a run hook
     ///   returns or substitutes its own error during dispatch.
+    ///
+    /// [event-hook]: reloaded_code_core::hooks::RunEventHook
     pub async fn run(
         &self,
         prompt: impl Into<String>,
@@ -405,21 +413,30 @@ impl HookedAgent {
     /// [`UserContent`][serdes_ai::core::UserContent]; image and multi-part
     /// prompts pass through to the vendor unchanged.
     ///
-    /// # Remarks
+    /// Each mapped event passes the registered
+    /// [`RunEventHook`][event-hook] chain, in registration order, before the
+    /// caller sees it, so a hook may rewrite or suppress it. With no
+    /// run-event hooks registered the stream matches the unhooked mapping.
     ///
-    /// Registered run hooks are skipped on this path. The core run-hook
-    /// chain resolves to one completed `RunOutput`, so dispatching it here
-    /// would buffer the whole run before the first event and defeat
-    /// streaming. Preamble, system-prompt, and model-settings injection
-    /// therefore apply to [`HookedAgent::run`] only.
+    /// Run hooks ([`RunHook`][run-hook]) never fire here; they fire only
+    /// on [`Self::run`]. The run-hook chain resolves to one completed
+    /// `RunOutput`, so dispatching it would buffer the whole run before
+    /// the first event and defeat streaming. Preamble, system-prompt,
+    /// and model-settings injection therefore apply on that path only.
     ///
     /// # Errors
     ///
     /// - Returns the inner agent's [`serdes_ai::agent::AgentRunError`]
     ///   unchanged when starting the stream fails.
-    /// - The stream itself yields the inner error as an `Err` item when the
-    ///   run fails mid-stream; a vendor error event surfaces as the mapped
-    ///   [`RunEvent::Error`] variant instead.
+    /// - The stream yields the inner error as its final `Err` item when
+    ///   the run fails mid-stream; a vendor error event maps to
+    ///   [`RunEvent::Error`] before that final item.
+    /// - The stream yields [`serdes_ai::agent::AgentRunError::Other`] as
+    ///   its final item when a run-event hook fails; the stream ends after
+    ///   that item.
+    ///
+    /// [event-hook]: reloaded_code_core::hooks::RunEventHook
+    /// [run-hook]: reloaded_code_core::hooks::RunHook
     pub async fn run_stream(
         &self,
         prompt: impl Into<serdes_ai::core::UserContent>,
@@ -429,7 +446,12 @@ impl HookedAgent {
         serdes_ai::agent::AgentRunError,
     > {
         let inner = self.inner.run_stream(prompt, deps).await?;
-        Ok(Box::pin(RunEventStream::new(inner)))
+        Ok(Box::pin(RunEventStream::new(
+            inner,
+            &self.hooks,
+            &self.agent_name,
+            &self.model_name,
+        )))
     }
 }
 
@@ -1054,7 +1076,7 @@ mod tests {
 
     /// Model settings overrides: applied per run, merged over the agent's
     /// configured settings, with prompt-prepend behavior untouched.
-
+    ///
     /// Run hook that installs fixed model settings overrides before
     /// delegating to `original`.
     struct OverridingRunHook {
@@ -1166,17 +1188,18 @@ mod tests {
 
         hooked.run("hello", ()).await.expect("run should complete");
 
-        let seen = captured
-            .lock()
-            .expect("captured settings should not be poisoned");
-        assert_eq!(seen.len(), 1, "one model request should have been made");
-        assert_eq!(seen[0].temperature, Some(f64::from(0.9_f32)));
-        assert_eq!(
-            seen[0].top_p,
-            Some(f64::from(0.8_f32)),
-            "agent-configured top_p should be retained"
-        );
-        drop(seen);
+        {
+            let seen = captured
+                .lock()
+                .expect("captured settings should not be poisoned");
+            assert_eq!(seen.len(), 1, "one model request should have been made");
+            assert_eq!(seen[0].temperature, Some(f64::from(0.9_f32)));
+            assert_eq!(
+                seen[0].top_p,
+                Some(f64::from(0.8_f32)),
+                "agent-configured top_p should be retained"
+            );
+        }
 
         // Mirror direction: a top_p-only override replaces top_p and keeps
         // the agent-configured temperature.
@@ -1187,16 +1210,18 @@ mod tests {
 
         hooked.run("hello", ()).await.expect("run should complete");
 
-        let seen = captured
-            .lock()
-            .expect("captured settings should not be poisoned");
-        assert_eq!(seen.len(), 1, "one model request should have been made");
-        assert_eq!(seen[0].top_p, Some(f64::from(0.6_f32)));
-        assert_eq!(
-            seen[0].temperature,
-            Some(f64::from(0.3_f32)),
-            "agent-configured temperature should be retained"
-        );
+        {
+            let seen = captured
+                .lock()
+                .expect("captured settings should not be poisoned");
+            assert_eq!(seen.len(), 1, "one model request should have been made");
+            assert_eq!(seen[0].top_p, Some(f64::from(0.6_f32)));
+            assert_eq!(
+                seen[0].temperature,
+                Some(f64::from(0.3_f32)),
+                "agent-configured temperature should be retained"
+            );
+        }
     }
 
     #[tokio::test]

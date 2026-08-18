@@ -2,8 +2,9 @@
 
 Hooks let your code see, change, or stop things the agent does.
 
-Tool and run hooks are wired into the [SerdesAI] agent pipeline: registered
-hooks intercept real tool calls and agent runs end to end.
+Tool, run, and run-event hooks are wired into the [SerdesAI] agent
+pipeline: registered hooks intercept real tool calls, agent runs, and
+streamed run events end to end.
 
 Tool hooks work like game mods.
 Each hook gets an `original` function.
@@ -247,6 +248,64 @@ error still propagates to the caller. An outer hook that skips
 `original` never reaches this hook, so do not rely on it for cleanup
 that must run on every path.
 
+### Intercept streamed events
+
+Run-event hooks fire only on `run_stream()`. Each event passes the
+registered `RunEventHook`s, in registration order, only until one
+suppresses it with `Ok(None)` or rejects it with `Err(ToolError)`;
+a rejection also terminates the stream.
+
+Per event, a hook returns one of three decisions:
+
+- `Ok(Some(event))` publishes it, changed or unchanged.
+- `Ok(None)` suppresses it. Later hooks and the consumer never see it.
+- `Err(ToolError)` stops dispatch; the stream ends with
+  `Err(AgentRunError::Other)`.
+
+This hook forwards the events a TUI renders. The consumer still sees
+every event:
+
+```rust
+use reloaded_code_core::{HookSet, RunEventContext, RunEventHookResult};
+use reloaded_code_serdesai::{RunEvent, RunEventHook};
+
+struct TuiSender { /* channel to the UI thread */ }
+
+impl TuiSender {
+    /// Stub: cheap, non-blocking send; the UI thread draws.
+    fn send_to_tui(&self, _event: &RunEvent) {}
+}
+
+struct ForwardToTui {
+    tui: TuiSender,
+}
+
+impl RunEventHook for ForwardToTui {
+    fn hook(&self, _ctx: &RunEventContext<'_>, event: RunEvent) -> RunEventHookResult {
+        // Forward only what the TUI renders
+        match &event {
+            RunEvent::TextDelta { .. } | RunEvent::RunComplete { .. } => {
+                self.tui.send_to_tui(&event);
+            }
+            _ => {}
+        }
+        Ok(Some(event))
+    }
+}
+
+let hooks = HookSet::builder()
+    .run_event_hook(ForwardToTui { tui: TuiSender {} })
+    .build();
+```
+
+Hooks run synchronously at token rate; keep per-event work cheap. Each
+call sees one event. Text can split across several `TextDelta`s, so
+buffer cross-event context inside the hook.
+
+Full example: [serdesai-run-event-hook] rewrites text deltas to
+uppercase and suppresses the output-ready milestone
+(`cargo run --example serdesai-run-event-hook -p reloaded-code-serdesai --features mock`).
+
 ## Available types
 
 ### Tool hook types
@@ -272,12 +331,21 @@ that must run on every path.
 | [`RunExecutor`]   | Final callable used at the end of the run hook chain.        |
 | [`RunUsage`]      | Token usage for a completed run.                             |
 
+### Run event hook types
+
+| Type                   | Purpose                                               |
+| ---------------------- | ----------------------------------------------------- |
+| [`RunEventHook`]       | Observes, rewrites, or suppresses one streamed event. |
+| [`RunEventContext`]    | Agent and model names for the event's stream.         |
+| [`RunEvent`]           | Framework-owned event yielded by a run stream.        |
+| [`RunEventHookResult`] | Publish, rewrite, suppress, or Err(ToolError).        |
+
 ### Container types
 
-| Type               | Purpose                                           |
-| ------------------ | ------------------------------------------------- |
-| [`HookSet`]        | Stores tool hooks, run hooks, and compact events. |
-| [`HookSetBuilder`] | Builder for [`HookSet`].                          |
+| Type               | Purpose                                                     |
+| ------------------ | ----------------------------------------------------------- |
+| [`HookSet`]        | Stores tool, run, and run-event hooks, plus compact events. |
+| [`HookSetBuilder`] | Builder for [`HookSet`].                                    |
 
 ## How tool hooks stack
 
@@ -340,6 +408,10 @@ passes `HookSet::default()`.
 - **Empty fast path.** `dispatch_tool` calls the real tool directly when you
   set no hooks.
 
+- **Mode-scoped run hooks.** `RunHook` fires only on `run()`;
+  `RunEventHook` fires only on `run_stream()`. Each hook point stays
+  inert on the other path.
+
 
 [`ToolHook`]: https://docs.rs/reloaded-code-core/latest/reloaded_code_core/trait.ToolHook.html
 [`ToolOriginal`]: https://docs.rs/reloaded-code-core/latest/reloaded_code_core/struct.ToolOriginal.html
@@ -356,8 +428,13 @@ passes `HookSet::default()`.
 [`RunOutput`]: https://docs.rs/reloaded-code-core/latest/reloaded_code_core/struct.RunOutput.html
 [`RunExecutor`]: https://docs.rs/reloaded-code-core/latest/reloaded_code_core/trait.RunExecutor.html
 [`RunUsage`]: https://docs.rs/reloaded-code-core/latest/reloaded_code_core/struct.RunUsage.html
+[`RunEventHook`]: https://docs.rs/reloaded-code-core/latest/reloaded_code_core/trait.RunEventHook.html
+[`RunEventContext`]: https://docs.rs/reloaded-code-core/latest/reloaded_code_core/struct.RunEventContext.html
+[`RunEvent`]: https://docs.rs/reloaded-code-core/latest/reloaded_code_core/enum.RunEvent.html
+[`RunEventHookResult`]: https://docs.rs/reloaded-code-core/latest/reloaded_code_core/type.RunEventHookResult.html
 [SerdesAI]: https://crates.io/crates/serdes-ai
 [serdesai-tool-hook]: https://github.com/Reloaded-Project/ReloadedCode/blob/main/src/reloaded-code-serdesai/examples/hooks/tool/serdesai-tool-hook.rs
 [serdesai-tool-block]: https://github.com/Reloaded-Project/ReloadedCode/blob/main/src/reloaded-code-serdesai/examples/hooks/tool/serdesai-tool-block.rs
 [serdesai-tool-chain]: https://github.com/Reloaded-Project/ReloadedCode/blob/main/src/reloaded-code-serdesai/examples/hooks/tool/serdesai-tool-chain.rs
 [serdesai-run-hook]: https://github.com/Reloaded-Project/ReloadedCode/blob/main/src/reloaded-code-serdesai/examples/hooks/run/serdesai-run-hook.rs
+[serdesai-run-event-hook]: https://github.com/Reloaded-Project/ReloadedCode/blob/main/src/reloaded-code-serdesai/examples/hooks/run/serdesai-run-event-hook.rs
