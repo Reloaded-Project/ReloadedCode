@@ -229,6 +229,45 @@ mod tests {
         Box::pin(async move { Ok(output) })
     }
 
+    /// Wraps a config mutation closure as a hook that always succeeds.
+    fn mutate_hook<F>(mutate: F) -> impl RunConfigHook
+    where
+        F: Fn(&mut RunConfig) + Send + Sync + 'static,
+    {
+        struct Mutate<F>(F);
+        impl<F> RunConfigHook for Mutate<F>
+        where
+            F: Fn(&mut RunConfig) + Send + Sync + 'static,
+        {
+            fn configure<'a>(
+                &'a self,
+                _ctx: &'a HookRunContext<'a>,
+                config: &'a mut RunConfig,
+            ) -> RunConfigHookFuture<'a> {
+                Box::pin(async move {
+                    (self.0)(config);
+                    Ok(())
+                })
+            }
+        }
+        Mutate(mutate)
+    }
+
+    /// Builds a hook whose configure always fails validation.
+    fn fail_hook(message: &'static str) -> impl RunConfigHook {
+        struct Fail(&'static str);
+        impl RunConfigHook for Fail {
+            fn configure<'a>(
+                &'a self,
+                _ctx: &'a HookRunContext<'a>,
+                _config: &'a mut RunConfig,
+            ) -> RunConfigHookFuture<'a> {
+                Box::pin(async { Err(ToolError::validation(self.0)) })
+            }
+        }
+        Fail(message)
+    }
+
     #[test]
     fn hook_set_default_is_empty() {
         let hooks = HookSet::default();
@@ -397,18 +436,6 @@ mod tests {
 
     // --- Run config dispatch tests ---------------------------------------------
 
-    struct NoopConfig;
-
-    impl RunConfigHook for NoopConfig {
-        fn configure<'a>(
-            &'a self,
-            _ctx: &'a HookRunContext<'a>,
-            _config: &'a mut RunConfig,
-        ) -> RunConfigHookFuture<'a> {
-            Box::pin(async { Ok(()) })
-        }
-    }
-
     fn run_ctx() -> HookRunContext<'static> {
         HookRunContext {
             agent_name: "coder",
@@ -419,40 +446,14 @@ mod tests {
 
     #[tokio::test]
     async fn dispatch_run_config_applies_hooks_in_registration_order() {
-        struct SetPrompt;
-        struct TagPrompt;
-
-        impl RunConfigHook for SetPrompt {
-            fn configure<'a>(
-                &'a self,
-                _ctx: &'a HookRunContext<'a>,
-                config: &'a mut RunConfig,
-            ) -> RunConfigHookFuture<'a> {
-                Box::pin(async move {
-                    config.system_prompt = Some("base".into());
-                    Ok(())
-                })
-            }
-        }
-
-        impl RunConfigHook for TagPrompt {
-            fn configure<'a>(
-                &'a self,
-                _ctx: &'a HookRunContext<'a>,
-                config: &'a mut RunConfig,
-            ) -> RunConfigHookFuture<'a> {
-                Box::pin(async move {
-                    let tagged =
-                        format!("{}-tagged", config.system_prompt.take().unwrap_or_default());
-                    config.system_prompt = Some(tagged);
-                    Ok(())
-                })
-            }
-        }
-
         let hooks = HookSet::builder()
-            .run_config_hook(SetPrompt)
-            .run_config_hook(TagPrompt)
+            .run_config_hook(mutate_hook(|config| {
+                config.system_prompt = Some("base".into());
+            }))
+            .run_config_hook(mutate_hook(|config| {
+                let tagged = format!("{}-tagged", config.system_prompt.take().unwrap_or_default());
+                config.system_prompt = Some(tagged);
+            }))
             .build();
         let config = hooks
             .dispatch_run_config(&run_ctx(), RunConfig::default())
@@ -466,42 +467,6 @@ mod tests {
 
     #[tokio::test]
     async fn dispatch_run_config_accumulates_mutations_across_hooks() {
-        struct SetPrompt;
-        struct AddPreamble;
-
-        impl RunConfigHook for SetPrompt {
-            fn configure<'a>(
-                &'a self,
-                _ctx: &'a HookRunContext<'a>,
-                config: &'a mut RunConfig,
-            ) -> RunConfigHookFuture<'a> {
-                Box::pin(async move {
-                    config.system_prompt = Some("sys".into());
-                    Ok(())
-                })
-            }
-        }
-
-        impl RunConfigHook for AddPreamble {
-            fn configure<'a>(
-                &'a self,
-                _ctx: &'a HookRunContext<'a>,
-                config: &'a mut RunConfig,
-            ) -> RunConfigHookFuture<'a> {
-                Box::pin(async move {
-                    config.preamble_messages.push(PreambleMessage {
-                        role: PreambleRole::User,
-                        content: "ctx".into(),
-                    });
-                    config.model_settings_overrides = Some(ModelSettingsOverrides {
-                        temperature: Some(0.2),
-                        top_p: Some(0.9),
-                    });
-                    Ok(())
-                })
-            }
-        }
-
         let mut input = RunConfig::default();
         input.preamble_messages.push(PreambleMessage {
             role: PreambleRole::System,
@@ -509,8 +474,19 @@ mod tests {
         });
 
         let hooks = HookSet::builder()
-            .run_config_hook(SetPrompt)
-            .run_config_hook(AddPreamble)
+            .run_config_hook(mutate_hook(|config| {
+                config.system_prompt = Some("sys".into());
+            }))
+            .run_config_hook(mutate_hook(|config| {
+                config.preamble_messages.push(PreambleMessage {
+                    role: PreambleRole::User,
+                    content: "ctx".into(),
+                });
+                config.model_settings_overrides = Some(ModelSettingsOverrides {
+                    temperature: Some(0.2),
+                    top_p: Some(0.9),
+                });
+            }))
             .build();
         let config = hooks.dispatch_run_config(&run_ctx(), input).await.unwrap();
 
@@ -525,18 +501,7 @@ mod tests {
 
     #[tokio::test]
     async fn dispatch_run_config_stops_at_first_error() {
-        struct Fail;
         struct MustNotRun;
-
-        impl RunConfigHook for Fail {
-            fn configure<'a>(
-                &'a self,
-                _ctx: &'a HookRunContext<'a>,
-                _config: &'a mut RunConfig,
-            ) -> RunConfigHookFuture<'a> {
-                Box::pin(async { Err(ToolError::validation("config rejected the run")) })
-            }
-        }
 
         impl RunConfigHook for MustNotRun {
             fn configure<'a>(
@@ -549,7 +514,7 @@ mod tests {
         }
 
         let hooks = HookSet::builder()
-            .run_config_hook(Fail)
+            .run_config_hook(fail_hook("config rejected the run"))
             .run_config_hook(MustNotRun)
             .build();
         let result = hooks
@@ -587,7 +552,9 @@ mod tests {
 
     #[test]
     fn hook_set_with_run_config_hooks_is_not_empty() {
-        let hooks = HookSet::builder().run_config_hook(NoopConfig).build();
+        let hooks = HookSet::builder()
+            .run_config_hook(mutate_hook(|_| {}))
+            .build();
         assert!(!hooks.is_empty());
         assert!(!hooks.run_config_hooks_is_empty());
         assert_eq!(hooks.run_config_hooks().len(), 1);
@@ -596,7 +563,9 @@ mod tests {
     #[test]
     // Pins manual Debug: counts only, never hook contents (traits lack Debug).
     fn hook_set_debug_includes_run_config_hooks_count() {
-        let hooks = HookSet::builder().run_config_hook(NoopConfig).build();
+        let hooks = HookSet::builder()
+            .run_config_hook(mutate_hook(|_| {}))
+            .build();
         let debug = format!("{hooks:?}");
         assert!(debug.contains("run_config_hooks: 1"));
     }
@@ -640,20 +609,6 @@ mod tests {
 
     #[tokio::test]
     async fn dispatch_run_hooks_wrap_real_run() {
-        struct SetPrompt;
-        impl RunConfigHook for SetPrompt {
-            fn configure<'a>(
-                &'a self,
-                _ctx: &'a HookRunContext<'a>,
-                config: &'a mut RunConfig,
-            ) -> RunConfigHookFuture<'a> {
-                Box::pin(async move {
-                    config.system_prompt = Some("overridden".into());
-                    Ok(())
-                })
-            }
-        }
-
         struct Wrap;
         impl RunHook for Wrap {
             fn hook<'a>(
@@ -694,7 +649,9 @@ mod tests {
         }
 
         let hooks = crate::hooks::builder::HookSetBuilder::new()
-            .run_config_hook(SetPrompt)
+            .run_config_hook(mutate_hook(|config| {
+                config.system_prompt = Some("overridden".into());
+            }))
             .run_hook(Wrap)
             .build();
         let ctx = HookRunContext {
@@ -713,28 +670,6 @@ mod tests {
 
     #[tokio::test]
     async fn dispatch_run_executor_receives_final_config_with_run_hooks() {
-        struct Enrich;
-        impl RunConfigHook for Enrich {
-            fn configure<'a>(
-                &'a self,
-                _ctx: &'a HookRunContext<'a>,
-                config: &'a mut RunConfig,
-            ) -> RunConfigHookFuture<'a> {
-                Box::pin(async move {
-                    config.system_prompt = Some("sys".into());
-                    config.preamble_messages.push(PreambleMessage {
-                        role: PreambleRole::User,
-                        content: "ctx".into(),
-                    });
-                    config.model_settings_overrides = Some(ModelSettingsOverrides {
-                        temperature: Some(0.3),
-                        top_p: Some(0.8),
-                    });
-                    Ok(())
-                })
-            }
-        }
-
         struct PassThrough;
         impl RunHook for PassThrough {
             fn hook<'a>(
@@ -781,7 +716,17 @@ mod tests {
         }
 
         let hooks = crate::hooks::builder::HookSetBuilder::new()
-            .run_config_hook(Enrich)
+            .run_config_hook(mutate_hook(|config| {
+                config.system_prompt = Some("sys".into());
+                config.preamble_messages.push(PreambleMessage {
+                    role: PreambleRole::User,
+                    content: "ctx".into(),
+                });
+                config.model_settings_overrides = Some(ModelSettingsOverrides {
+                    temperature: Some(0.3),
+                    top_p: Some(0.8),
+                });
+            }))
             .run_hook(PassThrough)
             .build();
         let ctx = HookRunContext {
@@ -803,20 +748,6 @@ mod tests {
 
     #[tokio::test]
     async fn dispatch_run_config_hooks_only_feed_executor() {
-        struct SetPrompt;
-        impl RunConfigHook for SetPrompt {
-            fn configure<'a>(
-                &'a self,
-                _ctx: &'a HookRunContext<'a>,
-                config: &'a mut RunConfig,
-            ) -> RunConfigHookFuture<'a> {
-                Box::pin(async move {
-                    config.system_prompt = Some("cfg-only".into());
-                    Ok(())
-                })
-            }
-        }
-
         struct RealRun;
         impl RunExecutor for RealRun {
             fn execute<'a>(
@@ -836,7 +767,9 @@ mod tests {
         }
 
         let hooks = crate::hooks::builder::HookSetBuilder::new()
-            .run_config_hook(SetPrompt)
+            .run_config_hook(mutate_hook(|config| {
+                config.system_prompt = Some("cfg-only".into());
+            }))
             .build();
         assert!(hooks.run_hooks_is_empty());
         let ctx = HookRunContext {
@@ -854,17 +787,6 @@ mod tests {
 
     #[tokio::test]
     async fn dispatch_run_config_hook_error_aborts_before_run_chain() {
-        struct Fail;
-        impl RunConfigHook for Fail {
-            fn configure<'a>(
-                &'a self,
-                _ctx: &'a HookRunContext<'a>,
-                _config: &'a mut RunConfig,
-            ) -> RunConfigHookFuture<'a> {
-                Box::pin(async { Err(ToolError::validation("config rejected the run")) })
-            }
-        }
-
         struct MustNotRun;
         impl RunHook for MustNotRun {
             fn hook<'a>(
@@ -889,7 +811,7 @@ mod tests {
         }
 
         let hooks = crate::hooks::builder::HookSetBuilder::new()
-            .run_config_hook(Fail)
+            .run_config_hook(fail_hook("config rejected the run"))
             .run_hook(MustNotRun)
             .build();
         let ctx = HookRunContext {
