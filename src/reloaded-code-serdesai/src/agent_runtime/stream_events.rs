@@ -773,14 +773,14 @@ mod tests {
         fn hook<'a>(
             &'a self,
             ctx: &'a HookRunContext<'a>,
-            config: RunConfig,
+            _config: &'a RunConfig,
             original: RunOriginal<'a>,
         ) -> RunHookFuture<'a> {
             self.dispatches
                 .lock()
                 .expect("dispatches should not be poisoned")
                 .push(ctx.run_id.to_string());
-            original.call(ctx, config)
+            original.call(ctx)
         }
     }
 
