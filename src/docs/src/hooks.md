@@ -250,9 +250,10 @@ that must run on every path.
 
 ### Intercept streamed events
 
-Run-event hooks fire only on `run_stream()`. Each event passes every
-registered `RunEventHook`, in registration order, before the consumer
-sees it.
+Run-event hooks fire only on `run_stream()`. Each event passes the
+registered `RunEventHook`s, in registration order, only until one
+suppresses it with `Ok(None)` or rejects it with `Err(ToolError)`;
+a rejection also terminates the stream.
 
 Per event, a hook returns one of three decisions:
 
