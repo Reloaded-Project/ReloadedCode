@@ -598,6 +598,7 @@ mod tests {
     }
 
     #[test]
+    // Pins manual Debug: counts only, never hook contents (traits lack Debug).
     fn hook_set_debug_includes_run_config_hooks_count() {
         let hooks = HookSet::builder().run_config_hook(NoopConfig).build();
         let debug = format!("{hooks:?}");

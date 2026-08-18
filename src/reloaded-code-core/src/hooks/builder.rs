@@ -283,6 +283,7 @@ mod tests {
     }
 
     #[test]
+    // Pins manual Debug: counts only, never hook contents (traits lack Debug).
     fn builder_debug_includes_run_config_hooks() {
         struct NoopConfig;
         impl RunConfigHook for NoopConfig {
