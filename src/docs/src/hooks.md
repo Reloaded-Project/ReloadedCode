@@ -2,10 +2,6 @@
 
 Hooks let your code see, change, or stop things the agent does.
 
-Tool, run, and run-event hooks are wired into the [SerdesAI] agent
-pipeline: registered hooks intercept real tool calls, agent runs, and
-streamed run events end to end.
-
 Tool hooks work like game mods.
 Each hook gets an `original` function.
 `original` calls the next hook or the real tool.
@@ -166,48 +162,55 @@ let hooks = HookSet::builder()
 Full example: [serdesai-tool-chain]
 (`cargo run --example serdesai-tool-chain -p reloaded-code-serdesai --features mock`).
 
-### Intercept a run
+### Amend run config
 
-Run hooks wrap the whole agent run. Mutate `RunConfig` to change the system
-prompt, preambles, or parameters, then call `original` to continue:
+`RunConfigHook` changes a run's config before the run starts. `RunConfig`
+holds the system prompt, preamble messages, and model settings overrides
+(temperature, top_p). `configure` mutates the config in place:
 
 ```rust
 use reloaded_code_core::{
-    HookRunContext, HookSet, PreambleMessage, PreambleRole, RunConfig, RunHook,
-    RunHookFuture, RunOriginal,
+    HookRunContext, HookSet, PreambleMessage, PreambleRole, RunConfig,
+    RunConfigHook, RunConfigHookFuture,
 };
 
 struct PreambleInjector;
 
-impl RunHook for PreambleInjector {
-    fn hook<'a>(
+impl RunConfigHook for PreambleInjector {
+    fn configure<'a>(
         &'a self,
-        ctx: &'a HookRunContext<'a>,
-        mut config: RunConfig,
-        original: RunOriginal<'a>,
-    ) -> RunHookFuture<'a> {
+        _ctx: &'a HookRunContext<'a>,
+        config: &'a mut RunConfig,
+    ) -> RunConfigHookFuture<'a> {
         Box::pin(async move {
             config.preamble_messages.push(PreambleMessage {
                 role: PreambleRole::System,
                 content: "You are a helpful assistant.".into(),
             });
-            original.call(ctx, config).await
+            Ok(())
         })
     }
 }
 
 let hooks = HookSet::builder()
-    .run_hook(PreambleInjector)
+    .run_config_hook(PreambleInjector)
     .build();
 ```
 
-Full example: [serdesai-run-hook]
-(`cargo run --example serdesai-run-hook -p reloaded-code-serdesai --features mock`).
+A `RunConfigHook` runs before the request is made. Hooks run in
+registration order; the chain stops at the first error, and the run does
+not start.
+
+Full example: [serdesai-run-config-hook]
+(`cargo run --example serdesai-run-config-hook -p reloaded-code-serdesai --features mock`).
 
 ### Observe run start and end
 
 A `RunHook` observes without changing anything: log before calling
-`original`, inspect the result after:
+`original`, inspect the result after.
+
+The `config` argument is a read-only view of the final `RunConfig`.
+Register a `RunConfigHook` to change it:
 
 ```rust
 use reloaded_code_core::{
@@ -221,12 +224,12 @@ impl RunHook for RunObserver {
     fn hook<'a>(
         &'a self,
         ctx: &'a HookRunContext<'a>,
-        config: RunConfig,
+        _config: &'a RunConfig,
         original: RunOriginal<'a>,
     ) -> RunHookFuture<'a> {
         Box::pin(async move {
             println!("run starting for {}", ctx.agent_name);
-            let result = original.call(ctx, config).await;
+            let result = original.call(ctx).await;
             let reason = match &result {
                 Ok(output) => output.reason,
                 Err(_) => EndReason::Failed,
@@ -247,6 +250,9 @@ including failure: a failed run reports `EndReason::Failed` and the
 error still propagates to the caller. An outer hook that skips
 `original` never reaches this hook, so do not rely on it for cleanup
 that must run on every path.
+
+Full example: [serdesai-run-hook]
+(`cargo run --example serdesai-run-hook -p reloaded-code-serdesai --features mock`).
 
 ### Intercept streamed events
 
@@ -305,47 +311,6 @@ buffer cross-event context inside the hook.
 Full example: [serdesai-run-event-hook] rewrites text deltas to
 uppercase and suppresses the output-ready milestone
 (`cargo run --example serdesai-run-event-hook -p reloaded-code-serdesai --features mock`).
-
-## Available types
-
-### Tool hook types
-
-| Type                | Purpose                                                    |
-| ------------------- | ---------------------------------------------------------- |
-| [`ToolHook`]        | Intercepts a tool call and may call [`ToolOriginal`].      |
-| [`ToolOriginal`]    | Pointer to next hook or the real tool.                     |
-| [`ToolHookFuture`]  | Boxed future returned by tool hooks.                       |
-| [`ToolCallContext`] | Tool name, agent name, run id.                             |
-| [`ToolRequest`]     | JSON arguments carried through the hook chain.             |
-| [`ToolOutput`]      | Tool call result wrapping content and truncation metadata. |
-
-### Run hook types
-
-| Type              | Purpose                                                      |
-| ----------------- | ------------------------------------------------------------ |
-| [`RunHook`]       | Intercepts a run and may call [`RunOriginal`].               |
-| [`RunOriginal`]   | Pointer to next hook or the real run executor.               |
-| [`RunHookFuture`] | Boxed future returned by run hooks.                          |
-| [`RunConfig`]     | Mutable config a RunHook can change before calling original. |
-| [`RunOutput`]     | Framework-agnostic result of a completed run.                |
-| [`RunExecutor`]   | Final callable used at the end of the run hook chain.        |
-| [`RunUsage`]      | Token usage for a completed run.                             |
-
-### Run event hook types
-
-| Type                   | Purpose                                               |
-| ---------------------- | ----------------------------------------------------- |
-| [`RunEventHook`]       | Observes, rewrites, or suppresses one streamed event. |
-| [`RunEventContext`]    | Agent and model names for the event's stream.         |
-| [`RunEvent`]           | Framework-owned event yielded by a run stream.        |
-| [`RunEventHookResult`] | Publish, rewrite, suppress, or Err(ToolError).        |
-
-### Container types
-
-| Type               | Purpose                                                     |
-| ------------------ | ----------------------------------------------------------- |
-| [`HookSet`]        | Stores tool, run, and run-event hooks, plus compact events. |
-| [`HookSetBuilder`] | Builder for [`HookSet`].                                    |
 
 ## How tool hooks stack
 
@@ -408,33 +373,9 @@ passes `HookSet::default()`.
 - **Empty fast path.** `dispatch_tool` calls the real tool directly when you
   set no hooks.
 
-- **Mode-scoped run hooks.** `RunHook` fires only on `run()`;
-  `RunEventHook` fires only on `run_stream()`. Each hook point stays
-  inert on the other path.
-
-
-[`ToolHook`]: https://docs.rs/reloaded-code-core/latest/reloaded_code_core/trait.ToolHook.html
-[`ToolOriginal`]: https://docs.rs/reloaded-code-core/latest/reloaded_code_core/struct.ToolOriginal.html
-[`ToolHookFuture`]: https://docs.rs/reloaded-code-core/latest/reloaded_code_core/type.ToolHookFuture.html
-[`ToolCallContext`]: https://docs.rs/reloaded-code-core/latest/reloaded_code_core/struct.ToolCallContext.html
-[`ToolRequest`]: https://docs.rs/reloaded-code-core/latest/reloaded_code_core/struct.ToolRequest.html
-[`ToolOutput`]: https://docs.rs/reloaded-code-core/latest/reloaded_code_core/struct.ToolOutput.html
-[`HookSet`]: https://docs.rs/reloaded-code-core/latest/reloaded_code_core/struct.HookSet.html
-[`HookSetBuilder`]: https://docs.rs/reloaded-code-core/latest/reloaded_code_core/struct.HookSetBuilder.html
-[`RunHook`]: https://docs.rs/reloaded-code-core/latest/reloaded_code_core/trait.RunHook.html
-[`RunOriginal`]: https://docs.rs/reloaded-code-core/latest/reloaded_code_core/struct.RunOriginal.html
-[`RunHookFuture`]: https://docs.rs/reloaded-code-core/latest/reloaded_code_core/type.RunHookFuture.html
-[`RunConfig`]: https://docs.rs/reloaded-code-core/latest/reloaded_code_core/struct.RunConfig.html
-[`RunOutput`]: https://docs.rs/reloaded-code-core/latest/reloaded_code_core/struct.RunOutput.html
-[`RunExecutor`]: https://docs.rs/reloaded-code-core/latest/reloaded_code_core/trait.RunExecutor.html
-[`RunUsage`]: https://docs.rs/reloaded-code-core/latest/reloaded_code_core/struct.RunUsage.html
-[`RunEventHook`]: https://docs.rs/reloaded-code-core/latest/reloaded_code_core/trait.RunEventHook.html
-[`RunEventContext`]: https://docs.rs/reloaded-code-core/latest/reloaded_code_core/struct.RunEventContext.html
-[`RunEvent`]: https://docs.rs/reloaded-code-core/latest/reloaded_code_core/enum.RunEvent.html
-[`RunEventHookResult`]: https://docs.rs/reloaded-code-core/latest/reloaded_code_core/type.RunEventHookResult.html
-[SerdesAI]: https://crates.io/crates/serdes-ai
 [serdesai-tool-hook]: https://github.com/Reloaded-Project/ReloadedCode/blob/main/src/reloaded-code-serdesai/examples/hooks/tool/serdesai-tool-hook.rs
 [serdesai-tool-block]: https://github.com/Reloaded-Project/ReloadedCode/blob/main/src/reloaded-code-serdesai/examples/hooks/tool/serdesai-tool-block.rs
 [serdesai-tool-chain]: https://github.com/Reloaded-Project/ReloadedCode/blob/main/src/reloaded-code-serdesai/examples/hooks/tool/serdesai-tool-chain.rs
+[serdesai-run-config-hook]: https://github.com/Reloaded-Project/ReloadedCode/blob/main/src/reloaded-code-serdesai/examples/hooks/run/serdesai-run-config-hook.rs
 [serdesai-run-hook]: https://github.com/Reloaded-Project/ReloadedCode/blob/main/src/reloaded-code-serdesai/examples/hooks/run/serdesai-run-hook.rs
 [serdesai-run-event-hook]: https://github.com/Reloaded-Project/ReloadedCode/blob/main/src/reloaded-code-serdesai/examples/hooks/run/serdesai-run-event-hook.rs
