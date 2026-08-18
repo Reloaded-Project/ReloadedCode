@@ -9,18 +9,20 @@
 //! A run holds N steps. One step = one LLM request plus the tool calls
 //! it triggers. A run with no tool calls is a single step.
 //!
+//! # The run boundary
+//!
 //! A run hook wraps that whole boundary. Code before `original` runs
 //! before the first step and observes the final config read-only;
-//! config changes belong to the config hook layer.
+//! code after sees the finished [`RunOutput`]. Skipping `original`
+//! skips the run and returns a synthetic result instead.
 //!
-//! Config injection has a dedicated hook point: [`RunConfigHook`]
-//! amends the [`RunConfig`] before the first step, on both run paths
-//! (`run()` and `run_stream()`). [`RunHook`] owns run lifecycle control
-//! (skip, substitute, post-observe) on `run()` only, and
-//! [`RunEventHook`] owns streamed events.
+//! # Hook ownership
 //!
-//! Code after `original` sees the finished [`RunOutput`]. Skipping
-//! `original` skips the run and returns a synthetic result instead.
+//! [`RunConfigHook`] amends config before the run. [`RunHook`]
+//! controls run lifecycle on `run()` only. [`RunEventHook`] owns
+//! streamed events.
+//!
+//! # Run identity
 //!
 //! Each run carries a `run_id` (see [`HookRunContext`]). Tool hooks
 //! fire inside a run, once per tool call, under the same `run_id`.
@@ -73,12 +75,10 @@ pub struct HookRunContext<'a> {
 
 /// Run config: system prompt, preamble messages, model settings.
 ///
-/// A [`RunConfigHook`] amends this config before the run starts, on
-/// both run paths; a [`RunHook`] then observes the final config
-/// read-only. The executor consumes the final config owned, so
-/// `Clone` exists for the chain-end hand-off when run hooks are
-/// registered: the trampoline clones once per run, and every other
-/// path moves the config.
+/// A [`RunConfigHook`] amends this config before the run; a [`RunHook`]
+/// observes the final config read-only. `Clone` exists for the
+/// chain-end hand-off: the trampoline clones once per run; every
+/// other path moves the config.
 #[derive(Default, Clone)]
 pub struct RunConfig {
     /// Override the agent's default system prompt.
@@ -154,24 +154,16 @@ pub enum PreambleRole {
 
 /// Hook that amends a run's config before the run starts.
 ///
-/// `configure` mutates the [`RunConfig`] in place: system prompt,
-/// preamble messages, model settings overrides. Hooks run in
-/// registration order; each hook sees the mutations of every earlier
-/// hook.
-///
-/// Config hooks fire before the run hook chain and before the first
-/// model request or streamed event, on both run paths: `run()` and
-/// `run_stream()`. Lifecycle control stays with [`RunHook`] (skip,
-/// substitute, post-observe, `run()` only); streamed events stay with
-/// [`RunEventHook`].
+/// `configure` mutates the [`RunConfig`] in place. Hooks run in
+/// registration order; each hook sees every earlier hook's
+/// mutations. Config hooks fire on both run paths (`run()` and
+/// `run_stream()`); on `run()` they run before the run hook chain.
 ///
 /// # Remarks
 ///
 /// `configure` is async so a hook can fetch remote resources (prompt
-/// templates, feature flags) before the run starts. The returned
-/// future is boxed once per hook per run, never per event.
-///
-/// [`RunEventHook`]: crate::hooks::RunEventHook
+/// templates, feature flags). The future is boxed once per hook per
+/// run.
 pub trait RunConfigHook: Send + Sync + 'static {
     /// Amends the run config in place.
     ///
@@ -202,12 +194,8 @@ pub trait RunExecutor: Send + Sync {
 /// Skip `original` = skip the run (return a synthetic `RunOutput`).
 /// Code after = observe the run result.
 ///
-/// `config` is a read-only view of the final [`RunConfig`]: config
-/// hooks have already amended it before the run chain starts. To
-/// change the config, register a [`RunConfigHook`]; run hooks
-/// observe it, e.g. to log or branch on the resolved prompt. The
-/// chain end hands the executor an owned clone of the same config,
-/// once per run.
+/// `config` is a read-only view of the final [`RunConfig`]. To
+/// change it, register a [`RunConfigHook`].
 ///
 /// # Remarks
 ///
