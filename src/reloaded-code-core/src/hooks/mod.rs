@@ -17,7 +17,7 @@
 //! - [`RunHook`] - Intercepts a run and may call [`RunOriginal`]
 //! - [`RunHookFuture`] - Boxed future returned by [`RunHook::hook`]
 //! - [`RunOriginal`] - Managed trampoline to the next hook or real run executor
-//! - [`RunConfig`] - Mutable config a RunHook can change before calling original
+//! - [`RunConfig`] - Config a run config hook amends before a run; the run chain observes it read-only
 //! - [`RunOutput`] - Result of a completed run
 //! - [`RunExecutor`] - Final callable used at the end of the run hook chain
 //! - [`HookRunContext`] - Context given to hook run lifecycle events

@@ -185,10 +185,10 @@ mod tests {
             fn hook<'a>(
                 &'a self,
                 ctx: &'a HookRunContext<'a>,
-                config: RunConfig,
+                _config: &'a RunConfig,
                 original: RunOriginal<'a>,
             ) -> RunHookFuture<'a> {
-                original.call(ctx, config)
+                original.call(ctx)
             }
         }
         let hooks = HookSetBuilder::new().run_hook(NoopRun).build();
@@ -204,10 +204,10 @@ mod tests {
             fn hook<'a>(
                 &'a self,
                 ctx: &'a HookRunContext<'a>,
-                config: RunConfig,
+                _config: &'a RunConfig,
                 original: RunOriginal<'a>,
             ) -> RunHookFuture<'a> {
-                original.call(ctx, config)
+                original.call(ctx)
             }
         }
         let shared: Arc<dyn RunHook> = Arc::new(NoopRun);

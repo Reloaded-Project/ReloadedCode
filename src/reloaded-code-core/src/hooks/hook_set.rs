@@ -127,13 +127,22 @@ impl HookSet {
         Ok(config)
     }
 
-    /// Dispatches a run through the hook chain.
+    /// Dispatches a run through the config and run hook chains.
     ///
-    /// If no run hooks are registered, this calls the real run
-    /// executor directly.
+    /// Config hooks run first, in registration order, amending
+    /// `config`. The run chain then runs with a shared view of the
+    /// final config and hands the executor an owned clone at its end.
+    /// When config hooks are registered but no run hooks are, the
+    /// owned final config goes straight to the executor. If neither
+    /// chain has hooks, the executor is called directly with the
+    /// original owned config.
     ///
     /// # Errors
-    /// Returns `ToolError` if the executor or any run hook in the chain returns an error.
+    /// Returns [`ToolError`] if a config hook, any run hook in the
+    /// chain, or the executor returns an error. A config-hook error
+    /// stops dispatch before the run chain or executor starts.
+    ///
+    /// [`ToolError`]: crate::ToolError
     #[inline]
     pub fn dispatch_run<'a>(
         &'a self,
@@ -141,10 +150,19 @@ impl HookSet {
         config: RunConfig,
         real_run: &'a dyn RunExecutor,
     ) -> RunHookFuture<'a> {
-        if self.run_hooks.is_empty() {
+        if self.run_hooks.is_empty() && self.run_config_hooks.is_empty() {
             return real_run.execute(ctx, config);
         }
-        RunOriginal::new(&self.run_hooks, real_run).call(ctx, config)
+        Box::pin(async move {
+            let final_config = self.dispatch_run_config(ctx, config).await?;
+            if self.run_hooks.is_empty() {
+                real_run.execute(ctx, final_config).await
+            } else {
+                RunOriginal::new(&self.run_hooks, real_run, &final_config)
+                    .call(ctx)
+                    .await
+            }
+        })
     }
 
     /// Dispatches one streamed run event through the run-event hook chain.
@@ -230,10 +248,10 @@ mod tests {
             fn hook<'a>(
                 &'a self,
                 ctx: &'a HookRunContext<'a>,
-                config: RunConfig,
+                _config: &'a RunConfig,
                 original: RunOriginal<'a>,
             ) -> RunHookFuture<'a> {
-                original.call(ctx, config)
+                original.call(ctx)
             }
         }
         let hooks = HookSet::builder().run_hook(NoopRun).build();
@@ -625,25 +643,42 @@ mod tests {
 
     #[tokio::test]
     async fn dispatch_run_hooks_wrap_real_run() {
-        struct Prefix;
-        struct RealRun;
+        struct SetPrompt;
+        impl RunConfigHook for SetPrompt {
+            fn configure<'a>(
+                &'a self,
+                _ctx: &'a HookRunContext<'a>,
+                config: &'a mut RunConfig,
+            ) -> RunConfigHookFuture<'a> {
+                Box::pin(async move {
+                    config.system_prompt = Some("overridden".into());
+                    Ok(())
+                })
+            }
+        }
 
-        impl RunHook for Prefix {
+        struct Wrap;
+        impl RunHook for Wrap {
             fn hook<'a>(
                 &'a self,
                 ctx: &'a HookRunContext<'a>,
-                mut config: RunConfig,
+                config: &'a RunConfig,
                 original: RunOriginal<'a>,
             ) -> RunHookFuture<'a> {
                 Box::pin(async move {
-                    config.system_prompt = Some("overridden".into());
-                    let mut output = original.call(ctx, config).await?;
-                    output.content.push_str("-post");
+                    // The run hook sees the config-hook-amended final
+                    // config: the same values the executor receives.
+                    let seen = config.system_prompt.clone();
+                    let mut output = original.call(ctx).await?;
+                    output
+                        .content
+                        .push_str(&format!("-saw:{}-post", seen.unwrap_or_default()));
                     Ok(output)
                 })
             }
         }
 
+        struct RealRun;
         impl RunExecutor for RealRun {
             fn execute<'a>(
                 &'a self,
@@ -662,7 +697,8 @@ mod tests {
         }
 
         let hooks = crate::hooks::builder::HookSetBuilder::new()
-            .run_hook(Prefix)
+            .run_config_hook(SetPrompt)
+            .run_hook(Wrap)
             .build();
         let ctx = HookRunContext {
             agent_name: "coder",
@@ -674,8 +710,252 @@ mod tests {
             .await
             .unwrap();
 
-        assert_eq!(output.content, "overridden-post");
+        assert_eq!(output.content, "overridden-saw:overridden-post");
         assert_eq!(output.reason, EndReason::Completed);
+    }
+
+    #[tokio::test]
+    async fn dispatch_run_executor_receives_final_config_with_run_hooks() {
+        struct Enrich;
+        impl RunConfigHook for Enrich {
+            fn configure<'a>(
+                &'a self,
+                _ctx: &'a HookRunContext<'a>,
+                config: &'a mut RunConfig,
+            ) -> RunConfigHookFuture<'a> {
+                Box::pin(async move {
+                    config.system_prompt = Some("sys".into());
+                    config.preamble_messages.push(PreambleMessage {
+                        role: PreambleRole::User,
+                        content: "ctx".into(),
+                    });
+                    config.model_settings_overrides = Some(ModelSettingsOverrides {
+                        temperature: Some(0.3),
+                        top_p: Some(0.8),
+                    });
+                    Ok(())
+                })
+            }
+        }
+
+        struct PassThrough;
+        impl RunHook for PassThrough {
+            fn hook<'a>(
+                &'a self,
+                ctx: &'a HookRunContext<'a>,
+                _config: &'a RunConfig,
+                original: RunOriginal<'a>,
+            ) -> RunHookFuture<'a> {
+                original.call(ctx)
+            }
+        }
+
+        struct CaptureRun;
+        impl RunExecutor for CaptureRun {
+            fn execute<'a>(
+                &'a self,
+                _ctx: &'a HookRunContext<'a>,
+                config: RunConfig,
+            ) -> RunHookFuture<'a> {
+                Box::pin(async move {
+                    // Every field the config hook wrote must survive the
+                    // chain-end hand-off into the owned config, next to
+                    // the caller-seeded values no hook touched.
+                    let overrides = config.model_settings_overrides.unwrap();
+                    let preamble = config
+                        .preamble_messages
+                        .iter()
+                        .map(|message| message.content.as_str())
+                        .collect::<Vec<_>>()
+                        .join("+");
+                    Ok(RunOutput {
+                        content: format!(
+                            "{}|{}|{}|{}",
+                            config.system_prompt.as_deref().unwrap_or("none"),
+                            preamble,
+                            overrides.temperature.unwrap(),
+                            overrides.top_p.unwrap(),
+                        ),
+                        reason: EndReason::Completed,
+                        usage: RunUsage::default(),
+                    })
+                })
+            }
+        }
+
+        let hooks = crate::hooks::builder::HookSetBuilder::new()
+            .run_config_hook(Enrich)
+            .run_hook(PassThrough)
+            .build();
+        let ctx = HookRunContext {
+            agent_name: "coder",
+            run_id: "r1",
+            model_name: "gpt-4o",
+        };
+        // Seed a preamble no hook writes: the executor's owned config
+        // must carry both the seed and every hook-written field.
+        let mut input = RunConfig::default();
+        input.preamble_messages.push(PreambleMessage {
+            role: PreambleRole::System,
+            content: "seeded".into(),
+        });
+        let output = hooks.dispatch_run(&ctx, input, &CaptureRun).await.unwrap();
+
+        assert_eq!(output.content, "sys|seeded+ctx|0.3|0.8");
+    }
+
+    #[tokio::test]
+    async fn dispatch_run_config_hooks_only_feed_executor() {
+        struct SetPrompt;
+        impl RunConfigHook for SetPrompt {
+            fn configure<'a>(
+                &'a self,
+                _ctx: &'a HookRunContext<'a>,
+                config: &'a mut RunConfig,
+            ) -> RunConfigHookFuture<'a> {
+                Box::pin(async move {
+                    config.system_prompt = Some("cfg-only".into());
+                    Ok(())
+                })
+            }
+        }
+
+        struct RealRun;
+        impl RunExecutor for RealRun {
+            fn execute<'a>(
+                &'a self,
+                _ctx: &'a HookRunContext<'a>,
+                config: RunConfig,
+            ) -> RunHookFuture<'a> {
+                let content = config.system_prompt.unwrap_or_else(|| "default".into());
+                Box::pin(async move {
+                    Ok(RunOutput {
+                        content,
+                        reason: EndReason::Completed,
+                        usage: RunUsage::default(),
+                    })
+                })
+            }
+        }
+
+        let hooks = crate::hooks::builder::HookSetBuilder::new()
+            .run_config_hook(SetPrompt)
+            .build();
+        assert!(hooks.run_hooks_is_empty());
+        let ctx = HookRunContext {
+            agent_name: "coder",
+            run_id: "r1",
+            model_name: "gpt-4o",
+        };
+        let output = hooks
+            .dispatch_run(&ctx, RunConfig::default(), &RealRun)
+            .await
+            .unwrap();
+
+        assert_eq!(output.content, "cfg-only");
+    }
+
+    #[tokio::test]
+    async fn dispatch_run_config_hook_error_aborts_before_run_chain() {
+        struct Fail;
+        impl RunConfigHook for Fail {
+            fn configure<'a>(
+                &'a self,
+                _ctx: &'a HookRunContext<'a>,
+                _config: &'a mut RunConfig,
+            ) -> RunConfigHookFuture<'a> {
+                Box::pin(async { Err(ToolError::validation("config rejected the run")) })
+            }
+        }
+
+        struct MustNotRun;
+        impl RunHook for MustNotRun {
+            fn hook<'a>(
+                &'a self,
+                _ctx: &'a HookRunContext<'a>,
+                _config: &'a RunConfig,
+                _original: RunOriginal<'a>,
+            ) -> RunHookFuture<'a> {
+                panic!("run hooks must not run after a config hook error");
+            }
+        }
+
+        struct PanicRun;
+        impl RunExecutor for PanicRun {
+            fn execute<'a>(
+                &'a self,
+                _ctx: &'a HookRunContext<'a>,
+                _config: RunConfig,
+            ) -> RunHookFuture<'a> {
+                panic!("executor must not run after a config hook error");
+            }
+        }
+
+        let hooks = crate::hooks::builder::HookSetBuilder::new()
+            .run_config_hook(Fail)
+            .run_hook(MustNotRun)
+            .build();
+        let ctx = HookRunContext {
+            agent_name: "coder",
+            run_id: "r1",
+            model_name: "gpt-4o",
+        };
+        let result = hooks
+            .dispatch_run(&ctx, RunConfig::default(), &PanicRun)
+            .await;
+        assert!(matches!(result, Err(ToolError::Validation { .. })));
+    }
+
+    #[tokio::test]
+    async fn dispatch_run_hook_error_stops_the_chain() {
+        struct FailingHook;
+        impl RunHook for FailingHook {
+            fn hook<'a>(
+                &'a self,
+                _ctx: &'a HookRunContext<'a>,
+                _config: &'a RunConfig,
+                _original: RunOriginal<'a>,
+            ) -> RunHookFuture<'a> {
+                Box::pin(async { Err(ToolError::validation("hook rejected the run")) })
+            }
+        }
+
+        struct MustNotRun;
+        impl RunHook for MustNotRun {
+            fn hook<'a>(
+                &'a self,
+                _ctx: &'a HookRunContext<'a>,
+                _config: &'a RunConfig,
+                _original: RunOriginal<'a>,
+            ) -> RunHookFuture<'a> {
+                panic!("later hooks must not run after a hook error");
+            }
+        }
+
+        struct PanicRun;
+        impl RunExecutor for PanicRun {
+            fn execute<'a>(
+                &'a self,
+                _ctx: &'a HookRunContext<'a>,
+                _config: RunConfig,
+            ) -> RunHookFuture<'a> {
+                panic!("executor must not run after a hook error");
+            }
+        }
+
+        let hooks = crate::hooks::builder::HookSetBuilder::new()
+            .run_hook(FailingHook)
+            .run_hook(MustNotRun)
+            .build();
+        let ctx = HookRunContext {
+            agent_name: "coder",
+            run_id: "r1",
+            model_name: "gpt-4o",
+        };
+        let result = hooks
+            .dispatch_run(&ctx, RunConfig::default(), &PanicRun)
+            .await;
+        assert!(matches!(result, Err(ToolError::Validation { .. })));
     }
 
     #[tokio::test]
@@ -687,7 +967,7 @@ mod tests {
             fn hook<'a>(
                 &'a self,
                 _ctx: &'a HookRunContext<'a>,
-                _config: RunConfig,
+                _config: &'a RunConfig,
                 _original: RunOriginal<'a>,
             ) -> RunHookFuture<'a> {
                 Box::pin(async {
@@ -744,12 +1024,12 @@ mod tests {
             fn hook<'a>(
                 &'a self,
                 ctx: &'a HookRunContext<'a>,
-                config: RunConfig,
+                _config: &'a RunConfig,
                 original: RunOriginal<'a>,
             ) -> RunHookFuture<'a> {
                 LOG.lock().unwrap().push("first-before".into());
                 Box::pin(async move {
-                    let output = original.call(ctx, config).await?;
+                    let output = original.call(ctx).await?;
                     LOG.lock().unwrap().push("first-after".into());
                     Ok(output)
                 })
@@ -760,12 +1040,12 @@ mod tests {
             fn hook<'a>(
                 &'a self,
                 ctx: &'a HookRunContext<'a>,
-                config: RunConfig,
+                _config: &'a RunConfig,
                 original: RunOriginal<'a>,
             ) -> RunHookFuture<'a> {
                 LOG.lock().unwrap().push("second-before".into());
                 Box::pin(async move {
-                    let output = original.call(ctx, config).await?;
+                    let output = original.call(ctx).await?;
                     LOG.lock().unwrap().push("second-after".into());
                     Ok(output)
                 })
@@ -989,10 +1269,10 @@ mod tests {
             fn hook<'a>(
                 &'a self,
                 ctx: &'a HookRunContext<'a>,
-                config: RunConfig,
+                _config: &'a RunConfig,
                 original: RunOriginal<'a>,
             ) -> RunHookFuture<'a> {
-                original.call(ctx, config)
+                original.call(ctx)
             }
         }
         let hooks = HookSet::builder().run_hook(NoopRun).build();

@@ -32,8 +32,11 @@
 //! registered hook is outermost, the last one sits directly on the
 //! real tool.
 //!
-//! Next: see [`RunHook`] for the whole-run intercept point.
+//! Next: see [`RunHook`] for the whole-run intercept point. Config
+//! changes belong to [`RunConfigHook`], the one run-level hook
+//! point that fires on both run paths.
 //!
+//! [`RunConfigHook`]: crate::hooks::RunConfigHook
 //! [`RunHook`]: crate::hooks::RunHook
 
 use crate::{ToolOutput, ToolResult};
