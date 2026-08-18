@@ -10,8 +10,6 @@
 //! [`RunEventHook`] sees each streamed event before publication:
 //! observe, rewrite, or suppress. It fires only on the streaming
 //! path; the run boundary hook [`RunHook`] fires only on `run()`.
-//! Config hooks are the exception: [`RunConfigHook`] fires on both
-//! paths, amending the run config before the first event.
 //!
 //! # Transcript distillation
 //!
@@ -26,7 +24,6 @@
 //! [`RunEvent`] is `#[non_exhaustive]`: variants may be appended
 //! without a breaking release. Consumers match it with a wildcard arm.
 //!
-//! [`RunConfigHook`]: crate::hooks::RunConfigHook
 //! [`RunHook`]: crate::hooks::RunHook
 
 use crate::ToolError;
