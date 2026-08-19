@@ -137,3 +137,8 @@ required-features = ["mock"]
 name = "serdesai-tool-chain"
 path = "examples/hooks/tool/serdesai-tool-chain.rs"
 required-features = ["mock"]
+
+[[example]]
+name = "serdesai-compact-hook"
+path = "examples/hooks/compact/serdesai-compact-hook.rs"
+required-features = ["mock"]

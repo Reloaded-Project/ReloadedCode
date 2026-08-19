@@ -64,6 +64,26 @@ Hooks let your code see or change what an agent does.
     second is registered via `shared_tool_hook`.
   - `cargo run --example serdesai-tool-chain -p reloaded-code-serdesai --features mock`
 
+## Compact hooks
+
+- `CompactHook` trait
+  - Fires at a step boundary once a request's estimated tokens pass
+    three quarters of the model's context window.
+  - Inspect or rewrite the history, call `original` to run the default
+    summarization, then inspect the result.
+  - Skip `original` to apply your own summary, or cancel the attempt
+    and keep the history unchanged.
+
+### Example programs
+
+- serdesai-compact-hook
+  - `CompactHook` that skips `original` on overflow: instead of the
+    default summarization it applies a local compaction (leading system
+    entries kept, the rest replaced by one summary note) and returns its
+    own `CompactResult`; the streamed `ContextCompressed` event reports
+    the hook's strategy and counts.
+  - `cargo run --example serdesai-compact-hook -p reloaded-code-serdesai --features mock`
+
 ## Shared code
 
 `shared.rs` holds common setup: mock `ModelCatalog`, dummy credentials, `build_agent_context`, `mock_model`, and agent config fixtures. Each example pulls it in with `#[path = "../shared.rs"] mod shared;`. `shared.rs` is not a standalone example.

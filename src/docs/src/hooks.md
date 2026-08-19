@@ -312,6 +312,92 @@ Full example: [serdesai-run-event-hook] rewrites text deltas to
 uppercase and suppresses the output-ready milestone
 (`cargo run --example serdesai-run-event-hook -p reloaded-code-serdesai --features mock`).
 
+### Intercept context compaction
+
+Compaction shrinks the run's history when it grows too large: older
+messages are summarized while a recent window is kept. A `CompactHook`
+intercepts each compaction attempt. With no compact hooks registered,
+no compaction runs.
+
+Compaction fires at a step boundary: once a request's estimated tokens
+pass three quarters of the model's context window, the hook chain runs
+with the full history before the model serves the request.
+
+Code before `original` sees every entry and may rewrite it; the default
+compaction then summarizes the rewritten history through the run's
+model. Skipping `original` supplies your own result or cancels the
+attempt.
+
+This hook rewrites oversized tool outputs before the default
+summarization consumes them:
+
+```rust
+use reloaded_code_core::{
+    CompactHook, CompactHookFuture, CompactMessage, CompactOriginal,
+    HookRunContext, HookSet, RunMessageRole,
+};
+
+struct TrimToolNoise;
+
+impl CompactHook for TrimToolNoise {
+    fn hook<'a>(
+        &'a self,
+        ctx: &'a HookRunContext<'a>,
+        mut messages: Vec<CompactMessage>,
+        original: CompactOriginal<'a>,
+    ) -> CompactHookFuture<'a> {
+        Box::pin(async move {
+            for entry in &mut messages {
+                if entry.role() == RunMessageRole::Tool && entry.text().len() > 200 {
+                    entry.set_text("[tool output trimmed]");
+                }
+            }
+            original.call(ctx, messages).await
+        })
+    }
+}
+
+let hooks = HookSet::builder()
+    .compact_hook(TrimToolNoise)
+    .build();
+```
+
+Entries are `CompactMessage` views: a role plus text. Mutating a view
+rebuilds that entry; untouched entries pass through with everything
+else they carry intact.
+
+Skip `original` to avoid the default summarization entirely. Return
+your own `CompactResult` and history, or return
+`CompactOutcome::Cancelled` to keep the history unchanged:
+
+```rust
+// Inside CompactHook::hook, skipping original:
+let result = CompactResult {
+    summary: "earlier turns summarized locally".into(),
+    first_kept_entry_id: None,
+    tokens_before: 4_000,
+    tokens_after: 120,
+    strategy: "local".into(),
+    messages_before: 12,
+    messages_after: 3,
+};
+let history = vec![CompactMessage::new(
+    RunMessageRole::System,
+    "Summary of the earlier conversation.",
+)];
+Ok((CompactOutcome::Compacted(result), history))
+```
+
+Each applied compaction publishes one `RunEvent::ContextCompressed` on
+`run_stream()`, carrying the result's token counts, strategy, and
+message counts. `run()` compacts the history too, but has no event
+surface. A failed summarization aborts the attempt: the history stays
+unchanged and the run continues.
+
+Full example: [serdesai-compact-hook] skips `original` and applies a
+local compaction
+(`cargo run --example serdesai-compact-hook -p reloaded-code-serdesai --features mock`).
+
 ## How tool hooks stack
 
 This diagram assumes you register two hooks. If you set no hooks, the
@@ -379,3 +465,4 @@ passes `HookSet::default()`.
 [serdesai-run-config-hook]: https://github.com/Reloaded-Project/ReloadedCode/blob/main/src/reloaded-code-serdesai/examples/hooks/run/serdesai-run-config-hook.rs
 [serdesai-run-hook]: https://github.com/Reloaded-Project/ReloadedCode/blob/main/src/reloaded-code-serdesai/examples/hooks/run/serdesai-run-hook.rs
 [serdesai-run-event-hook]: https://github.com/Reloaded-Project/ReloadedCode/blob/main/src/reloaded-code-serdesai/examples/hooks/run/serdesai-run-event-hook.rs
+[serdesai-compact-hook]: https://github.com/Reloaded-Project/ReloadedCode/blob/main/src/reloaded-code-serdesai/examples/hooks/compact/serdesai-compact-hook.rs
