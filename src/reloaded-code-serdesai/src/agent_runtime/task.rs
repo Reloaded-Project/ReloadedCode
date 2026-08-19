@@ -10,6 +10,7 @@
 #[cfg(not(all(feature = "linux-bubblewrap", target_os = "linux")))]
 use super::build::Profile;
 use super::build::{AgentBuildError, attach_standard_tools, prepare_build};
+use super::compact::{CompactModel, CompactionRecords};
 use super::stream_events::RunEventStream;
 use crate::task::TaskHandle;
 use futures::Stream;
@@ -59,12 +60,22 @@ pub struct AgentBuildContext<C: CredentialLookup + Send + Sync + 'static = Crede
 ///   stream starts, then each mapped [`RunEvent`] passes the run-event
 ///   hook chain.
 ///
+/// With compact hooks registered, the built agent's model also runs
+/// step-boundary context compaction: [`Self::run_stream`] publishes
+/// each applied compaction as a [`RunEvent::ContextCompressed`],
+/// while [`Self::run`] keeps it as an internal history effect.
+///
 /// [`RunConfigHook`]: reloaded_code_core::hooks::RunConfigHook
+/// [`RunEvent`]: reloaded_code_core::hooks::RunEvent
+/// [`RunEvent::ContextCompressed`]: reloaded_code_core::hooks::RunEvent::ContextCompressed
 pub struct HookedAgent {
     inner: Agent<(), String>,
     hooks: HookSet,
     agent_name: String,
     model_name: String,
+    /// Recorded compaction outcomes for stream publication, present
+    /// when the inner agent's model runs context compaction.
+    compaction: Option<CompactionRecords>,
 }
 
 /// Result type returned by `HookedAgent::run`. Provides `.output()` and
@@ -319,12 +330,14 @@ impl HookedAgent {
         hooks: HookSet,
         agent_name: String,
         model_name: String,
+        compaction: Option<CompactionRecords>,
     ) -> Self {
         Self {
             inner,
             hooks,
             agent_name,
             model_name,
+            compaction,
         }
     }
 
@@ -453,6 +466,10 @@ impl HookedAgent {
     /// - **Run**: [`RunHook`][run-hook]s never fire here; they fire
     ///   only on [`Self::run`], because dispatching them would buffer
     ///   the whole run before the first event.
+    /// - **Compact**: when compact hooks are registered, each applied
+    ///   compaction publishes one [`RunEvent::ContextCompressed`]
+    ///   through the run-event chain, after the compacted step's
+    ///   `ContextInfo` and before that step's content.
     ///
     /// # Errors
     ///
@@ -471,6 +488,7 @@ impl HookedAgent {
     /// [event-hook]: reloaded_code_core::hooks::RunEventHook
     /// [run-hook]: reloaded_code_core::hooks::RunHook
     /// [config-hook]: reloaded_code_core::hooks::RunConfigHook
+    /// [`RunEvent::ContextCompressed`]: reloaded_code_core::hooks::RunEvent::ContextCompressed
     pub async fn run_stream(
         &self,
         prompt: impl Into<serdes_ai::core::UserContent>,
@@ -489,6 +507,7 @@ impl HookedAgent {
                 &self.hooks,
                 &self.agent_name,
                 &self.model_name,
+                self.compaction.as_ref(),
             )));
         }
 
@@ -529,6 +548,7 @@ impl HookedAgent {
             &self.hooks,
             &self.agent_name,
             &self.model_name,
+            self.compaction.as_ref(),
         )))
     }
 }
@@ -728,6 +748,21 @@ where
         .unwrap_or_else(|| prepared.model().clone());
     #[cfg(not(any(test, feature = "mock")))]
     let model = prepared.model().clone();
+    let hooks = context.runtime().hooks().clone();
+    let model_name = prepared.model().name().to_string();
+    // Compact hooks wrap the model, so every step request passes the
+    // overflow check and compact chain before the model serves it.
+    // With no compact hooks the agent keeps its model untouched.
+    let (model, compaction) = if hooks.compact_hooks_is_empty() {
+        (model, None)
+    } else {
+        let (wrapped, records) =
+            CompactModel::new(model, hooks.clone(), name.to_owned(), model_name.clone());
+        (
+            Arc::new(wrapped) as serdes_ai_models::BoxedModel,
+            Some(records),
+        )
+    };
     let builder = AgentBuilder::<(), String>::from_arc(model);
     // Create a TaskHandle for delegation if Task tool is attached later.
     let task_handle = TaskHandle::new(context.clone(), current_depth);
@@ -747,9 +782,13 @@ where
         context.runtime().hooks(),
     )?;
     let agent = builder.system_prompt(prompt_builder.build()).build();
-    let hooks = context.runtime().hooks().clone();
-    let model_name = prepared.model().name().to_string();
-    Ok(HookedAgent::new(agent, hooks, name.to_string(), model_name))
+    Ok(HookedAgent::new(
+        agent,
+        hooks,
+        name.to_owned(),
+        model_name,
+        compaction,
+    ))
 }
 
 /// Prepends a config-injected head (from [`run_config_head`]) to a

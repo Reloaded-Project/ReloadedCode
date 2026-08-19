@@ -25,6 +25,15 @@
 //! executing a step's tool calls, so [`RunEvent::StepEnd`] closes the
 //! step before its [`RunEvent::ToolExecuted`] items arrive.
 //!
+//! # Repo-initiated compaction events
+//!
+//! When the agent's model runs context compaction (compact hooks
+//! registered), each applied outcome publishes as one
+//! [`RunEvent::ContextCompressed`] ahead of the vendor event that
+//! followed it: after the compacted step's `ContextInfo` and before
+//! that step's content. Injected events pass the run-event chain
+//! like any mapped event.
+//!
 //! The match over [`AgentStreamEvent`] is exhaustive: a new vendor
 //! variant fails compilation here, keeping vendor coupling inside
 //! this module.
@@ -33,6 +42,7 @@
 //! [error]: serdes_ai::agent::AgentRunError
 //! [task]: super::task::HookedAgent::run_stream
 
+use super::compact::{CompactionGate, CompactionRecords, Held};
 use futures::{Stream, StreamExt};
 use reloaded_code_core::hooks::{
     HookSet, RunEvent, RunEventContext, RunMessage, RunMessageRole, RunToolCallSummary,
@@ -70,6 +80,10 @@ pub(super) struct RunEventStream {
     /// `None` when no run-event hooks are registered, so polling maps
     /// and yields directly without hook work.
     dispatch: Option<RunEventDispatch>,
+    /// Compaction-record publication gate, when the agent's model
+    /// runs context compaction. `None` keeps polling on the vendor
+    /// path with no compaction work.
+    compaction: Option<CompactionGate>,
     /// Set once a run-event hook failure was yielded; every later poll
     /// ends the stream.
     terminated: bool,
@@ -90,12 +104,15 @@ impl RunEventStream {
     ///
     /// The stream takes ownership of a hook chain only when one is
     /// registered; an empty chain keeps polling on the direct mapping
-    /// path with no per-event hook work.
+    /// path with no per-event hook work. Recorded compaction outcomes
+    /// from earlier runs on this agent are dropped, so this stream
+    /// publishes only its own.
     pub(super) fn new(
         inner: AgentStream,
         hooks: &HookSet,
         agent_name: &str,
         model_name: &str,
+        compaction: Option<&CompactionRecords>,
     ) -> Self {
         let dispatch = (!hooks.run_event_hooks_is_empty()).then(|| RunEventDispatch {
             hooks: hooks.clone(),
@@ -105,6 +122,7 @@ impl RunEventStream {
         Self {
             inner,
             dispatch,
+            compaction: compaction.map(CompactionGate::new),
             terminated: false,
         }
     }
@@ -118,40 +136,82 @@ impl Stream for RunEventStream {
         if this.terminated {
             return Poll::Ready(None);
         }
-        let Some(dispatch) = this.dispatch.as_ref() else {
-            // Empty chain: identical to the direct mapping path.
-            return match this.inner.poll_next_unpin(cx) {
-                Poll::Ready(Some(Ok(event))) => Poll::Ready(Some(Ok(map_vendor_event(event)))),
-                Poll::Ready(Some(Err(error))) => Poll::Ready(Some(Err(error))),
-                Poll::Ready(None) => Poll::Ready(None),
-                Poll::Pending => Poll::Pending,
-            };
-        };
-        // A suppressed event must not surface, so keep polling until an
-        // event publishes; the surrounding events keep their order.
         loop {
-            match this.inner.poll_next_unpin(cx) {
-                Poll::Pending => return Poll::Pending,
-                Poll::Ready(None) => return Poll::Ready(None),
-                Poll::Ready(Some(Err(error))) => return Poll::Ready(Some(Err(error))),
-                Poll::Ready(Some(Ok(event))) => {
-                    let ctx = RunEventContext {
-                        agent_name: &dispatch.agent_name,
-                        model_name: &dispatch.model_name,
-                    };
-                    match dispatch
-                        .hooks
-                        .dispatch_run_event(&ctx, map_vendor_event(event))
-                    {
-                        Ok(Some(event)) => return Poll::Ready(Some(Ok(event))),
-                        Ok(None) => continue,
-                        Err(error) => {
-                            this.terminated = true;
-                            return Poll::Ready(Some(Err(hook_error_item(error))));
+            // The gate publishes an anchored record ahead of the
+            // vendor event it holds back; see `CompactionGate`.
+            let event = match this.compaction.as_mut().and_then(CompactionGate::take_held) {
+                Some(Held::Record(record)) => record.into_event(),
+                Some(Held::Vendor(stashed)) => {
+                    let event = map_vendor_event(stashed);
+                    this.compaction
+                        .as_mut()
+                        .expect("a held event implies the gate")
+                        .track(&event);
+                    event
+                }
+                None => match this.inner.poll_next_unpin(cx) {
+                    Poll::Pending => return Poll::Pending,
+                    Poll::Ready(None) => return Poll::Ready(None),
+                    Poll::Ready(Some(Err(error))) => return Poll::Ready(Some(Err(error))),
+                    Poll::Ready(Some(Ok(event))) => {
+                        if this
+                            .compaction
+                            .as_ref()
+                            .is_some_and(CompactionGate::anchored_pending)
+                        {
+                            this.compaction
+                                .as_mut()
+                                .expect("anchored_pending implies the gate")
+                                .defer(event);
+                            continue;
                         }
+                        let event = map_vendor_event(event);
+                        if let Some(gate) = this.compaction.as_mut() {
+                            gate.track(&event);
+                        }
+                        event
                     }
+                },
+            };
+            // Empty run-event chain: identical to the direct mapping
+            // path.
+            let Some(dispatch) = this.dispatch.as_ref() else {
+                return Poll::Ready(Some(Ok(event)));
+            };
+            let ctx = RunEventContext {
+                agent_name: &dispatch.agent_name,
+                model_name: &dispatch.model_name,
+            };
+            // A suppressed event must not surface, so keep polling
+            // until an event publishes; the surrounding events keep
+            // their order.
+            match dispatch.hooks.dispatch_run_event(&ctx, event) {
+                Ok(Some(event)) => return Poll::Ready(Some(Ok(event))),
+                Ok(None) => continue,
+                Err(error) => {
+                    this.terminated = true;
+                    return Poll::Ready(Some(Err(hook_error_item(error))));
                 }
             }
+        }
+    }
+}
+
+/// Renders user prompt content as audit text.
+///
+/// Plain text passes through; multi-part prompts are serialized so
+/// image and mixed content stay observable in the transcript. Inline
+/// binary parts collapse to a media type plus byte length placeholder
+/// so payloads never bloat the transcript. Shared with the compaction
+/// wiring, which renders the same view for hooks and summaries.
+pub(super) fn user_content_text(content: UserContent) -> String {
+    match content {
+        UserContent::Text(text) => text,
+        UserContent::Parts(parts) => {
+            // After the map: binary parts are placeholders; text and
+            // URL parts serialize exactly as before.
+            let redacted: Vec<_> = parts.iter().map(redact_binary_part).collect();
+            serde_json::to_string(&redacted).unwrap_or_else(|_| format!("{redacted:?}"))
         }
     }
 }
@@ -247,6 +307,32 @@ fn map_vendor_event(event: AgentStreamEvent) -> RunEvent {
             partial_thinking,
             pending_tools,
         },
+    }
+}
+
+/// Serializes one prompt part for the audit trail.
+///
+/// Text and URL parts keep their JSON shape; binary parts become a
+/// placeholder carrying their media type and byte length.
+fn redact_binary_part(part: &UserContentPart) -> serde_json::Value {
+    let placeholder = |kind: &str, media_type: &str, bytes: usize| serde_json::json!({ "type": kind, "media_type": media_type, "bytes": bytes });
+    match part {
+        UserContentPart::Image {
+            image: ImageContent::Binary(binary),
+        } => placeholder("image", binary.media_type.mime_type(), binary.data.len()),
+        UserContentPart::Audio {
+            audio: AudioContent::Binary(binary),
+        } => placeholder("audio", binary.media_type.mime_type(), binary.data.len()),
+        UserContentPart::Video {
+            video: VideoContent::Binary(binary),
+        } => placeholder("video", binary.media_type.mime_type(), binary.data.len()),
+        UserContentPart::Document {
+            document: DocumentContent::Binary(binary),
+        } => placeholder("document", binary.media_type.mime_type(), binary.data.len()),
+        UserContentPart::File {
+            file: FileContent::Binary(binary),
+        } => placeholder("file", binary.mime_type.as_str(), binary.data.len()),
+        other => serde_json::to_value(other).unwrap_or(serde_json::Value::Null),
     }
 }
 
@@ -399,50 +485,6 @@ fn tool_result_message(tool_call_id: Option<String>, output: String) -> RunMessa
     }
 }
 
-/// Renders user prompt content as audit text.
-///
-/// Plain text passes through; multi-part prompts are serialized so
-/// image and mixed content stay observable in the transcript. Inline
-/// binary parts collapse to a media type plus byte length placeholder
-/// so payloads never bloat the transcript.
-fn user_content_text(content: UserContent) -> String {
-    match content {
-        UserContent::Text(text) => text,
-        UserContent::Parts(parts) => {
-            // After the map: binary parts are placeholders; text and
-            // URL parts serialize exactly as before.
-            let redacted: Vec<_> = parts.iter().map(redact_binary_part).collect();
-            serde_json::to_string(&redacted).unwrap_or_else(|_| format!("{redacted:?}"))
-        }
-    }
-}
-
-/// Serializes one prompt part for the audit trail.
-///
-/// Text and URL parts keep their JSON shape; binary parts become a
-/// placeholder carrying their media type and byte length.
-fn redact_binary_part(part: &UserContentPart) -> serde_json::Value {
-    let placeholder = |kind: &str, media_type: &str, bytes: usize| serde_json::json!({ "type": kind, "media_type": media_type, "bytes": bytes });
-    match part {
-        UserContentPart::Image {
-            image: ImageContent::Binary(binary),
-        } => placeholder("image", binary.media_type.mime_type(), binary.data.len()),
-        UserContentPart::Audio {
-            audio: AudioContent::Binary(binary),
-        } => placeholder("audio", binary.media_type.mime_type(), binary.data.len()),
-        UserContentPart::Video {
-            video: VideoContent::Binary(binary),
-        } => placeholder("video", binary.media_type.mime_type(), binary.data.len()),
-        UserContentPart::Document {
-            document: DocumentContent::Binary(binary),
-        } => placeholder("document", binary.media_type.mime_type(), binary.data.len()),
-        UserContentPart::File {
-            file: FileContent::Binary(binary),
-        } => placeholder("file", binary.mime_type.as_str(), binary.data.len()),
-        other => serde_json::to_value(other).unwrap_or(serde_json::Value::Null),
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -462,12 +504,12 @@ mod tests {
     use reloaded_code_core::{ToolCatalogEntry, ToolCatalogKind, ToolError};
     use rstest::rstest;
     use serde_json::json;
-    use serdes_ai::core::ModelSettings;
     use serdes_ai::core::messages::request::RetryPromptPart;
     use serdes_ai::core::{
         BuiltinToolReturnContent, BuiltinToolReturnPart, SystemPromptPart, ToolReturnPart,
         UserPromptPart,
     };
+    use serdes_ai::core::{FinishReason, ModelSettings, ToolCallPart};
     use serdes_ai_models::{ModelError, ModelProfile};
     use std::sync::{Arc, Mutex};
 
@@ -2005,6 +2047,578 @@ mod tests {
             normalized_events(&plain_events),
             normalized_events(&inert_events),
             "an empty run-event chain must stream the unhooked sequence"
+        );
+    }
+
+    // ========================================================================
+    // Context compaction
+    // ========================================================================
+
+    /// Compact hook that delegates to `original`, standing in for an
+    /// observing hook that never interferes with the attempt.
+    struct PassthroughCompactHook;
+
+    impl reloaded_code_core::hooks::CompactHook for PassthroughCompactHook {
+        fn hook<'a>(
+            &'a self,
+            ctx: &'a HookRunContext<'a>,
+            messages: Vec<reloaded_code_core::hooks::CompactMessage>,
+            original: reloaded_code_core::hooks::CompactOriginal<'a>,
+        ) -> reloaded_code_core::hooks::CompactHookFuture<'a> {
+            original.call(ctx, messages)
+        }
+    }
+
+    /// Compact hook that records each invocation's history texts and
+    /// rewrites the user entry before delegating, so the mutation
+    /// reaches what the default summarization consumes.
+    struct MutatingCompactHook {
+        invocations: Arc<Mutex<Vec<Vec<String>>>>,
+    }
+
+    impl reloaded_code_core::hooks::CompactHook for MutatingCompactHook {
+        fn hook<'a>(
+            &'a self,
+            ctx: &'a HookRunContext<'a>,
+            mut messages: Vec<reloaded_code_core::hooks::CompactMessage>,
+            original: reloaded_code_core::hooks::CompactOriginal<'a>,
+        ) -> reloaded_code_core::hooks::CompactHookFuture<'a> {
+            Box::pin(async move {
+                self.invocations
+                    .lock()
+                    .expect("invocations should not be poisoned")
+                    .push(
+                        messages
+                            .iter()
+                            .map(|entry| entry.text().to_owned())
+                            .collect(),
+                    );
+                if let Some(entry) = messages
+                    .iter_mut()
+                    .find(|entry| entry.role() == RunMessageRole::User)
+                {
+                    entry.set_text("MUTATED PAYLOAD");
+                }
+                original.call(ctx, messages).await
+            })
+        }
+    }
+
+    /// Compact hook that skips `original` and supplies its own result
+    /// and history once the run is long enough to compact; earlier
+    /// over-threshold turns delegate to the default, which cancels
+    /// while nothing is summarizable.
+    struct CustomResultCompactHook;
+
+    impl reloaded_code_core::hooks::CompactHook for CustomResultCompactHook {
+        fn hook<'a>(
+            &'a self,
+            ctx: &'a HookRunContext<'a>,
+            messages: Vec<reloaded_code_core::hooks::CompactMessage>,
+            original: reloaded_code_core::hooks::CompactOriginal<'a>,
+        ) -> reloaded_code_core::hooks::CompactHookFuture<'a> {
+            Box::pin(async move {
+                if messages.len() < 6 {
+                    return original.call(ctx, messages).await;
+                }
+                let history = vec![
+                    reloaded_code_core::hooks::CompactMessage::new(
+                        RunMessageRole::System,
+                        "custom compaction note",
+                    ),
+                    reloaded_code_core::hooks::CompactMessage::new(
+                        RunMessageRole::User,
+                        "continue",
+                    ),
+                ];
+                Ok((
+                    reloaded_code_core::hooks::CompactOutcome::Compacted(
+                        reloaded_code_core::hooks::CompactResult {
+                            summary: "custom summary".into(),
+                            first_kept_entry_id: None,
+                            tokens_before: 4242,
+                            tokens_after: 99,
+                            strategy: "custom".into(),
+                            messages_before: 6,
+                            messages_after: 2,
+                        },
+                    ),
+                    history,
+                ))
+            })
+        }
+    }
+
+    /// Compact hook that skips `original` and cancels the attempt.
+    struct CancellingCompactHook;
+
+    impl reloaded_code_core::hooks::CompactHook for CancellingCompactHook {
+        fn hook<'a>(
+            &'a self,
+            _ctx: &'a HookRunContext<'a>,
+            messages: Vec<reloaded_code_core::hooks::CompactMessage>,
+            _original: reloaded_code_core::hooks::CompactOriginal<'a>,
+        ) -> reloaded_code_core::hooks::CompactHookFuture<'a> {
+            Box::pin(async move {
+                Ok((
+                    reloaded_code_core::hooks::CompactOutcome::Cancelled,
+                    messages,
+                ))
+            })
+        }
+    }
+
+    /// Run-event hook recording the variant name of every published
+    /// event in order.
+    struct VariantRecorder {
+        variants: Arc<Mutex<Vec<&'static str>>>,
+    }
+
+    impl RunEventHook for VariantRecorder {
+        fn hook(&self, _ctx: &RunEventContext<'_>, event: RunEvent) -> RunEventHookResult {
+            let variant = match &event {
+                RunEvent::StepStart { .. } => "StepStart",
+                RunEvent::ContextInfo { .. } => "ContextInfo",
+                RunEvent::ContextCompressed { .. } => "ContextCompressed",
+                RunEvent::TextDelta { .. } => "TextDelta",
+                RunEvent::StepEnd { .. } => "StepEnd",
+                RunEvent::RunComplete { .. } => "RunComplete",
+                _ => "other",
+            };
+            self.variants
+                .lock()
+                .expect("variants should not be poisoned")
+                .push(variant);
+            Ok(Some(event))
+        }
+    }
+
+    /// One request the overflow model served: whether it was the
+    /// compaction summarization request, and the text of the user
+    /// prompts it carried.
+    struct ServedRequest {
+        summary_request: bool,
+        user_text: String,
+    }
+
+    /// Marker inside the oversized prompt every overflow test sends.
+    const BIG_PROMPT_MARKER: &str = "oversized payload";
+
+    /// Builds the oversized prompt every overflow test sends.
+    fn big_prompt() -> String {
+        format!("{BIG_PROMPT_MARKER}. {}", "filler sentence. ".repeat(400))
+    }
+
+    /// Builds a scripted model with a `context_window` of `limit`
+    /// tokens, recording every request it serves. The first
+    /// `ping_rounds` normal requests call `ping`; later ones answer
+    /// with text. Requests carrying the compaction summarization
+    /// system prompt answer `"folded history"`.
+    fn overflow_scripted_model(
+        limit: u64,
+        ping_rounds: usize,
+    ) -> (FunctionModel, Arc<Mutex<Vec<ServedRequest>>>) {
+        let served: Arc<Mutex<Vec<ServedRequest>>> = Arc::new(Mutex::new(Vec::new()));
+        let seen = Arc::clone(&served);
+        let model = FunctionModel::new(move |messages, _settings| {
+            let summary_request = messages.iter().any(|message| {
+                message.system_prompts().any(|part| {
+                    part.content == crate::agent_runtime::compact::SUMMARY_SYSTEM_PROMPT
+                })
+            });
+            let user_text = messages
+                .iter()
+                .flat_map(|message| message.user_prompts())
+                .map(|part| part.content.as_text().unwrap_or_default().to_owned())
+                .collect::<Vec<_>>()
+                .join("\n");
+            seen.lock()
+                .expect("served requests should not be poisoned")
+                .push(ServedRequest {
+                    summary_request,
+                    user_text,
+                });
+            if summary_request {
+                return ModelResponse::text("folded history");
+            }
+            let normal_seen = seen
+                .lock()
+                .expect("served requests should not be poisoned")
+                .iter()
+                .filter(|request| !request.summary_request)
+                .count();
+            if normal_seen <= ping_rounds {
+                ModelResponse::with_parts(vec![ModelResponsePart::ToolCall(
+                    ToolCallPart::new("ping", json!({"target": "example.com"}))
+                        .with_tool_call_id(format!("call_mock_{normal_seen}")),
+                )])
+                .with_finish_reason(FinishReason::ToolCall)
+            } else {
+                ModelResponse::text("after the tools")
+            }
+        })
+        .with_profile(ModelProfile::new().with_context_window(limit));
+        (model, served)
+    }
+
+    /// Splits served requests into (normal, summary) request lists.
+    fn split_served(served: &Arc<Mutex<Vec<ServedRequest>>>) -> (Vec<ServedRequest>, usize) {
+        let served = served.lock().expect("served requests not poisoned");
+        let normal: Vec<ServedRequest> = served
+            .iter()
+            .filter(|request| !request.summary_request)
+            .map(|request| ServedRequest {
+                summary_request: request.summary_request,
+                user_text: request.user_text.clone(),
+            })
+            .collect();
+        let summaries = served
+            .iter()
+            .filter(|request| request.summary_request)
+            .count();
+        (normal, summaries)
+    }
+
+    #[tokio::test]
+    async fn run_stream_emits_context_compressed_between_context_info_and_content() {
+        let (model, served) = overflow_scripted_model(1024, 2);
+        let variants = Arc::new(Mutex::new(Vec::new()));
+        let hooks = HookSet::builder()
+            .compact_hook(PassthroughCompactHook)
+            .run_event_hook(VariantRecorder {
+                variants: Arc::clone(&variants),
+            })
+            .build();
+        let hooked = streamed_agent_with_ping_tool(Streamed::new(model), hooks);
+
+        let events = collect_events(&hooked, big_prompt()).await;
+        assert!(
+            matches!(events.last(), Some(RunEvent::RunComplete { .. })),
+            "the stream should complete: {events:?}"
+        );
+
+        // Exactly one compaction: the overflowing third request.
+        let compressed: Vec<usize> = events
+            .iter()
+            .enumerate()
+            .filter_map(|(index, event)| {
+                matches!(event, RunEvent::ContextCompressed { .. }).then_some(index)
+            })
+            .collect();
+        assert_eq!(compressed.len(), 1, "one compaction event: {events:?}");
+        let compressed = compressed[0];
+
+        // The event's fields mirror the compaction result: the two
+        // summarized entries collapsed into one summary entry.
+        let RunEvent::ContextCompressed {
+            original_tokens,
+            compressed_tokens,
+            strategy,
+            messages_before,
+            messages_after,
+        } = &events[compressed]
+        else {
+            unreachable!("filtered to ContextCompressed");
+        };
+        assert_eq!(strategy, "summarize");
+        assert_eq!(*messages_before, 6);
+        assert_eq!(*messages_after, 6);
+        assert!(
+            *original_tokens > *compressed_tokens && *compressed_tokens > 0,
+            "compaction must shrink the estimate: {original_tokens} -> {compressed_tokens}"
+        );
+
+        // Deterministic ordering: after the third step's ContextInfo,
+        // before that step's first text delta.
+        let info_positions: Vec<usize> = events
+            .iter()
+            .enumerate()
+            .filter_map(|(index, event)| {
+                matches!(event, RunEvent::ContextInfo { .. }).then_some(index)
+            })
+            .collect();
+        assert_eq!(info_positions.len(), 3, "one context info per step");
+        let third_info = info_positions[2];
+        let first_delta_after = events[third_info + 1..]
+            .iter()
+            .position(|event| matches!(event, RunEvent::TextDelta { .. }))
+            .expect("the final step should stream text")
+            + third_info
+            + 1;
+        assert!(
+            third_info < compressed && compressed < first_delta_after,
+            "ContextCompressed must land between ContextInfo and the step content"
+        );
+
+        // Injected events pass the run-event chain like any mapped
+        // event, in publication order.
+        let variants = variants.lock().expect("variants not poisoned");
+        let third_info_seen = variants
+            .iter()
+            .rposition(|variant| *variant == "ContextInfo")
+            .expect("the chain must see the third ContextInfo");
+        let compressed_seen = variants
+            .iter()
+            .position(|variant| *variant == "ContextCompressed")
+            .expect("the chain must see the injected event");
+        assert!(
+            third_info_seen < compressed_seen,
+            "the chain observes the injected event after the ContextInfo: {variants:?}"
+        );
+
+        // The compacted request served by the model carries the
+        // summary instead of the oversized prompt.
+        let (normal, summaries) = split_served(&served);
+        assert_eq!(summaries, 1, "one summarization request");
+        assert_eq!(normal.len(), 3, "three normal requests");
+        assert!(
+            normal[2].user_text.is_empty(),
+            "the compacted request keeps no user prompt: {}",
+            normal[2].user_text
+        );
+        assert!(
+            !normal[2].user_text.contains(BIG_PROMPT_MARKER),
+            "the oversized prompt must not reach the model uncompacted"
+        );
+    }
+
+    #[tokio::test]
+    async fn run_stream_compact_hook_mutation_reaches_default_summarization() {
+        let (model, served) = overflow_scripted_model(1024, 2);
+        let invocations = Arc::new(Mutex::new(Vec::new()));
+        let hooks = HookSet::builder()
+            .compact_hook(MutatingCompactHook {
+                invocations: Arc::clone(&invocations),
+            })
+            .build();
+        let hooked = streamed_agent_with_ping_tool(Streamed::new(model), hooks);
+
+        let events = collect_events(&hooked, big_prompt()).await;
+        assert!(
+            matches!(events.last(), Some(RunEvent::RunComplete { .. })),
+            "the stream should complete: {events:?}"
+        );
+
+        // The chain dispatches on every over-threshold step, and the
+        // hook observes the live history each time.
+        let invocations = invocations.lock().expect("invocations not poisoned");
+        let counts: Vec<usize> = invocations.iter().map(Vec::len).collect();
+        assert_eq!(
+            counts,
+            vec![2, 4, 6],
+            "the hook must observe the full history each overflowing step: {invocations:?}"
+        );
+        assert!(
+            invocations[2]
+                .iter()
+                .any(|text| text.contains(BIG_PROMPT_MARKER)),
+            "the history must carry the oversized prompt"
+        );
+        drop(invocations);
+
+        // The default summarization consumed the mutated entry, not
+        // the original text.
+        let (normal, summaries) = split_served(&served);
+        assert_eq!(summaries, 1, "one summarization request");
+        let summary_request = served
+            .lock()
+            .expect("served requests not poisoned")
+            .iter()
+            .find(|request| request.summary_request)
+            .expect("the summarization request must be recorded")
+            .user_text
+            .clone();
+        assert!(
+            summary_request.contains("MUTATED PAYLOAD"),
+            "the mutation must reach the summarizer: {summary_request}"
+        );
+        assert!(
+            !summary_request.contains(BIG_PROMPT_MARKER),
+            "the replaced text must not be summarized: {summary_request}"
+        );
+        assert_eq!(normal.len(), 3);
+    }
+
+    #[tokio::test]
+    async fn run_stream_custom_compact_result_skips_default_summarization() {
+        let (model, served) = overflow_scripted_model(1024, 2);
+        let hooks = HookSet::builder()
+            .compact_hook(CustomResultCompactHook)
+            .build();
+        let hooked = streamed_agent_with_ping_tool(Streamed::new(model), hooks);
+
+        let events = collect_events(&hooked, big_prompt()).await;
+        assert!(
+            matches!(events.last(), Some(RunEvent::RunComplete { .. })),
+            "the stream should complete: {events:?}"
+        );
+
+        // The event reports the custom result's fields, proving the
+        // custom outcome surfaced rather than a default one.
+        let compressed = events
+            .iter()
+            .find(|event| matches!(event, RunEvent::ContextCompressed { .. }))
+            .expect("the custom compaction must publish an event");
+        assert_eq!(
+            compressed,
+            &RunEvent::ContextCompressed {
+                original_tokens: 4242,
+                compressed_tokens: 99,
+                strategy: "custom".into(),
+                messages_before: 6,
+                messages_after: 2,
+            }
+        );
+
+        // The default summarization never ran, and the served request
+        // carries the custom history.
+        let (normal, summaries) = split_served(&served);
+        assert_eq!(summaries, 0, "no summarization request may run");
+        assert_eq!(normal.len(), 3);
+        assert!(
+            normal[2].user_text.contains("continue")
+                && !normal[2].user_text.contains(BIG_PROMPT_MARKER),
+            "the served request must carry the custom history: {}",
+            normal[2].user_text
+        );
+    }
+
+    #[tokio::test]
+    async fn run_stream_cancelled_compaction_leaves_history_unchanged() {
+        let (model, served) = overflow_scripted_model(1024, 2);
+        let hooks = HookSet::builder()
+            .compact_hook(CancellingCompactHook)
+            .build();
+        let hooked = streamed_agent_with_ping_tool(Streamed::new(model), hooks);
+
+        let events = collect_events(&hooked, big_prompt()).await;
+        assert!(
+            matches!(events.last(), Some(RunEvent::RunComplete { .. })),
+            "the run must continue after a cancelled attempt: {events:?}"
+        );
+        assert!(
+            !events
+                .iter()
+                .any(|event| matches!(event, RunEvent::ContextCompressed { .. })),
+            "a cancelled attempt must publish no event"
+        );
+
+        // The overflowing request was served unchanged: the history
+        // still carries the oversized prompt, verbatim.
+        let (normal, summaries) = split_served(&served);
+        assert_eq!(summaries, 0, "no summarization request may run");
+        assert_eq!(normal.len(), 3);
+        assert!(
+            normal[2].user_text.contains(BIG_PROMPT_MARKER),
+            "a cancelled attempt must leave the history unchanged: {}",
+            normal[2].user_text
+        );
+    }
+
+    #[tokio::test]
+    async fn run_stream_without_compact_hooks_streams_unchanged_on_overflow() {
+        // Same overflowing script twice: once with no hooks at all,
+        // once with a non-empty hook set that registers no compact
+        // hooks, so the compaction gate is the only difference.
+        let (plain_model, plain_served) = overflow_scripted_model(1024, 2);
+        let plain =
+            streamed_agent_with_ping_tool(Streamed::new(plain_model), HookSet::builder().build());
+        let (inert_model, inert_served) = overflow_scripted_model(1024, 2);
+        let inert = streamed_agent_with_ping_tool(
+            Streamed::new(inert_model),
+            HookSet::builder()
+                .run_hook(DispatchRecorder {
+                    dispatches: Arc::new(Mutex::new(Vec::new())),
+                })
+                .build(),
+        );
+
+        let plain_events = collect_events(&plain, big_prompt()).await;
+        let inert_events = collect_events(&inert, big_prompt()).await;
+
+        assert_eq!(
+            normalized_events(&plain_events),
+            normalized_events(&inert_events),
+            "registering other hooks must not change the overflowing stream"
+        );
+        assert!(
+            !plain_events
+                .iter()
+                .any(|event| matches!(event, RunEvent::ContextCompressed { .. })),
+            "no compaction event may appear without compact hooks"
+        );
+        for served in [&plain_served, &inert_served] {
+            let (normal, summaries) = split_served(served);
+            assert_eq!(summaries, 0, "no summarization may run");
+            assert_eq!(normal.len(), 3);
+            assert!(
+                normal[2].user_text.contains(BIG_PROMPT_MARKER),
+                "the overflowing request must be served unchanged"
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn run_compacts_overflowing_history_internally_without_event_surface() {
+        // The non-streaming path has no event surface by design: the
+        // compaction is observable only as the history the model
+        // serves.
+        let (model, served) = overflow_scripted_model(1024, 2);
+        let hooks = HookSet::builder()
+            .compact_hook(PassthroughCompactHook)
+            .build();
+        let hooked = streamed_agent_with_ping_tool(model, hooks);
+
+        let result = hooked
+            .run(big_prompt(), ())
+            .await
+            .expect("run should complete");
+
+        let (normal, summaries) = split_served(&served);
+        assert_eq!(summaries, 1, "one summarization request");
+        assert_eq!(normal.len(), 3);
+        assert!(
+            !normal[2].user_text.contains(BIG_PROMPT_MARKER),
+            "the run path must serve the compacted history"
+        );
+        assert!(
+            !result.output().is_empty(),
+            "the run should still produce output"
+        );
+    }
+
+    #[tokio::test]
+    async fn run_stream_amortizes_summarization_over_repeated_overflow_steps() {
+        // Six ping rounds keep every step past the threshold
+        // overflowing: each step applies and publishes one
+        // compaction, but the summary memoization pays one model
+        // request per tail-budget window, not per step.
+        let (model, served) = overflow_scripted_model(1024, 6);
+        let hooks = HookSet::builder()
+            .compact_hook(PassthroughCompactHook)
+            .build();
+        let hooked = streamed_agent_with_ping_tool(Streamed::new(model), hooks);
+
+        let events = collect_events(&hooked, big_prompt()).await;
+        assert!(
+            matches!(events.last(), Some(RunEvent::RunComplete { .. })),
+            "the stream should complete: {events:?}"
+        );
+
+        let (normal, summaries) = split_served(&served);
+        assert_eq!(normal.len(), 7, "one request per scripted step");
+        assert_eq!(
+            summaries, 3,
+            "summarization must amortize to one request per tail budget, \
+             not one per over-threshold step (5)"
+        );
+        let compressed = events
+            .iter()
+            .filter(|event| matches!(event, RunEvent::ContextCompressed { .. }))
+            .count();
+        assert_eq!(
+            compressed, 5,
+            "every over-threshold step from the third on applies one compaction"
         );
     }
 }

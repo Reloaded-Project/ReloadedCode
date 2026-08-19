@@ -21,6 +21,7 @@ pub use task::{AgentBuildContext, HookedAgent, HookedAgentRunResult};
 pub(crate) use task::{TaskBuildContext, build_agent};
 
 mod build;
+mod compact;
 mod model;
 mod provider_bridge;
 mod stream_events;
