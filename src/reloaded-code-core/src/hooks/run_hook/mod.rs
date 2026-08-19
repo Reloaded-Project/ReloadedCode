@@ -38,6 +38,17 @@ use std::future::Future;
 use std::pin::Pin;
 use std::sync::Arc;
 
+/// Context given to hook run lifecycle events.
+#[derive(Debug)]
+pub struct HookRunContext<'a> {
+    /// Name of the agent running the hook.
+    pub agent_name: &'a str,
+    /// Unique identifier for the current run.
+    pub run_id: &'a str,
+    /// Name of the model being used for this run.
+    pub model_name: &'a str,
+}
+
 /// Boxed future returned by [`RunConfigHook::configure`].
 pub type RunConfigHookFuture<'a> = Pin<Box<dyn Future<Output = RunResult<()>> + Send + 'a>>;
 
@@ -57,20 +68,6 @@ pub struct RunOriginal<'a> {
     index: usize,
     real_run: &'a dyn RunExecutor,
     config: &'a RunConfig,
-}
-
-/// Compact event callback. Name preserved - compact is its own concept, distinct from "run".
-pub type SessionCompactFn = for<'a> fn(&'a HookRunContext<'a>);
-
-/// Context given to hook run lifecycle events.
-#[derive(Debug)]
-pub struct HookRunContext<'a> {
-    /// Name of the agent running the hook.
-    pub agent_name: &'a str,
-    /// Unique identifier for the current run.
-    pub run_id: &'a str,
-    /// Name of the model being used for this run.
-    pub model_name: &'a str,
 }
 
 /// Run config: system prompt, preamble messages, model settings.

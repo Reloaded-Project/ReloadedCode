@@ -1,23 +1,22 @@
-//! HookSet — container and dispatch for all registered hooks and lifecycle events.
+//! HookSet - container and dispatch for all registered hooks.
 
 use crate::hooks::{
+    CompactExecutor, CompactHook, CompactHookFuture, CompactMessage, CompactOriginal,
     HookRunContext, RunConfig, RunConfigHook, RunEvent, RunEventContext, RunEventHook,
     RunEventHookResult, RunExecutor, RunHook, RunHookFuture, RunOriginal, RunResult,
-    SessionCompactFn, ToolCallContext, ToolExecutor, ToolHook, ToolHookFuture, ToolOriginal,
-    ToolRequest, INLINE_CAP,
+    ToolCallContext, ToolExecutor, ToolHook, ToolHookFuture, ToolOriginal, ToolRequest,
 };
 use std::fmt;
 use std::sync::Arc;
-use tinyvec::TinyVec;
 
-/// All registered hooks and lifecycle events, stored per point.
+/// All registered hooks, stored per point.
 #[derive(Clone, Default)]
 pub struct HookSet {
     pub(super) tool_hooks: Vec<Arc<dyn ToolHook>>,
     pub(super) run_config_hooks: Vec<Arc<dyn RunConfigHook>>,
     pub(super) run_hooks: Vec<Arc<dyn RunHook>>,
     pub(super) run_event_hooks: Vec<Arc<dyn RunEventHook>>,
-    pub(super) session_compact: TinyVec<[Option<SessionCompactFn>; INLINE_CAP]>,
+    pub(super) compact_hooks: Vec<Arc<dyn CompactHook>>,
 }
 
 impl HookSet {
@@ -29,7 +28,7 @@ impl HookSet {
             && self.run_config_hooks.is_empty()
             && self.run_hooks.is_empty()
             && self.run_event_hooks.is_empty()
-            && self.session_compact.is_empty()
+            && self.compact_hooks.is_empty()
     }
 
     /// Returns `true` if no tool hooks are registered.
@@ -58,6 +57,13 @@ impl HookSet {
     #[must_use]
     pub fn run_event_hooks_is_empty(&self) -> bool {
         self.run_event_hooks.is_empty()
+    }
+
+    /// Returns `true` if no compact hooks are registered.
+    #[inline]
+    #[must_use]
+    pub fn compact_hooks_is_empty(&self) -> bool {
+        self.compact_hooks.is_empty()
     }
 
     /// Returns registered tool hooks in dispatch order.
@@ -191,11 +197,37 @@ impl HookSet {
         Ok(Some(event))
     }
 
-    /// Dispatches compact events. Name preserved — compact is its own concept, distinct from "run".
+    /// Dispatches one compaction attempt through the compact hook chain.
+    ///
+    /// Hooks run in registration order over `history`; the default
+    /// compaction runs at the chain end with the mutated history. If
+    /// no compact hooks are registered, the default compaction runs
+    /// directly without entering the chain.
+    ///
+    /// Returns the chain's outcome together with the history to
+    /// apply: on [`CompactOutcome::Compacted`] apply the history; on
+    /// [`CompactOutcome::Cancelled`] leave the run's history
+    /// unchanged.
+    ///
+    /// # Errors
+    /// Returns [`ToolError`] if any hook in the chain or the default
+    /// compaction returns an error; dispatch stops at the first
+    /// error.
+    ///
+    /// [`ToolError`]: crate::ToolError
+    /// [`CompactOutcome::Compacted`]: crate::hooks::CompactOutcome::Compacted
+    /// [`CompactOutcome::Cancelled`]: crate::hooks::CompactOutcome::Cancelled
     #[inline]
-    pub fn dispatch_session_compact(&self, ctx: &HookRunContext<'_>) {
-        for event in self.session_compact.iter().flatten() {
-            event(ctx);
+    pub fn dispatch_compact<'a>(
+        &'a self,
+        ctx: &'a HookRunContext<'a>,
+        history: Vec<CompactMessage>,
+        real_compact: &'a dyn CompactExecutor,
+    ) -> CompactHookFuture<'a> {
+        if self.compact_hooks.is_empty() {
+            real_compact.execute(ctx, history)
+        } else {
+            CompactOriginal::new(&self.compact_hooks, real_compact).call(ctx, history)
         }
     }
 }
@@ -207,7 +239,7 @@ impl fmt::Debug for HookSet {
             .field("run_config_hooks", &self.run_config_hooks.len())
             .field("run_hooks", &self.run_hooks.len())
             .field("run_event_hooks", &self.run_event_hooks.len())
-            .field("session_compact", &self.session_compact.len())
+            .field("compact_hooks", &self.compact_hooks.len())
             .finish()
     }
 }
@@ -215,7 +247,10 @@ impl fmt::Debug for HookSet {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::hooks::run_event::{RunEvent, RunEventContext, RunEventHook, RunEventHookResult};
+    use crate::hooks::compact_hook::{CompactOutcome, CompactResult};
+    use crate::hooks::run_event::{
+        RunEvent, RunEventContext, RunEventHook, RunEventHookResult, RunMessageRole,
+    };
     use crate::hooks::run_hook::{
         EndReason, ModelSettingsOverrides, PreambleMessage, PreambleRole, RunConfig, RunConfigHook,
         RunConfigHookFuture, RunExecutor, RunHook, RunHookFuture, RunOriginal, RunOutput, RunUsage,
@@ -223,6 +258,7 @@ mod tests {
     use crate::{ToolError, ToolOutput};
     use serde_json::json;
     use std::sync::atomic::{AtomicUsize, Ordering};
+    use std::sync::Mutex;
 
     fn ready(output: impl Into<ToolOutput>) -> ToolHookFuture<'static> {
         let output = output.into();
@@ -1097,26 +1133,348 @@ mod tests {
         assert!(debug.contains("run_event_hooks: 1"));
     }
 
-    #[tokio::test]
-    async fn session_compact_dispatch_untouched() {
-        static COMPACTS: AtomicUsize = AtomicUsize::new(0);
+    // --- Compact dispatch tests -------------------------------------------------
 
-        fn on_compact(_ctx: &HookRunContext<'_>) {
-            COMPACTS.fetch_add(1, Ordering::SeqCst);
+    fn compact_history() -> Vec<CompactMessage> {
+        vec![
+            CompactMessage::new_preserved(RunMessageRole::System, "sys", Box::new("native-sys")),
+            CompactMessage::new_preserved(RunMessageRole::User, "old", Box::new("native-old")),
+            CompactMessage::new_preserved(
+                RunMessageRole::Assistant,
+                "recent",
+                Box::new("native-recent"),
+            ),
+        ]
+    }
+
+    fn compact_result(summary: &str, messages_after: usize) -> CompactResult {
+        CompactResult {
+            summary: summary.into(),
+            first_kept_entry_id: None,
+            tokens_before: 100,
+            tokens_after: 40,
+            strategy: "summarize".into(),
+            messages_before: 3,
+            messages_after,
+        }
+    }
+
+    /// Default-compaction stand-in: counts calls and records the
+    /// entry texts it received. Rewrites the history to a summary
+    /// message plus the newest entry.
+    struct RecordingCompact {
+        calls: AtomicUsize,
+        seen: Mutex<Vec<String>>,
+    }
+
+    impl RecordingCompact {
+        fn new() -> Self {
+            Self {
+                calls: AtomicUsize::new(0),
+                seen: Mutex::new(Vec::new()),
+            }
         }
 
-        COMPACTS.store(0, Ordering::SeqCst);
-        let hooks = crate::hooks::builder::HookSetBuilder::new()
-            .on_session_compact(on_compact)
-            .build();
-        let ctx = HookRunContext {
-            agent_name: "coder",
-            run_id: "r1",
-            model_name: "gpt-4o",
-        };
+        fn seen_texts(&self) -> Vec<String> {
+            self.seen.lock().unwrap().clone()
+        }
+    }
 
-        hooks.dispatch_session_compact(&ctx);
-        assert_eq!(COMPACTS.load(Ordering::SeqCst), 1);
+    impl CompactExecutor for RecordingCompact {
+        fn execute<'a>(
+            &'a self,
+            _ctx: &'a HookRunContext<'a>,
+            mut messages: Vec<CompactMessage>,
+        ) -> CompactHookFuture<'a> {
+            Box::pin(async move {
+                self.calls.fetch_add(1, Ordering::SeqCst);
+                *self.seen.lock().unwrap() =
+                    messages.iter().map(|m| m.text().to_string()).collect();
+                let kept = messages.pop();
+                messages.clear();
+                messages.push(CompactMessage::new(RunMessageRole::User, "default summary"));
+                if let Some(kept) = kept {
+                    messages.push(kept);
+                }
+                Ok((
+                    CompactOutcome::Compacted(compact_result("default", messages.len())),
+                    messages,
+                ))
+            })
+        }
+    }
+
+    fn compact_texts(history: &[CompactMessage]) -> Vec<String> {
+        history.iter().map(|m| m.text().to_string()).collect()
+    }
+
+    #[tokio::test]
+    async fn dispatch_compact_empty_chain_runs_default_executor_directly() {
+        let hooks = HookSet::default();
+        assert!(hooks.compact_hooks_is_empty());
+        let executor = RecordingCompact::new();
+
+        let (outcome, history) = hooks
+            .dispatch_compact(&run_ctx(), compact_history(), &executor)
+            .await
+            .unwrap();
+
+        assert_eq!(executor.calls.load(Ordering::SeqCst), 1);
+        assert_eq!(
+            outcome,
+            CompactOutcome::Compacted(compact_result("default", 2))
+        );
+        assert_eq!(compact_texts(&history), vec!["default summary", "recent"]);
+        // The untouched kept entry still carries its original
+        // payload: pass-through loses nothing.
+        assert!(history[1].has_preserved());
+    }
+
+    #[tokio::test]
+    async fn dispatch_compact_runs_chain_in_registration_order_unwinding_in_reverse() {
+        static LOG: Mutex<Vec<String>> = Mutex::new(Vec::new());
+
+        struct First;
+        struct Second;
+
+        impl CompactHook for First {
+            fn hook<'a>(
+                &'a self,
+                ctx: &'a HookRunContext<'a>,
+                messages: Vec<CompactMessage>,
+                original: CompactOriginal<'a>,
+            ) -> CompactHookFuture<'a> {
+                LOG.lock().unwrap().push("first-before".into());
+                Box::pin(async move {
+                    let (outcome, history) = original.call(ctx, messages).await?;
+                    // Post-`original` adjustment: an outer hook may
+                    // rewrite the finished outcome before returning.
+                    let outcome = match outcome {
+                        CompactOutcome::Compacted(mut result) => {
+                            result.summary.push_str("-unwound");
+                            CompactOutcome::Compacted(result)
+                        }
+                        other => other,
+                    };
+                    LOG.lock().unwrap().push("first-after".into());
+                    Ok((outcome, history))
+                })
+            }
+        }
+
+        impl CompactHook for Second {
+            fn hook<'a>(
+                &'a self,
+                ctx: &'a HookRunContext<'a>,
+                messages: Vec<CompactMessage>,
+                original: CompactOriginal<'a>,
+            ) -> CompactHookFuture<'a> {
+                LOG.lock().unwrap().push("second-before".into());
+                Box::pin(async move {
+                    let (outcome, history) = original.call(ctx, messages).await?;
+                    LOG.lock().unwrap().push("second-after".into());
+                    Ok((outcome, history))
+                })
+            }
+        }
+
+        let executor = RecordingCompact::new();
+        let hooks = HookSet::builder()
+            .compact_hook(First)
+            .compact_hook(Second)
+            .build();
+        LOG.lock().unwrap().clear();
+
+        let (outcome, history) = hooks
+            .dispatch_compact(&run_ctx(), compact_history(), &executor)
+            .await
+            .unwrap();
+
+        // The outer hook's post-`original` adjustment is what the
+        // dispatch caller receives.
+        let mut expected = compact_result("default", 2);
+        expected.summary.push_str("-unwound");
+        assert_eq!(outcome, CompactOutcome::Compacted(expected));
+        assert_eq!(
+            *LOG.lock().unwrap(),
+            vec![
+                "first-before".to_string(),
+                "second-before".to_string(),
+                "second-after".to_string(),
+                "first-after".to_string(),
+            ]
+        );
+        // The default compaction's rewritten history is what the
+        // caller receives through the unwound chain.
+        assert_eq!(compact_texts(&history), vec!["default summary", "recent"]);
+        assert!(history[1].has_preserved());
+    }
+
+    #[tokio::test]
+    async fn dispatch_compact_before_original_mutations_reach_default_compaction() {
+        struct Rewrite;
+
+        impl CompactHook for Rewrite {
+            fn hook<'a>(
+                &'a self,
+                ctx: &'a HookRunContext<'a>,
+                mut messages: Vec<CompactMessage>,
+                original: CompactOriginal<'a>,
+            ) -> CompactHookFuture<'a> {
+                Box::pin(async move {
+                    for message in &mut messages {
+                        if message.text() == "old" {
+                            message.set_text("rewritten");
+                        }
+                    }
+                    original.call(ctx, messages).await
+                })
+            }
+        }
+
+        let executor = RecordingCompact::new();
+        let hooks = HookSet::builder().compact_hook(Rewrite).build();
+
+        hooks
+            .dispatch_compact(&run_ctx(), compact_history(), &executor)
+            .await
+            .unwrap();
+
+        // The default compaction consumed the hook's rewrite, not
+        // the original text.
+        assert_eq!(executor.seen_texts(), vec!["sys", "rewritten", "recent"]);
+    }
+
+    #[tokio::test]
+    async fn dispatch_compact_skip_original_custom_result_skips_default_compaction() {
+        struct CustomSummary;
+
+        impl CompactHook for CustomSummary {
+            fn hook<'a>(
+                &'a self,
+                _ctx: &'a HookRunContext<'a>,
+                mut messages: Vec<CompactMessage>,
+                _original: CompactOriginal<'a>,
+            ) -> CompactHookFuture<'a> {
+                Box::pin(async move {
+                    // The hook performs its own compaction: keep the
+                    // newest entry, replace the rest with its summary.
+                    let kept = messages.pop();
+                    let mut compacted = Vec::with_capacity(2);
+                    compacted.push(CompactMessage::new(RunMessageRole::User, "custom summary"));
+                    if let Some(kept) = kept {
+                        compacted.push(kept);
+                    }
+                    Ok((
+                        CompactOutcome::Compacted(compact_result("custom", 2)),
+                        compacted,
+                    ))
+                })
+            }
+        }
+
+        let executor = RecordingCompact::new();
+        let hooks = HookSet::builder().compact_hook(CustomSummary).build();
+
+        let (outcome, history) = hooks
+            .dispatch_compact(&run_ctx(), compact_history(), &executor)
+            .await
+            .unwrap();
+
+        // The default compaction never ran for this attempt.
+        assert_eq!(executor.calls.load(Ordering::SeqCst), 0);
+        assert_eq!(
+            outcome,
+            CompactOutcome::Compacted(compact_result("custom", 2))
+        );
+        assert_eq!(compact_texts(&history), vec!["custom summary", "recent"]);
+    }
+
+    #[tokio::test]
+    async fn dispatch_compact_cancel_returns_history_unchanged() {
+        struct Cancel;
+
+        impl CompactHook for Cancel {
+            fn hook<'a>(
+                &'a self,
+                _ctx: &'a HookRunContext<'a>,
+                messages: Vec<CompactMessage>,
+                _original: CompactOriginal<'a>,
+            ) -> CompactHookFuture<'a> {
+                Box::pin(async { Ok((CompactOutcome::Cancelled, messages)) })
+            }
+        }
+
+        let executor = RecordingCompact::new();
+        let hooks = HookSet::builder().compact_hook(Cancel).build();
+
+        let (outcome, history) = hooks
+            .dispatch_compact(&run_ctx(), compact_history(), &executor)
+            .await
+            .unwrap();
+
+        assert_eq!(executor.calls.load(Ordering::SeqCst), 0);
+        assert_eq!(outcome, CompactOutcome::Cancelled);
+        assert_eq!(compact_texts(&history), vec!["sys", "old", "recent"]);
+        assert!(history.iter().all(|m| m.has_preserved()));
+    }
+
+    #[tokio::test]
+    async fn dispatch_compact_hook_error_stops_the_chain() {
+        struct FailingHook;
+        impl CompactHook for FailingHook {
+            fn hook<'a>(
+                &'a self,
+                _ctx: &'a HookRunContext<'a>,
+                _messages: Vec<CompactMessage>,
+                _original: CompactOriginal<'a>,
+            ) -> CompactHookFuture<'a> {
+                Box::pin(async { Err(ToolError::validation("hook rejected the compaction")) })
+            }
+        }
+
+        struct MustNotRun;
+        impl CompactHook for MustNotRun {
+            fn hook<'a>(
+                &'a self,
+                _ctx: &'a HookRunContext<'a>,
+                _messages: Vec<CompactMessage>,
+                _original: CompactOriginal<'a>,
+            ) -> CompactHookFuture<'a> {
+                panic!("later hooks must not run after a hook error");
+            }
+        }
+
+        let executor = RecordingCompact::new();
+        let hooks = HookSet::builder()
+            .compact_hook(FailingHook)
+            .compact_hook(MustNotRun)
+            .build();
+
+        let result = hooks
+            .dispatch_compact(&run_ctx(), compact_history(), &executor)
+            .await;
+        assert!(matches!(result, Err(ToolError::Validation { .. })));
+        assert_eq!(executor.calls.load(Ordering::SeqCst), 0);
+    }
+
+    #[test]
+    fn hook_set_debug_includes_compact_hooks_count() {
+        struct Passthrough;
+        impl CompactHook for Passthrough {
+            fn hook<'a>(
+                &'a self,
+                ctx: &'a HookRunContext<'a>,
+                messages: Vec<CompactMessage>,
+                original: CompactOriginal<'a>,
+            ) -> CompactHookFuture<'a> {
+                original.call(ctx, messages)
+            }
+        }
+
+        let hooks = HookSet::builder().compact_hook(Passthrough).build();
+        let debug = format!("{hooks:?}");
+        assert!(debug.contains("compact_hooks: 1"));
     }
 
     #[test]

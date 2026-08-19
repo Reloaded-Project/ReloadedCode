@@ -1,11 +1,8 @@
-//! HookSetBuilder — builder for constructing a [`HookSet`].
+//! HookSetBuilder - builder for constructing a [`HookSet`].
 
-use crate::hooks::{
-    HookSet, RunConfigHook, RunEventHook, RunHook, SessionCompactFn, ToolHook, INLINE_CAP,
-};
+use crate::hooks::{CompactHook, HookSet, RunConfigHook, RunEventHook, RunHook, ToolHook};
 use std::fmt;
 use std::sync::Arc;
-use tinyvec::TinyVec;
 
 /// Builder for constructing [`HookSet`].
 #[derive(Default)]
@@ -14,7 +11,7 @@ pub struct HookSetBuilder {
     pub(super) run_config_hooks: Vec<Arc<dyn RunConfigHook>>,
     pub(super) run_hooks: Vec<Arc<dyn RunHook>>,
     pub(super) run_event_hooks: Vec<Arc<dyn RunEventHook>>,
-    pub(super) session_compact: TinyVec<[Option<SessionCompactFn>; INLINE_CAP]>,
+    pub(super) compact_hooks: Vec<Arc<dyn CompactHook>>,
 }
 
 impl HookSetBuilder {
@@ -44,11 +41,23 @@ impl HookSetBuilder {
         self
     }
 
-    /// Registers a compact event. Name preserved — compact is its own concept, distinct from "run".
+    /// Registers a compact hook.
+    ///
+    /// Hooks run in registration order. Each hook's `original` handle calls
+    /// the next registered hook, or the default compaction at the end of the
+    /// chain.
     #[inline]
     #[must_use]
-    pub fn on_session_compact(mut self, event: SessionCompactFn) -> Self {
-        self.session_compact.push(Some(event));
+    pub fn compact_hook(mut self, hook: impl CompactHook) -> Self {
+        self.compact_hooks.push(Arc::new(hook));
+        self
+    }
+
+    /// Registers an already shared compact hook.
+    #[inline]
+    #[must_use]
+    pub fn shared_compact_hook(mut self, hook: Arc<dyn CompactHook>) -> Self {
+        self.compact_hooks.push(hook);
         self
     }
 
@@ -119,7 +128,7 @@ impl HookSetBuilder {
             run_config_hooks: self.run_config_hooks,
             run_hooks: self.run_hooks,
             run_event_hooks: self.run_event_hooks,
-            session_compact: self.session_compact,
+            compact_hooks: self.compact_hooks,
         }
     }
 }
@@ -131,7 +140,7 @@ impl fmt::Debug for HookSetBuilder {
             .field("run_config_hooks", &self.run_config_hooks.len())
             .field("run_hooks", &self.run_hooks.len())
             .field("run_event_hooks", &self.run_event_hooks.len())
-            .field("session_compact", &self.session_compact.len())
+            .field("compact_hooks", &self.compact_hooks.len())
             .finish()
     }
 }
@@ -139,6 +148,9 @@ impl fmt::Debug for HookSetBuilder {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::hooks::compact_hook::{
+        CompactHook, CompactHookFuture, CompactMessage, CompactOriginal,
+    };
     use crate::hooks::run_event::{RunEvent, RunEventContext, RunEventHook, RunEventHookResult};
     use crate::hooks::run_hook::{
         HookRunContext, RunConfig, RunConfigHook, RunConfigHookFuture, RunHookFuture, RunOriginal,
@@ -320,5 +332,63 @@ mod tests {
         let builder = HookSetBuilder::new().run_event_hook(NoopEvent);
         let debug = format!("{builder:?}");
         assert!(debug.contains("run_event_hooks: 1"));
+    }
+
+    #[test]
+    fn compact_hook_registration_makes_hook_set_non_empty() {
+        struct NoopCompact;
+        impl CompactHook for NoopCompact {
+            fn hook<'a>(
+                &'a self,
+                ctx: &'a HookRunContext<'a>,
+                messages: Vec<CompactMessage>,
+                original: CompactOriginal<'a>,
+            ) -> CompactHookFuture<'a> {
+                original.call(ctx, messages)
+            }
+        }
+
+        let hooks = HookSetBuilder::new().compact_hook(NoopCompact).build();
+        assert!(!hooks.is_empty());
+        assert!(!hooks.compact_hooks_is_empty());
+    }
+
+    #[test]
+    fn shared_compact_hook_registration() {
+        struct NoopCompact;
+        impl CompactHook for NoopCompact {
+            fn hook<'a>(
+                &'a self,
+                ctx: &'a HookRunContext<'a>,
+                messages: Vec<CompactMessage>,
+                original: CompactOriginal<'a>,
+            ) -> CompactHookFuture<'a> {
+                original.call(ctx, messages)
+            }
+        }
+
+        let shared: Arc<dyn CompactHook> = Arc::new(NoopCompact);
+        let hooks = HookSetBuilder::new().shared_compact_hook(shared).build();
+        assert!(!hooks.compact_hooks_is_empty());
+    }
+
+    #[test]
+    // Pins manual Debug: counts only, never hook contents (traits lack Debug).
+    fn builder_debug_includes_compact_hooks() {
+        struct NoopCompact;
+        impl CompactHook for NoopCompact {
+            fn hook<'a>(
+                &'a self,
+                ctx: &'a HookRunContext<'a>,
+                messages: Vec<CompactMessage>,
+                original: CompactOriginal<'a>,
+            ) -> CompactHookFuture<'a> {
+                original.call(ctx, messages)
+            }
+        }
+
+        let builder = HookSetBuilder::new().compact_hook(NoopCompact);
+        let debug = format!("{builder:?}");
+        assert!(debug.contains("compact_hooks: 1"));
     }
 }
