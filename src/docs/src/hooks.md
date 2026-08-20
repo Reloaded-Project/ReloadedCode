@@ -314,22 +314,14 @@ uppercase and suppresses the output-ready milestone
 
 ### Intercept context compaction
 
-Compaction shrinks the run's history when it grows too large: older
-messages are summarized while a recent window is kept. A `CompactHook`
-intercepts each compaction attempt. With no compact hooks registered,
-no compaction runs.
+A `CompactHook` can change the history before the LLM session is
+compacted. With no compact hooks, no compaction runs.
 
-Compaction fires at a step boundary: once a request's estimated tokens
-pass three quarters of the model's context window, the hook chain runs
-with the full history before the model serves the request.
+Code before `original` may rewrite any entry; the default compaction
+then summarizes the rewritten history through the run's model.
 
-Code before `original` sees every entry and may rewrite it; the default
-compaction then summarizes the rewritten history through the run's
-model. Skipping `original` supplies your own result or cancels the
-attempt.
-
-This hook rewrites oversized tool outputs before the default
-summarization consumes them:
+This example hook rewrites oversized tool outputs before
+summarization:
 
 ```rust
 use reloaded_code_core::{
@@ -348,7 +340,7 @@ impl CompactHook for TrimToolNoise {
     ) -> CompactHookFuture<'a> {
         Box::pin(async move {
             for entry in &mut messages {
-                if entry.role() == RunMessageRole::Tool && entry.text().len() > 200 {
+                if entry.role() == RunMessageRole::Tool && entry.text().len() > 1024 {
                     entry.set_text("[tool output trimmed]");
                 }
             }
@@ -362,36 +354,11 @@ let hooks = HookSet::builder()
     .build();
 ```
 
-Entries are `CompactMessage` views: a role plus text. Mutating a view
-rebuilds that entry; untouched entries pass through with everything
-else they carry intact.
+Skip `original` to avoid the default summarization entirely: return
+your own `CompactResult` and history, or `CompactOutcome::Cancelled`
+to keep the history unchanged.
 
-Skip `original` to avoid the default summarization entirely. Return
-your own `CompactResult` and history, or return
-`CompactOutcome::Cancelled` to keep the history unchanged:
-
-```rust
-// Inside CompactHook::hook, skipping original:
-let result = CompactResult {
-    summary: "earlier turns summarized locally".into(),
-    first_kept_entry_id: None,
-    tokens_before: 4_000,
-    tokens_after: 120,
-    strategy: "local".into(),
-    messages_before: 12,
-    messages_after: 3,
-};
-let history = vec![CompactMessage::new(
-    RunMessageRole::System,
-    "Summary of the earlier conversation.",
-)];
-Ok((CompactOutcome::Compacted(result), history))
-```
-
-Each applied compaction publishes one `RunEvent::ContextCompressed` on
-`run_stream()`, carrying the result's token counts, strategy, and
-message counts. `run()` compacts the history too, but has no event
-surface. A failed summarization aborts the attempt: the history stays
+A failed hook or summarization aborts the attempt: the history stays
 unchanged and the run continues.
 
 Full example: [serdesai-compact-hook] skips `original` and applies a
