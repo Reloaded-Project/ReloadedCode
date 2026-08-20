@@ -7,12 +7,17 @@
 //! `HookedAgent::run_stream()`.
 //!
 //! The hook skips `original`, so the default summarization never runs.
+//!
 //! It applies a local compaction instead: keep the leading system
 //! entries, replace everything after with one summary note, and return
-//! its own `CompactResult`. The printed stream shows the hook firing at
-//! the overflowing step and the `ContextCompressed` event reporting the
-//! hook's strategy and counts. Returning `CompactOutcome::Cancelled`
-//! instead would keep the history unchanged and emit no event.
+//! its own `CompactResult`.
+//!
+//! The printed stream shows the hook firing at the overflowing step and
+//! the `ContextCompressed` event reporting the hook's strategy and
+//! counts.
+//!
+//! Returning `CompactOutcome::Cancelled` instead would keep the history
+//! unchanged and emit no event.
 //!
 //! Expected output:
 //!   Built agent with 0 tools.
@@ -63,6 +68,7 @@ impl CompactHook for LocalCompactor {
             );
             let tokens_before = estimated_tokens(&history);
             let messages_before = history.len();
+
             // The split leaves the leading system entries in `history`
             // and moves everything after into `replaced`.
             let system_count = history
@@ -71,11 +77,13 @@ impl CompactHook for LocalCompactor {
                 .count();
             let replaced = history.split_off(system_count);
             let summary = format!("{} entries replaced by one note", replaced.len());
+
             history.push(CompactMessage::new(
                 RunMessageRole::System,
                 format!("Summary of the earlier conversation:\n{summary}"),
             ));
             println!("[LocalCompactor] local summary: {summary}");
+
             let result = CompactResult {
                 summary,
                 first_kept_entry_id: None,
@@ -85,6 +93,7 @@ impl CompactHook for LocalCompactor {
                 messages_before,
                 messages_after: history.len(),
             };
+
             Ok((CompactOutcome::Compacted(result), history))
         })
     }
@@ -110,6 +119,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         })
         .with_profile(ModelProfile::new().with_context_window(CONTEXT_WINDOW)),
     );
+
     let agent = build_context
         .with_model_override(model)
         .build("compact-hook-demo")?;
