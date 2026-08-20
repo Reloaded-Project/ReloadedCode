@@ -157,6 +157,61 @@ mod tests {
     };
     use crate::hooks::tool_hook::{ToolCallContext, ToolHookFuture, ToolOriginal, ToolRequest};
 
+    // Shared no-op hook implementations, one per hook trait.
+    struct NoopTool;
+    impl ToolHook for NoopTool {
+        fn hook<'a>(
+            &'a self,
+            ctx: &'a ToolCallContext<'a>,
+            req: ToolRequest,
+            original: ToolOriginal<'a>,
+        ) -> ToolHookFuture<'a> {
+            original.call(ctx, req)
+        }
+    }
+
+    struct NoopRun;
+    impl RunHook for NoopRun {
+        fn hook<'a>(
+            &'a self,
+            ctx: &'a HookRunContext<'a>,
+            _config: &'a RunConfig,
+            original: RunOriginal<'a>,
+        ) -> RunHookFuture<'a> {
+            original.call(ctx)
+        }
+    }
+
+    struct NoopEvent;
+    impl RunEventHook for NoopEvent {
+        fn hook(&self, _ctx: &RunEventContext<'_>, event: RunEvent) -> RunEventHookResult {
+            Ok(Some(event))
+        }
+    }
+
+    struct NoopConfig;
+    impl RunConfigHook for NoopConfig {
+        fn configure<'a>(
+            &'a self,
+            _ctx: &'a HookRunContext<'a>,
+            _config: &'a mut RunConfig,
+        ) -> RunConfigHookFuture<'a> {
+            Box::pin(async { Ok(()) })
+        }
+    }
+
+    struct NoopCompact;
+    impl CompactHook for NoopCompact {
+        fn hook<'a>(
+            &'a self,
+            ctx: &'a HookRunContext<'a>,
+            messages: Vec<CompactMessage>,
+            original: CompactOriginal<'a>,
+        ) -> CompactHookFuture<'a> {
+            original.call(ctx, messages)
+        }
+    }
+
     #[test]
     fn hook_set_builder_new_produces_empty() {
         let hooks = HookSetBuilder::new().build();
@@ -171,20 +226,7 @@ mod tests {
 
     #[test]
     fn tool_hook_registration_makes_hook_set_non_empty() {
-        struct Noop;
-
-        impl ToolHook for Noop {
-            fn hook<'a>(
-                &'a self,
-                ctx: &'a ToolCallContext<'a>,
-                req: ToolRequest,
-                original: ToolOriginal<'a>,
-            ) -> ToolHookFuture<'a> {
-                original.call(ctx, req)
-            }
-        }
-
-        let hooks = HookSetBuilder::new().tool_hook(Noop).build();
+        let hooks = HookSetBuilder::new().tool_hook(NoopTool).build();
         assert!(!hooks.is_empty());
         assert!(!hooks.tool_hooks_is_empty());
         assert_eq!(hooks.tool_hooks().len(), 1);
@@ -192,17 +234,6 @@ mod tests {
 
     #[test]
     fn run_hook_registration_makes_hook_set_non_empty() {
-        struct NoopRun;
-        impl RunHook for NoopRun {
-            fn hook<'a>(
-                &'a self,
-                ctx: &'a HookRunContext<'a>,
-                _config: &'a RunConfig,
-                original: RunOriginal<'a>,
-            ) -> RunHookFuture<'a> {
-                original.call(ctx)
-            }
-        }
         let hooks = HookSetBuilder::new().run_hook(NoopRun).build();
         assert!(!hooks.is_empty());
         assert!(!hooks.run_hooks_is_empty());
@@ -211,17 +242,6 @@ mod tests {
 
     #[test]
     fn shared_run_hook_registration() {
-        struct NoopRun;
-        impl RunHook for NoopRun {
-            fn hook<'a>(
-                &'a self,
-                ctx: &'a HookRunContext<'a>,
-                _config: &'a RunConfig,
-                original: RunOriginal<'a>,
-            ) -> RunHookFuture<'a> {
-                original.call(ctx)
-            }
-        }
         let shared: Arc<dyn RunHook> = Arc::new(NoopRun);
         let hooks = HookSetBuilder::new().shared_run_hook(shared).build();
         assert!(!hooks.run_hooks_is_empty());
@@ -230,13 +250,6 @@ mod tests {
 
     #[test]
     fn run_event_hook_registration_makes_hook_set_non_empty() {
-        struct NoopEvent;
-        impl RunEventHook for NoopEvent {
-            fn hook(&self, _ctx: &RunEventContext<'_>, event: RunEvent) -> RunEventHookResult {
-                Ok(Some(event))
-            }
-        }
-
         let hooks = HookSetBuilder::new().run_event_hook(NoopEvent).build();
         assert!(!hooks.is_empty());
         assert!(!hooks.run_event_hooks_is_empty());
@@ -244,13 +257,6 @@ mod tests {
 
     #[test]
     fn shared_run_event_hook_registration() {
-        struct NoopEvent;
-        impl RunEventHook for NoopEvent {
-            fn hook(&self, _ctx: &RunEventContext<'_>, event: RunEvent) -> RunEventHookResult {
-                Ok(Some(event))
-            }
-        }
-
         let shared: Arc<dyn RunEventHook> = Arc::new(NoopEvent);
         let hooks = HookSetBuilder::new().shared_run_event_hook(shared).build();
         assert!(!hooks.run_event_hooks_is_empty());
@@ -258,17 +264,6 @@ mod tests {
 
     #[test]
     fn run_config_hook_registration_makes_hook_set_non_empty() {
-        struct NoopConfig;
-        impl RunConfigHook for NoopConfig {
-            fn configure<'a>(
-                &'a self,
-                _ctx: &'a HookRunContext<'a>,
-                _config: &'a mut RunConfig,
-            ) -> RunConfigHookFuture<'a> {
-                Box::pin(async { Ok(()) })
-            }
-        }
-
         let hooks = HookSetBuilder::new().run_config_hook(NoopConfig).build();
         assert!(!hooks.is_empty());
         assert!(!hooks.run_config_hooks_is_empty());
@@ -277,17 +272,6 @@ mod tests {
 
     #[test]
     fn shared_run_config_hook_registration() {
-        struct NoopConfig;
-        impl RunConfigHook for NoopConfig {
-            fn configure<'a>(
-                &'a self,
-                _ctx: &'a HookRunContext<'a>,
-                _config: &'a mut RunConfig,
-            ) -> RunConfigHookFuture<'a> {
-                Box::pin(async { Ok(()) })
-            }
-        }
-
         let shared: Arc<dyn RunConfigHook> = Arc::new(NoopConfig);
         let hooks = HookSetBuilder::new().shared_run_config_hook(shared).build();
         assert!(!hooks.run_config_hooks_is_empty());
@@ -297,17 +281,6 @@ mod tests {
     #[test]
     // Pins manual Debug: counts only, never hook contents (traits lack Debug).
     fn builder_debug_includes_run_config_hooks() {
-        struct NoopConfig;
-        impl RunConfigHook for NoopConfig {
-            fn configure<'a>(
-                &'a self,
-                _ctx: &'a HookRunContext<'a>,
-                _config: &'a mut RunConfig,
-            ) -> RunConfigHookFuture<'a> {
-                Box::pin(async { Ok(()) })
-            }
-        }
-
         let builder = HookSetBuilder::new().run_config_hook(NoopConfig);
         let debug = format!("{builder:?}");
         assert!(debug.contains("run_config_hooks: 1"));
@@ -322,13 +295,6 @@ mod tests {
 
     #[test]
     fn builder_debug_includes_run_event_hooks() {
-        struct NoopEvent;
-        impl RunEventHook for NoopEvent {
-            fn hook(&self, _ctx: &RunEventContext<'_>, event: RunEvent) -> RunEventHookResult {
-                Ok(Some(event))
-            }
-        }
-
         let builder = HookSetBuilder::new().run_event_hook(NoopEvent);
         let debug = format!("{builder:?}");
         assert!(debug.contains("run_event_hooks: 1"));
@@ -336,18 +302,6 @@ mod tests {
 
     #[test]
     fn compact_hook_registration_makes_hook_set_non_empty() {
-        struct NoopCompact;
-        impl CompactHook for NoopCompact {
-            fn hook<'a>(
-                &'a self,
-                ctx: &'a HookRunContext<'a>,
-                messages: Vec<CompactMessage>,
-                original: CompactOriginal<'a>,
-            ) -> CompactHookFuture<'a> {
-                original.call(ctx, messages)
-            }
-        }
-
         let hooks = HookSetBuilder::new().compact_hook(NoopCompact).build();
         assert!(!hooks.is_empty());
         assert!(!hooks.compact_hooks_is_empty());
@@ -355,18 +309,6 @@ mod tests {
 
     #[test]
     fn shared_compact_hook_registration() {
-        struct NoopCompact;
-        impl CompactHook for NoopCompact {
-            fn hook<'a>(
-                &'a self,
-                ctx: &'a HookRunContext<'a>,
-                messages: Vec<CompactMessage>,
-                original: CompactOriginal<'a>,
-            ) -> CompactHookFuture<'a> {
-                original.call(ctx, messages)
-            }
-        }
-
         let shared: Arc<dyn CompactHook> = Arc::new(NoopCompact);
         let hooks = HookSetBuilder::new().shared_compact_hook(shared).build();
         assert!(!hooks.compact_hooks_is_empty());
@@ -375,18 +317,6 @@ mod tests {
     #[test]
     // Pins manual Debug: counts only, never hook contents (traits lack Debug).
     fn builder_debug_includes_compact_hooks() {
-        struct NoopCompact;
-        impl CompactHook for NoopCompact {
-            fn hook<'a>(
-                &'a self,
-                ctx: &'a HookRunContext<'a>,
-                messages: Vec<CompactMessage>,
-                original: CompactOriginal<'a>,
-            ) -> CompactHookFuture<'a> {
-                original.call(ctx, messages)
-            }
-        }
-
         let builder = HookSetBuilder::new().compact_hook(NoopCompact);
         let debug = format!("{builder:?}");
         assert!(debug.contains("compact_hooks: 1"));

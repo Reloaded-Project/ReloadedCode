@@ -260,6 +260,19 @@ mod tests {
     use std::sync::atomic::{AtomicUsize, Ordering};
     use std::sync::Mutex;
 
+    // Shared no-op run hook.
+    struct NoopRun;
+    impl RunHook for NoopRun {
+        fn hook<'a>(
+            &'a self,
+            ctx: &'a HookRunContext<'a>,
+            _config: &'a RunConfig,
+            original: RunOriginal<'a>,
+        ) -> RunHookFuture<'a> {
+            original.call(ctx)
+        }
+    }
+
     fn ready(output: impl Into<ToolOutput>) -> ToolHookFuture<'static> {
         let output = output.into();
         Box::pin(async move { Ok(output) })
@@ -314,17 +327,6 @@ mod tests {
 
     #[test]
     fn hook_set_with_run_hooks_is_not_empty() {
-        struct NoopRun;
-        impl RunHook for NoopRun {
-            fn hook<'a>(
-                &'a self,
-                ctx: &'a HookRunContext<'a>,
-                _config: &'a RunConfig,
-                original: RunOriginal<'a>,
-            ) -> RunHookFuture<'a> {
-                original.call(ctx)
-            }
-        }
         let hooks = HookSet::builder().run_hook(NoopRun).build();
         assert!(!hooks.is_empty());
         assert!(!hooks.run_hooks_is_empty());
@@ -908,6 +910,7 @@ mod tests {
     #[tokio::test]
     async fn dispatch_run_two_hooks_unwind_order() {
         use std::sync::Mutex;
+
         static LOG: Mutex<Vec<String>> = Mutex::new(Vec::new());
 
         struct First;
@@ -1479,17 +1482,6 @@ mod tests {
 
     #[test]
     fn hook_set_debug_includes_run_hooks_count() {
-        struct NoopRun;
-        impl RunHook for NoopRun {
-            fn hook<'a>(
-                &'a self,
-                ctx: &'a HookRunContext<'a>,
-                _config: &'a RunConfig,
-                original: RunOriginal<'a>,
-            ) -> RunHookFuture<'a> {
-                original.call(ctx)
-            }
-        }
         let hooks = HookSet::builder().run_hook(NoopRun).build();
         let debug = format!("{:?}", hooks);
         assert!(debug.contains("run_hooks: 1"));
