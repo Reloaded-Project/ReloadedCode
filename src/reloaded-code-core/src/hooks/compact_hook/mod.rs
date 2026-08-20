@@ -3,32 +3,40 @@
 //!
 //! # What compaction is
 //!
-//! Compaction shrinks a run's message history when its context grows
-//! too large: older messages are replaced by a summary while a
-//! recent window is kept verbatim.
+//! Compaction shrinks a run's history when its context grows too
+//! large:
+//!
+//! - Older messages are replaced by a summary.
+//! - A recent window is kept verbatim.
 //!
 //! # The intercept point
 //!
-//! A compact hook wraps one compaction attempt. Code before
-//! `original` sees the whole history and may rewrite it; the default
-//! compaction consumes the rewritten history. Skipping `original`
-//! supplies a custom [`CompactResult`] or cancels the attempt. Code
-//! after `original` sees the finished outcome and unwinds in reverse
-//! registration order.
+//! A compact hook wraps one compaction attempt:
+//!
+//! - Before `original`: see the whole history and rewrite it.
+//! - Skip `original`: supply a custom [`CompactResult`] or cancel.
+//! - After `original`: see the finished outcome.
+//!
+//! The default compaction consumes the rewritten history. Unwinding
+//! runs in reverse registration order.
 //!
 //! # History representation
 //!
-//! [`CompactMessage`] is the vendor-agnostic history entry: a
-//! structured view (role and text) hooks read and rewrite, plus an
-//! opaque `preserved` payload the runtime wiring fills with its
-//! native history entry. The chain threads the history by value, so
-//! hooks may drop, rewrite, or inject entries. Applying the history
-//! back, the wiring reuses each untouched entry's `preserved`
-//! original (zero loss for pass-through) and rebuilds only entries a
-//! hook modified or injected, from the structured view. The mutating
-//! accessors ([`CompactMessage::set_text`],
-//! [`CompactMessage::set_role`]) clear `preserved`, which is how the
-//! wiring tells rebuilt entries from untouched ones.
+//! [`CompactMessage`] is the vendor-agnostic history entry:
+//!
+//! - Structured view (`role`, `text`): what hooks read and rewrite.
+//! - `preserved`: the native history entry, opaque to hooks. The
+//!   runtime wiring fills it in.
+//!
+//! The chain threads the history by value, so hooks may drop,
+//! rewrite, or inject entries. When applying the history back, the
+//! wiring:
+//!
+//! - Reuses the `preserved` original for untouched entries:
+//!   pass-through is lossless.
+//! - Rebuilds modified or injected entries from the structured view.
+//! - Distinguishes them by `preserved`: [`CompactMessage::set_text`]
+//!   and [`CompactMessage::set_role`] clear it.
 //!
 //! Next: see [`HookSet::dispatch_compact`] to run the chain.
 //!
@@ -49,10 +57,10 @@ pub type CompactHookFuture<'a> =
 
 /// Managed trampoline to the next hook or the default compaction.
 ///
-/// `CompactOriginal` is consumed by [`call`], so a hook continues
-/// the chain at most once per attempt. There is no built-in retry: a
-/// hook that wants a custom result or a cancel returns it without
-/// calling the continuation.
+/// - Consumed by [`call`]: a hook continues the chain at most once
+///   per attempt.
+/// - No built-in retry: a hook that wants a custom result or a
+///   cancel returns it without calling the continuation.
 ///
 /// [`call`]: Self::call
 pub struct CompactOriginal<'a> {
@@ -63,18 +71,19 @@ pub struct CompactOriginal<'a> {
 
 /// One message-history entry passed through the compact chain.
 ///
-/// Hooks read the structured view ([`Self::role`], [`Self::text`])
-/// to decide what to compact, and rewrite it through the mutating
-/// accessors. Everything else the native history entry carries lives
-/// in the `preserved` payload, which the runtime wiring uses to
-/// apply the history back without loss.
+/// Hooks work with two parts:
+///
+/// - Structured view ([`Self::role`], [`Self::text`]): read to
+///   decide what to compact, rewritten through the mutating
+///   accessors.
+/// - `preserved` payload: everything else the native history entry
+///   carries. The wiring reuses it to apply the history back
+///   without loss.
 ///
 /// # Remarks
 ///
-/// `preserved` is opaque to hooks: leave it untouched. The wiring
-/// reuses it verbatim for entries that pass through unchanged and
-/// rebuilds the native entry from role and text once a mutation has
-/// cleared it. Entries a hook injects carry no `preserved` payload.
+/// - `preserved` is opaque to hooks: leave it untouched.
+/// - Entries a hook injects carry no `preserved` payload.
 pub struct CompactMessage {
     role: RunMessageRole,
     text: String,
@@ -83,9 +92,9 @@ pub struct CompactMessage {
 
 /// Outcome of one compaction attempt after the compact chain.
 ///
-/// Callers apply the returned history on [`Self::Compacted`] and
-/// leave the run's history unchanged on [`Self::Cancelled`],
-/// regardless of what history the attempt returns.
+/// - [`Self::Compacted`]: apply the returned history.
+/// - [`Self::Cancelled`]: leave the run's history unchanged,
+///   regardless of what history the attempt returns.
 #[derive(Debug, Clone, PartialEq)]
 pub enum CompactOutcome {
     /// Compaction ran; the result describes it.
@@ -97,10 +106,12 @@ pub enum CompactOutcome {
 /// Result of one compaction attempt.
 ///
 /// The counts and names are advisory: they describe the attempt so
-/// callers can report it. `tokens_before` maps onto
-/// [`RunEvent::ContextCompressed`] as `original_tokens`,
-/// `tokens_after` as `compressed_tokens`, and the remaining advisory
-/// fields map field for field.
+/// callers can report it. Fields map onto
+/// [`RunEvent::ContextCompressed`]:
+///
+/// - `tokens_before` maps to `original_tokens`.
+/// - `tokens_after` maps to `compressed_tokens`.
+/// - The remaining advisory fields map field for field.
 ///
 /// [`RunEvent::ContextCompressed`]: crate::hooks::RunEvent::ContextCompressed
 #[derive(Debug, Clone, PartialEq)]
@@ -108,7 +119,7 @@ pub struct CompactResult {
     /// Summary text replacing the compacted messages.
     pub summary: String,
     /// Identifier of the first entry kept verbatim, when the runtime
-    /// wiring has entry ids; `None` when it does not.
+    /// wiring has entry ids; `None` otherwise.
     pub first_kept_entry_id: Option<String>,
     /// Token count of the history before compaction.
     pub tokens_before: usize,
@@ -125,9 +136,8 @@ pub struct CompactResult {
 /// Final callable used when the compact hook chain reaches the
 /// default compaction.
 ///
-/// The default compaction summarizes older messages and returns the
-/// compacted history: what it returns is the history the run
-/// continues with.
+/// The default compaction summarizes older messages. What it returns
+/// is the history the run continues with.
 pub trait CompactExecutor: Send + Sync {
     /// Runs the default compaction over `messages`.
     ///
@@ -144,18 +154,22 @@ pub trait CompactExecutor: Send + Sync {
 
 /// Game-style compact hook.
 ///
-/// A hook may inspect or rewrite the history, call
-/// [`CompactOriginal::call`] to continue the chain with the
-/// rewritten history, inspect or adjust the finished outcome and
-/// history, or skip `original` entirely to supply its own result or
-/// cancel the attempt.
+/// A hook may:
+///
+/// - Inspect or rewrite the history.
+/// - Call [`CompactOriginal::call`] to continue the chain with the
+///   rewritten history.
+/// - Inspect or adjust the finished outcome and history.
+/// - Skip `original` entirely: supply a custom result or cancel.
 pub trait CompactHook: Send + Sync + 'static {
     /// Intercepts one compaction attempt.
     ///
-    /// `messages` is the full history for this attempt. Mutations
-    /// made before `original` are what the default compaction
-    /// consumes; the returned pair carries the outcome together with
-    /// the history to apply.
+    /// - `messages`: the full history for this attempt.
+    /// - Mutations before `original`: what the default compaction
+    ///   consumes.
+    ///
+    /// The returned pair carries the outcome together with the
+    /// history to apply.
     ///
     /// # Errors
     /// Returns [`ToolError`] if the hook implementation or the
