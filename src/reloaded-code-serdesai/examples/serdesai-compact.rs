@@ -1,4 +1,4 @@
-//! Context compaction example - opt-in enablement with a custom policy.
+//! Context compaction example - tightening the default policy's trigger margin.
 //!
 //! Builds the `basic/file-reader` markdown agent through
 //! [`AgentBuildContext`] with context compaction enabled under a
@@ -57,9 +57,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .defaults(AgentDefaults::with_model(MODEL_ID))
         .build()?;
 
-    // Compaction is opt-in: enable it with a policy, here overriding
-    // only the trigger margin. Summarize cap and small-window fraction
-    // keep their 32,000 and 3/4 defaults.
+    // Compaction runs by default; this policy overrides only the
+    // trigger margin. Summarize cap and small-window fraction keep
+    // their 32,000 and 3/4 defaults.
     let build_context = AgentBuildContext::new(
         Arc::new(runtime),
         Arc::new(load_result.catalog),
