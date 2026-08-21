@@ -4,12 +4,16 @@ Long conversations grow until they no longer fit the model's context
 window. Compaction summarizes the older history through the run's own
 model, keeping the run inside its input limit instead of failing.
 
-Compaction is opt-in and configured at agent build time.
+Compaction is enabled by default and configured at agent build time.
+Every `AgentBuildContext` starts with compaction under
+`CompactPolicy::default()`.
 
-## Enable compaction
+## Configure compaction
 
 Call `with_compaction` on the `AgentBuildContext` with a
-`CompactPolicy`:
+`CompactPolicy` to replace the default policy. Passing
+`CompactPolicy::default()` keeps the default behavior; [Override the
+policy] shows values that differ:
 
 ```rust
 use reloaded_code_core::CompactPolicy;
@@ -28,11 +32,13 @@ Every agent built from the context checks each model request against
 the policy's trigger threshold. Past the threshold, older history is
 summarized before the model sees the request.
 
-A build that skips `with_compaction` keeps compaction disabled: no
-model wrapper, no per-request estimation, no compaction events.
+Call `without_compaction` on the `AgentBuildContext` to disable
+compaction: no model wrapper, no per-request estimation, no
+compaction events.
 
-`with_compaction` must run before the context is shared. It panics
-when the `AgentBuildContext` has already been cloned.
+`with_compaction` and `without_compaction` must run before the
+context is shared. They panic when the `AgentBuildContext` has
+already been cloned.
 
 ## Defaults
 
@@ -142,4 +148,5 @@ Full example: [serdesai-compact]
 (`cargo run --example serdesai-compact -p reloaded-code-serdesai`).
 
 [Models Catalog]: models-catalog.md
+[Override the policy]: #override-the-policy
 [serdesai-compact]: https://github.com/Reloaded-Project/ReloadedCode/blob/main/src/reloaded-code-serdesai/examples/serdesai-compact.rs
