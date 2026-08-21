@@ -7,6 +7,7 @@ compile_error!("Features `async` and `blocking` are mutually exclusive.");
 #[cfg(not(any(feature = "async", feature = "blocking")))]
 compile_error!("Either an async runtime (e.g., `tokio`) or `blocking` feature must be enabled.");
 
+pub use compact::*;
 pub use context::ToolContext;
 pub use credentials::{CredentialLookup, CredentialResolver};
 pub use custom_tool::{
@@ -38,6 +39,7 @@ pub use tools::{
     fetch_url, format_json, html_to_markdown, WebFetchOutput, WebFetchRequest, WebFetchSettings,
 };
 
+pub mod compact;
 pub mod context;
 pub mod credentials;
 pub mod custom_tool;
