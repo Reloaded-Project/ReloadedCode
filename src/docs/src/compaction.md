@@ -9,11 +9,12 @@ under `CompactPolicy::default()`.
 
 ## Configure compaction
 
-Call `with_compaction` on the `AgentBuildContext` with a
-`CompactPolicy` to replace the default policy.
+Call `with_compaction` on the `AgentBuildContext` to replace the
+default policy. Start from `CompactPolicy::default()` and set the
+fields that differ:
 
 ```rust
-use reloaded_code_core::CompactPolicy;
+use reloaded_code_core::{CompactFraction, CompactPolicy};
 use reloaded_code_serdesai::AgentBuildContext;
 
 let build_context = AgentBuildContext::new(
@@ -22,12 +23,21 @@ let build_context = AgentBuildContext::new(
     credentials,
     workspace_root,
 )
-.with_compaction(CompactPolicy::default());
+.with_compaction(CompactPolicy {
+    // Trigger 8,000 tokens below the context limit.
+    trigger_margin: 8_000,
+    // Small windows trigger at no less than half the context limit.
+    trigger_fraction: CompactFraction::new(1, 2),
+    // Cap the summarize request at 16,000 output tokens.
+    summarize_max_output: 16_000,
+    ..CompactPolicy::default()
+});
 ```
 
 Every agent built from the context checks each model request against
 the policy's trigger threshold. Past the threshold, compaction runs
-before the model sees the request.
+before the model sees the request. See [Defaults](#defaults) for how
+`trigger_margin` and `trigger_fraction` combine into the threshold.
 
 Call `without_compaction` on the `AgentBuildContext` to disable
 compaction: no model wrapper, no per-request estimation, no
@@ -41,10 +51,10 @@ already been cloned.
 
 `CompactPolicy::default()` behaves as follows:
 
-| Setting                | Default | Meaning                                                      |
-| ---------------------- | ------- | ------------------------------------------------------------ |
-| `trigger_margin`       | 32,000  | Trigger target: the context limit minus this margin.         |
-| `trigger_fraction`     | 3/4     | Trigger floor: at least this fraction of the context limit.  |
+| Setting                | Default | Meaning                                                                                      |
+| ---------------------- | ------- | -------------------------------------------------------------------------------------------- |
+| `trigger_margin`       | 32,000  | Trigger target: the context limit minus this margin.                                         |
+| `trigger_fraction`     | 3/4     | Trigger floor: at least this fraction of the context limit.                                  |
 | `summarize_max_output` | 32,000  | Output-token cap of the summarize request, clamped to the model's advertised maximum output. |
 
 The trigger threshold is the larger of `context_limit -
@@ -63,34 +73,6 @@ request the estimate undercounts.
 Compaction needs the model's input limit. Models resolved through the
 catalog carry it; see [Models Catalog]. Without a known limit,
 compaction never triggers.
-
-## Override the policy
-
-Start from `CompactPolicy::default()` and set the fields that differ:
-
-```rust
-use reloaded_code_core::CompactPolicy;
-
-let policy = CompactPolicy {
-    // Trigger 8,000 tokens below the context limit.
-    trigger_margin: 8_000,
-    ..CompactPolicy::default()
-};
-```
-
-`trigger_fraction` takes a `CompactFraction`:
-
-```rust
-use reloaded_code_core::{CompactFraction, CompactPolicy};
-
-let policy = CompactPolicy {
-    // Windows trigger at no less than half the context limit.
-    trigger_fraction: CompactFraction::new(1, 2),
-    // Cap the summarize request at 16,000 output tokens.
-    summarize_max_output: 16_000,
-    ..CompactPolicy::default()
-};
-```
 
 ## What a compaction does
 
