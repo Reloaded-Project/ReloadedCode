@@ -25,12 +25,22 @@
 //!
 //! # Design
 //!
-//! Decision and planning are pure in-crate computation: a context
-//! limit, a token estimate, and a transcript go in; a decision, a
-//! compacted transcript, and a record come out. The only boundary is
-//! the [`SummaryExecutor`] port. Runtime wiring implements the port
-//! over the run's model, maps vendor histories onto
-//! [`CompactEntry`], and reports applied compactions as events.
+//! Decision and planning are pure in-crate computation; the only
+//! boundary is the [`SummaryExecutor`] port.
+//!
+//! Inputs:
+//! - Context limit for the run's model
+//! - Token estimate for the pending request
+//! - Transcript of [`CompactEntry`] values
+//!
+//! Outputs:
+//! - Decision to compact
+//! - Compacted transcript
+//! - [`CompactionRecord`] describing the applied compaction
+//!
+//! Runtime wiring implements the port over the run's model, maps
+//! vendor histories onto [`CompactEntry`], and reports applied
+//! compactions as events.
 //!
 //! Next: see [`CompactPolicy`] for the trigger and cap defaults.
 pub use entry::CompactEntry;
