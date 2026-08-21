@@ -1,6 +1,8 @@
+use super::catalog_profile::with_catalog_limits;
 use super::{ResolvedSerdesModel, build_serdes_model};
 use crate::agent_runtime::model::resolve_model;
 use ahash::AHashMap;
+use async_trait::async_trait;
 use indexmap::IndexMap;
 use reloaded_code_agents::{AgentConfig, AgentDefaults, AgentMode, AgentToolSettings};
 use reloaded_code_core::CredentialResolver;
@@ -8,6 +10,11 @@ use reloaded_code_core::models::{
     Modality, ModelCatalog, ModelInfo, ProviderIdx, ProviderInfo, ProviderModelSource,
     ProviderSource, ProviderType,
 };
+use serdes_ai::core::{ModelRequest, ModelResponse, ModelSettings};
+use serdes_ai_models::{
+    Model as SerdesModel, ModelError, ModelProfile, ModelRequestParameters, StreamedResponse,
+};
+use std::sync::Arc;
 
 struct Case {
     provider_key: &'static str,
@@ -16,6 +23,50 @@ struct Case {
     credential_updates: &'static [(&'static str, Option<&'static str>)],
     expected_spec: &'static str,
     expected_system: &'static str,
+}
+
+/// Stand-in model whose profile leaves both limits unset but enables image
+/// support, so populated values and surviving flags come only from the
+/// catalog entry.
+struct StubProfileModel {
+    profile: ModelProfile,
+}
+
+#[async_trait]
+impl SerdesModel for StubProfileModel {
+    fn name(&self) -> &str {
+        "stub-model"
+    }
+
+    fn system(&self) -> &str {
+        "stub"
+    }
+
+    fn profile(&self) -> &ModelProfile {
+        &self.profile
+    }
+
+    async fn request(
+        &self,
+        _messages: &[ModelRequest],
+        _settings: &ModelSettings,
+        _params: &ModelRequestParameters,
+    ) -> Result<ModelResponse, ModelError> {
+        Err(ModelError::InvalidResponse("stub model".into()))
+    }
+
+    async fn request_stream(
+        &self,
+        _messages: &[ModelRequest],
+        _settings: &ModelSettings,
+        _params: &ModelRequestParameters,
+    ) -> Result<StreamedResponse, ModelError> {
+        Err(ModelError::InvalidResponse("stub model".into()))
+    }
+
+    async fn count_tokens(&self, _messages: &[ModelRequest]) -> Result<u64, ModelError> {
+        Err(ModelError::InvalidResponse("stub model".into()))
+    }
 }
 
 #[cfg(feature = "bedrock")]
@@ -350,8 +401,8 @@ fn build_serdes_model_covers_every_provider_mapping() {
 }
 
 /// Non-zero catalog limits land in the built model's profile; a zero field
-/// leaves that limit at the vendor default instead of inventing a value.
-#[cfg(feature = "ollama")]
+/// leaves that limit at the wrapped model's own value instead of inventing
+/// one.
 #[test]
 fn build_serdes_model_populates_profile_limits_from_catalog() {
     let cases = [
@@ -362,7 +413,7 @@ fn build_serdes_model_populates_profile_limits_from_catalog() {
     ];
 
     for (max_input, max_output, context_window, max_tokens) in cases {
-        let model = build_ollama_model_with_limits(max_input, max_output);
+        let model = build_model_with_limits(max_input, max_output);
         let profile = model.model.profile();
         assert_eq!(
             profile.context_window, context_window,
@@ -372,21 +423,20 @@ fn build_serdes_model_populates_profile_limits_from_catalog() {
             profile.max_tokens, max_tokens,
             "max_tokens for max_output {max_output}"
         );
-        // Ollama's vendor profile sets this flag; `ModelProfile::default()`
-        // leaves it false, so it pins the clone-from-vendor behavior.
+        // The stub profile sets this flag while `ModelProfile::default()`
+        // leaves it false, so it pins the clone-from-wrapped-model behavior.
         assert!(
             profile.supports_images,
-            "vendor capability flags survive limit population"
+            "capability flags survive limit population"
         );
     }
 }
 
 /// A catalog entry whose limits are all zero keeps the built model's own
 /// profile, so models without catalog limits expose no invented values.
-#[cfg(feature = "ollama")]
 #[test]
 fn build_serdes_model_preserves_profile_when_catalog_limits_absent() {
-    let model = build_ollama_model_with_limits(0, 0);
+    let model = build_model_with_limits(0, 0);
     let profile = model.model.profile();
     assert_eq!(profile.context_window, None);
     assert_eq!(profile.max_tokens, None);
@@ -483,26 +533,30 @@ fn model_info(max_input: u32, max_output: u32) -> ModelInfo {
     }
 }
 
-/// Builds a credential-free ollama model from a catalog entry carrying the
-/// given token limits.
+/// Runs a stub model through catalog limit population, backed by a catalog
+/// entry carrying the given token limits.
 ///
-/// Ollama's default profile leaves both limits unset, so the returned
-/// profile's limit fields reflect only what the catalog entry declares.
-#[cfg(feature = "ollama")]
-fn build_ollama_model_with_limits(max_input: u32, max_output: u32) -> ResolvedSerdesModel {
+/// The stub's profile leaves both limits unset, so the returned profile's
+/// limit fields reflect only what the catalog entry declares.
+fn build_model_with_limits(max_input: u32, max_output: u32) -> ResolvedSerdesModel {
     let catalog = build_catalog(
-        vec![(
-            "ollama",
-            provider("http://localhost:11434", &[], ProviderType::Ollama),
-        )],
-        vec![("ollama", "llama3.2", model_info(max_input, max_output))],
+        vec![("stub", provider("", &[], ProviderType::Unknown))],
+        vec![("stub", "stub-model", model_info(max_input, max_output))],
     );
-    let defaults = AgentDefaults::with_model("ollama/llama3.2");
+    let defaults = AgentDefaults::with_model("stub/stub-model");
     let agent = config_with_model("planner", None);
-    let credentials = CredentialResolver::without_env();
 
     let resolved = resolve_model(&catalog, &defaults, &agent).expect("model should resolve");
-    build_serdes_model(&catalog, &resolved, &credentials).expect("model should build")
+    let built = ResolvedSerdesModel {
+        model: Arc::new(StubProfileModel {
+            profile: ModelProfile {
+                supports_images: true,
+                ..Default::default()
+            },
+        }),
+        spec: "stub:stub-model".into(),
+    };
+    with_catalog_limits(&catalog, &resolved, built)
 }
 
 fn resolve_case(case: &Case) -> ResolvedSerdesModel {
