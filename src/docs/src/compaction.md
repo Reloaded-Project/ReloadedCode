@@ -4,16 +4,13 @@ Long conversations grow until they no longer fit the model's context
 window. Compaction summarizes the older history through the run's own
 model, keeping the run inside its input limit instead of failing.
 
-Compaction is enabled by default and configured at agent build time.
-Every `AgentBuildContext` starts with compaction under
-`CompactPolicy::default()`.
+Compaction is enabled by default: every `AgentBuildContext` starts
+under `CompactPolicy::default()`.
 
 ## Configure compaction
 
 Call `with_compaction` on the `AgentBuildContext` with a
-`CompactPolicy` to replace the default policy. Passing
-`CompactPolicy::default()` keeps the default behavior; [Override the
-policy] shows values that differ:
+`CompactPolicy` to replace the default policy.
 
 ```rust
 use reloaded_code_core::CompactPolicy;
@@ -29,8 +26,8 @@ let build_context = AgentBuildContext::new(
 ```
 
 Every agent built from the context checks each model request against
-the policy's trigger threshold. Past the threshold, older history is
-summarized before the model sees the request.
+the policy's trigger threshold. Past the threshold, compaction runs
+before the model sees the request.
 
 Call `without_compaction` on the `AgentBuildContext` to disable
 compaction: no model wrapper, no per-request estimation, no
@@ -44,11 +41,11 @@ already been cloned.
 
 `CompactPolicy::default()` behaves as follows:
 
-| Setting                | Default | Meaning                                                                                                      |
-| ---------------------- | ------- | ------------------------------------------------------------------------------------------------------------ |
-| `trigger_margin`       | 32,000  | Trigger target: the context limit minus this margin, whenever that exceeds the fraction's share.             |
-| `trigger_fraction`     | 3/4     | Trigger floor: the threshold never falls below this fraction of the context limit, so small windows compact. |
-| `summarize_max_output` | 32,000  | Output-token cap of the summarize request, clamped to the model's advertised maximum output.                 |
+| Setting                | Default | Meaning                                                      |
+| ---------------------- | ------- | ------------------------------------------------------------ |
+| `trigger_margin`       | 32,000  | Trigger target: the context limit minus this margin.         |
+| `trigger_fraction`     | 3/4     | Trigger floor: at least this fraction of the context limit.  |
+| `summarize_max_output` | 32,000  | Output-token cap of the summarize request, clamped to the model's advertised maximum output. |
 
 The trigger threshold is the larger of `context_limit -
 trigger_margin` and `trigger_fraction * context_limit`:
@@ -81,8 +78,7 @@ let policy = CompactPolicy {
 };
 ```
 
-`trigger_fraction` takes a `CompactFraction`. It floors the trigger
-threshold; the margin governs only when it leaves a larger one:
+`trigger_fraction` takes a `CompactFraction`:
 
 ```rust
 use reloaded_code_core::{CompactFraction, CompactPolicy};
@@ -108,10 +104,8 @@ When a request crosses the threshold:
    later and keep fewer.
 4. The summary lands as one system message ahead of the kept window.
 
-The summarize request caps its output tokens at the policy value,
-clamped to the model's advertised maximum output. Its prompt asks for
-the longest, most detailed summary the budget allows, so detail is
-lost only when the budget forces it.
+The summarize prompt asks for the longest, most detailed summary the
+output budget allows, so detail is lost only when the budget forces it.
 
 Summaries are memoized: a later compaction covering the same older
 messages reuses the stored summary without a new request.
@@ -120,7 +114,7 @@ messages reuses the stored summary without a new request.
 
 Compaction fails open. Any error, from estimation, a failed summarize
 call, or an empty summary, aborts the attempt: the original history is
-served unchanged, no event publishes, and the run continues.
+served unchanged and the run continues.
 
 ## Observing compaction
 
@@ -152,5 +146,4 @@ Full example: [serdesai-compact]
 (`cargo run --example serdesai-compact -p reloaded-code-serdesai`).
 
 [Models Catalog]: models-catalog.md
-[Override the policy]: #override-the-policy
 [serdesai-compact]: https://github.com/Reloaded-Project/ReloadedCode/blob/main/src/reloaded-code-serdesai/examples/serdesai-compact.rs
