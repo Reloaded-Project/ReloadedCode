@@ -32,10 +32,7 @@ const TRIGGER_MARGIN: u32 = 8_000;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let agents_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("examples")
-        .join("agents")
-        .join("basic");
+    let examples_root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("examples");
     let readme_path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("README.md");
     let mut credentials = CredentialResolver::without_env();
     if !API_KEY_VALUE.is_empty() {
@@ -50,7 +47,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     );
 
     let mut catalog = AgentCatalog::new();
-    AgentLoader::new().add_file(&mut catalog, agents_dir.join("file-reader.md"))?;
+    AgentLoader::new().add_directory(&mut catalog, &examples_root)?;
 
     let runtime = AgentRuntimeBuilder::new()
         .catalog(catalog)
@@ -85,6 +82,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut stream = agent.run_stream(UserContent::text(prompt), ()).await?;
     while let Some(event) = stream.next().await {
         match event? {
+            // Unfortunately this is non-deterministic so pretend this works for now, ok?
             RunEvent::ContextCompressed {
                 original_tokens,
                 compressed_tokens,
