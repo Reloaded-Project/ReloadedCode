@@ -349,6 +349,49 @@ fn build_serdes_model_covers_every_provider_mapping() {
     }
 }
 
+/// Non-zero catalog limits land in the built model's profile; a zero field
+/// leaves that limit at the vendor default instead of inventing a value.
+#[cfg(feature = "ollama")]
+#[test]
+fn build_serdes_model_populates_profile_limits_from_catalog() {
+    let cases = [
+        // (max_input, max_output, expected context_window, expected max_tokens)
+        (131_072, 32_768, Some(131_072), Some(32_768)),
+        (0, 4_096, None, Some(4_096)),
+        (131_072, 0, Some(131_072), None),
+    ];
+
+    for (max_input, max_output, context_window, max_tokens) in cases {
+        let model = build_ollama_model_with_limits(max_input, max_output);
+        let profile = model.model.profile();
+        assert_eq!(
+            profile.context_window, context_window,
+            "context_window for max_input {max_input}"
+        );
+        assert_eq!(
+            profile.max_tokens, max_tokens,
+            "max_tokens for max_output {max_output}"
+        );
+        // Ollama's vendor profile sets this flag; `ModelProfile::default()`
+        // leaves it false, so it pins the clone-from-vendor behavior.
+        assert!(
+            profile.supports_images,
+            "vendor capability flags survive limit population"
+        );
+    }
+}
+
+/// A catalog entry whose limits are all zero keeps the built model's own
+/// profile, so models without catalog limits expose no invented values.
+#[cfg(feature = "ollama")]
+#[test]
+fn build_serdes_model_preserves_profile_when_catalog_limits_absent() {
+    let model = build_ollama_model_with_limits(0, 0);
+    let profile = model.model.profile();
+    assert_eq!(profile.context_window, None);
+    assert_eq!(profile.max_tokens, None);
+}
+
 #[test]
 fn build_serdes_model_rejects_unknown_provider_type() {
     let catalog = build_catalog(
@@ -438,6 +481,28 @@ fn model_info(max_input: u32, max_output: u32) -> ModelInfo {
         temperature: Some(1.0),
         top_p: Some(0.95),
     }
+}
+
+/// Builds a credential-free ollama model from a catalog entry carrying the
+/// given token limits.
+///
+/// Ollama's default profile leaves both limits unset, so the returned
+/// profile's limit fields reflect only what the catalog entry declares.
+#[cfg(feature = "ollama")]
+fn build_ollama_model_with_limits(max_input: u32, max_output: u32) -> ResolvedSerdesModel {
+    let catalog = build_catalog(
+        vec![(
+            "ollama",
+            provider("http://localhost:11434", &[], ProviderType::Ollama),
+        )],
+        vec![("ollama", "llama3.2", model_info(max_input, max_output))],
+    );
+    let defaults = AgentDefaults::with_model("ollama/llama3.2");
+    let agent = config_with_model("planner", None);
+    let credentials = CredentialResolver::without_env();
+
+    let resolved = resolve_model(&catalog, &defaults, &agent).expect("model should resolve");
+    build_serdes_model(&catalog, &resolved, &credentials).expect("model should build")
 }
 
 fn resolve_case(case: &Case) -> ResolvedSerdesModel {

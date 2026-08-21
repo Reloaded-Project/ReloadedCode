@@ -2,6 +2,7 @@
 
 #![cfg_attr(not(test), allow(dead_code))]
 
+use catalog_profile::with_catalog_limits;
 use reloaded_code_agents::ResolvedModel;
 use reloaded_code_core::{
     CredentialLookup,
@@ -10,6 +11,7 @@ use reloaded_code_core::{
 use serdes_ai_models::{BoxedModel, Model as SerdesModel, ModelError};
 use std::sync::Arc;
 
+mod catalog_profile;
 #[cfg(test)]
 mod tests;
 
@@ -48,7 +50,9 @@ impl ResolvedSerdesModel {
     }
 }
 
-/// Builds the concrete SerdesAI model for a validated runtime model selection.
+/// Builds the concrete SerdesAI model for a validated runtime model
+/// selection, populating the model profile's token limits from the catalog
+/// entry where declared.
 pub(super) fn build_serdes_model(
     catalog: &ModelCatalog,
     resolved: &ResolvedModel,
@@ -65,7 +69,7 @@ pub(super) fn build_serdes_model(
     let api_url = normalized_api_url(provider.api_url);
     let env_vars = provider.env_vars();
 
-    match provider.api_type {
+    let built = match provider.api_type {
         ProviderType::Unknown => Err(ModelError::configuration(format!(
             "provider `{}` has no SerdesAI mapping because its catalog provider type is unknown",
             resolved.provider()
@@ -175,7 +179,9 @@ pub(super) fn build_serdes_model(
             env_vars,
             credentials,
         ),
-    }
+    }?;
+
+    Ok(with_catalog_limits(catalog, resolved, built))
 }
 
 // =============================================================================
