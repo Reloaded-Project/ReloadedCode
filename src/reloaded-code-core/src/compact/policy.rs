@@ -1,9 +1,9 @@
 //! Compaction policy: the trigger threshold and the summarize cap.
 
 /// Default maximum output tokens requested for the summarize call.
-const DEFAULT_SUMMARIZE_MAX_OUTPUT: u64 = 32_000;
+const DEFAULT_SUMMARIZE_MAX_OUTPUT: u32 = 32_000;
 /// Default trigger margin, in tokens, kept below the context limit.
-const DEFAULT_TRIGGER_MARGIN: u64 = 32_000;
+const DEFAULT_TRIGGER_MARGIN: u32 = 32_000;
 
 /// When a run should compact and how large its summarize request may
 /// be.
@@ -30,12 +30,12 @@ const DEFAULT_TRIGGER_MARGIN: u64 = 32_000;
 pub struct CompactPolicy {
     /// Headroom, in tokens, between the trigger threshold and the
     /// context limit while the window is large enough to spare it.
-    pub trigger_margin: u64,
+    pub trigger_margin: u32,
     /// Proportional floor on the trigger threshold for any context
     /// limit.
     pub trigger_fraction: CompactFraction,
     /// Maximum output tokens requested for the summarize call.
-    pub summarize_max_output: u64,
+    pub summarize_max_output: u32,
 }
 
 /// Proportional floor share applied to every trigger threshold.
@@ -44,8 +44,8 @@ pub struct CompactPolicy {
 /// allocation-free.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct CompactFraction {
-    numerator: u64,
-    denominator: u64,
+    numerator: u16,
+    denominator: u16,
 }
 
 impl CompactPolicy {
@@ -63,7 +63,7 @@ impl CompactPolicy {
             0 => None,
             limit => Some(
                 limit
-                    .saturating_sub(self.trigger_margin)
+                    .saturating_sub(u64::from(self.trigger_margin))
                     .max(self.trigger_fraction.apply(limit)),
             ),
         }
@@ -90,8 +90,7 @@ impl CompactPolicy {
     #[inline]
     #[must_use]
     pub fn summarize_cap(&self, max_output: Option<u64>) -> u64 {
-        self.summarize_max_output
-            .min(max_output.unwrap_or(u64::MAX))
+        u64::from(self.summarize_max_output).min(max_output.unwrap_or(u64::MAX))
     }
 }
 
@@ -107,7 +106,7 @@ impl CompactFraction {
     /// # Panics
     /// Panics when `denominator` is zero.
     #[must_use]
-    pub const fn new(numerator: u64, denominator: u64) -> Self {
+    pub const fn new(numerator: u16, denominator: u16) -> Self {
         assert!(denominator != 0, "fraction denominator must be non-zero");
         Self {
             numerator,
@@ -118,7 +117,7 @@ impl CompactFraction {
     /// Returns `value * numerator / denominator`, saturating on
     /// overflow.
     fn apply(self, value: u64) -> u64 {
-        value.saturating_mul(self.numerator) / self.denominator
+        value.saturating_mul(u64::from(self.numerator)) / u64::from(self.denominator)
     }
 }
 

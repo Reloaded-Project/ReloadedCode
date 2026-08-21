@@ -28,7 +28,7 @@ const API_KEY_VALUE: &str = ""; // <-- Set your API key here
 const MODEL_ID: &str = "synthetic/hf:zai-org/GLM-4.7-Flash";
 /// Compaction trigger margin, in tokens. Tightens the 32,000 default
 /// so tool-heavy conversations compact sooner.
-const TRIGGER_MARGIN: u64 = 8_000;
+const TRIGGER_MARGIN: u32 = 8_000;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
