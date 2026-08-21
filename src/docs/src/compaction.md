@@ -40,12 +40,14 @@ when the `AgentBuildContext` has already been cloned.
 
 | Setting                | Default | Meaning                                                                                                      |
 | ---------------------- | ------- | ------------------------------------------------------------------------------------------------------------ |
-| `trigger_margin`       | 32,000  | Compaction triggers once a request's estimated tokens reach the context limit minus this margin.             |
-| `trigger_fraction`     | 3/4     | Context limits at or below the margin trigger at this fraction of the limit, so small windows still compact. |
+| `trigger_margin`       | 32,000  | Trigger target: the context limit minus this margin, whenever that exceeds the fraction's share.             |
+| `trigger_fraction`     | 3/4     | Trigger floor: the threshold never falls below this fraction of the context limit, so small windows compact. |
 | `summarize_max_output` | 32,000  | Output-token cap of the summarize request, clamped to the model's advertised maximum output.                 |
 
 A 200,000-token window triggers at 168,000 estimated tokens. A
 32,000-token window triggers at 24,000, which is 3/4 of the window.
+Windows at or below 128,000 tokens trigger at the fraction; the margin
+governs above that crossover.
 
 Token counts are estimates: serialized request bytes divided by four.
 The margin absorbs the estimate's error; a provider may still reject a
@@ -69,14 +71,14 @@ let policy = CompactPolicy {
 };
 ```
 
-`trigger_fraction` takes a `CompactFraction`. It governs the
-small-window case where the margin does not fit:
+`trigger_fraction` takes a `CompactFraction`. It floors the trigger
+threshold; the margin governs only when it leaves a larger one:
 
 ```rust
 use reloaded_code_core::{CompactFraction, CompactPolicy};
 
 let policy = CompactPolicy {
-    // Small windows trigger at half the context limit.
+    // Windows trigger at no less than half the context limit.
     trigger_fraction: CompactFraction::new(1, 2),
     // Cap the summarize request at 16,000 output tokens.
     summarize_max_output: 16_000,

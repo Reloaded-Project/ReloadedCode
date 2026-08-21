@@ -9,11 +9,10 @@ const DEFAULT_TRIGGER_MARGIN: u64 = 32_000;
 /// be.
 ///
 /// The default triggers once a request's estimated tokens reach
-/// 32,000 below the model's context limit. A context limit at or
-/// below the margin cannot spare that much headroom, so the
-/// proportional [`Self::trigger_fraction`] applies instead and small
-/// windows still compact. The summarize request is capped at 32,000
-/// output tokens.
+/// 32,000 below the model's context limit, or
+/// [`Self::trigger_fraction`] of the limit when that is larger, so
+/// small windows still compact. The summarize request is capped at
+/// 32,000 output tokens.
 ///
 /// Every field is caller-adjustable; start from [`Self::default`] and
 /// override what differs:
@@ -30,16 +29,16 @@ const DEFAULT_TRIGGER_MARGIN: u64 = 32_000;
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct CompactPolicy {
     /// Headroom, in tokens, between the trigger threshold and the
-    /// context limit.
+    /// context limit while the window is large enough to spare it.
     pub trigger_margin: u64,
-    /// Proportional threshold for context limits at or below
-    /// [`Self::trigger_margin`].
+    /// Proportional floor on the trigger threshold for any context
+    /// limit.
     pub trigger_fraction: CompactFraction,
     /// Maximum output tokens requested for the summarize call.
     pub summarize_max_output: u64,
 }
 
-/// Proportional share used for small-window trigger thresholds.
+/// Proportional floor share applied to every trigger threshold.
 ///
 /// Held as an integer fraction so threshold math stays exact and
 /// allocation-free.
@@ -54,15 +53,19 @@ impl CompactPolicy {
     /// `context_limit`, or `None` while the limit is zero and
     /// therefore unusable.
     ///
-    /// Limits above the margin trigger at `limit - margin`; limits
-    /// at or below it trigger at the proportional fallback.
+    /// The threshold is the larger of `limit - margin` and the
+    /// proportional floor, so it never collapses to near zero
+    /// just above the margin.
     #[inline]
     #[must_use]
     pub fn trigger_threshold(&self, context_limit: u64) -> Option<u64> {
         match context_limit {
             0 => None,
-            limit if limit > self.trigger_margin => Some(limit - self.trigger_margin),
-            limit => Some(self.trigger_fraction.apply(limit)),
+            limit => Some(
+                limit
+                    .saturating_sub(self.trigger_margin)
+                    .max(self.trigger_fraction.apply(limit)),
+            ),
         }
     }
 
@@ -93,7 +96,7 @@ impl CompactPolicy {
 }
 
 impl CompactFraction {
-    /// Three quarters; the default small-window fallback.
+    /// Three quarters; the default trigger floor.
     pub const THREE_QUARTERS: Self = Self {
         numerator: 3,
         denominator: 4,
@@ -144,10 +147,14 @@ mod tests {
         assert_eq!(policy.trigger_threshold(32_000), Some(24_000));
     }
 
+    /// Just above the margin the fraction floors the threshold;
+    /// far above it, margin subtraction governs.
     #[test]
-    fn trigger_threshold_subtracts_the_margin_above_it() {
+    fn trigger_threshold_floors_just_above_the_margin_at_the_fraction() {
         let policy = CompactPolicy::default();
-        assert_eq!(policy.trigger_threshold(32_001), Some(1));
+        // 32,001 - 32,000 would collapse the threshold to 1; the
+        // fraction floors it at 3/4 of the limit instead.
+        assert_eq!(policy.trigger_threshold(32_001), Some(24_000));
         assert_eq!(policy.trigger_threshold(200_000), Some(168_000));
     }
 
@@ -158,7 +165,7 @@ mod tests {
             ..CompactPolicy::default()
         };
         assert_eq!(policy.trigger_threshold(100_000), Some(92_000));
-        // The override also moves the fallback boundary.
+        // The override also moves the floor boundary.
         assert_eq!(policy.trigger_threshold(8_000), Some(6_000));
     }
 
