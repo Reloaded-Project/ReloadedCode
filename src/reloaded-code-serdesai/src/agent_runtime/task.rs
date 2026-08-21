@@ -60,10 +60,11 @@ pub struct AgentBuildContext<C: CredentialLookup + Send + Sync + 'static = Crede
 ///   stream starts, then each mapped [`RunEvent`] passes the run-event
 ///   hook chain.
 ///
-/// With compact hooks registered, the built agent's model also runs
-/// step-boundary context compaction: [`Self::run_stream`] publishes
-/// each applied compaction as a [`RunEvent::ContextCompressed`],
-/// while [`Self::run`] keeps it as an internal history effect.
+/// With compact hooks registered, model requests whose estimated
+/// tokens reach three quarters of the context window are served
+/// with compacted history: [`Self::run_stream`] publishes each
+/// applied compaction as a [`RunEvent::ContextCompressed`];
+/// [`Self::run`] applies it to history without an event.
 ///
 /// [`RunConfigHook`]: reloaded_code_core::hooks::RunConfigHook
 /// [`RunEvent`]: reloaded_code_core::hooks::RunEvent
