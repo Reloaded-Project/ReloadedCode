@@ -52,6 +52,8 @@ use serdes_ai::AgentStreamEvent;
 use serdes_ai::core::{ModelRequest, ModelResponse, ModelSettings};
 use serdes_ai_models::{BoxedModel, Model, ModelProfile, ModelRequestParameters};
 use std::collections::VecDeque;
+#[cfg(test)]
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard};
 
 mod executor;
@@ -84,6 +86,10 @@ pub(super) struct CompactModel {
     /// Cached tools-JSON byte length; the vendor reuses one tools
     /// `Arc` across a run's steps.
     tools_bytes: Mutex<Option<ToolsBytes>>,
+    /// Estimation passes run so far; test-only observability of the
+    /// pre-estimation window gate.
+    #[cfg(test)]
+    estimation_passes: AtomicUsize,
 }
 
 /// Publication gate for queued compaction records on one event
@@ -153,6 +159,8 @@ impl CompactModel {
                 compactor,
                 records: records.clone(),
                 tools_bytes: Mutex::new(None),
+                #[cfg(test)]
+                estimation_passes: AtomicUsize::new(0),
             },
             records,
         )
@@ -183,21 +191,29 @@ impl CompactModel {
     /// policy threshold and compaction applies, `None` when it must
     /// be served unchanged.
     ///
-    /// `None` covers an unknown context window, usage below the
-    /// threshold, nothing summarizable, and any summarization
-    /// failure: the attempt aborts and the run continues on the
-    /// original history.
+    /// `None` covers an unknown or zero context window (answered
+    /// before any estimation runs), usage below the threshold,
+    /// nothing summarizable, and any summarization failure: the
+    /// attempt aborts and the run continues on the original history.
     async fn compact_request(
         &self,
         messages: &[ModelRequest],
         settings: &ModelSettings,
         params: &ModelRequestParameters,
     ) -> Option<Vec<ModelRequest>> {
-        let context_limit = self.inner.profile().context_window;
+        // Estimation serializes the whole history; a model without a
+        // usable window can never cross a threshold, so gate first.
+        let context_limit = self
+            .inner
+            .profile()
+            .context_window
+            .filter(|limit| *limit > 0)?;
+        #[cfg(test)]
+        self.estimation_passes.fetch_add(1, Ordering::Relaxed);
         let estimated_tokens =
             estimate_request_tokens(messages, self.cached_tools_bytes(&params.tools));
         let tokens = u64::try_from(estimated_tokens).unwrap_or(u64::MAX);
-        if !self.policy.should_compact(context_limit, tokens) {
+        if !self.policy.should_compact(Some(context_limit), tokens) {
             return None;
         }
         // Fail-open: a failed or empty summarization serves the

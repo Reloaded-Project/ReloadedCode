@@ -393,6 +393,43 @@ async fn compact_request_prompt_directs_a_maximally_detailed_summary() {
     );
 }
 
+/// A model with no usable window serves overflowing histories
+/// unchanged: no summarize request, no record, and no estimation
+/// pass at all.
+#[tokio::test]
+async fn compact_request_serves_overflowing_history_unchanged_without_a_usable_window() {
+    for window in [None, Some(0)] {
+        let recorder = Arc::new(RecordingModel::new("folded"));
+        let profile = match window {
+            Some(limit) => ModelProfile::new().with_context_window(limit),
+            None => ModelProfile::new(),
+        };
+        let (model, records) = wrapped(recorder.clone(), profile, CompactPolicy::default());
+
+        // Three growing step boundaries, each past any threshold a
+        // usable window could set.
+        for chars in [4_000, 8_000, 16_000] {
+            assert!(
+                compacted(&model, &history(6, chars)).await.is_none(),
+                "window {window:?}: the history must serve unchanged"
+            );
+        }
+        assert!(
+            recorder.served_is_empty(),
+            "window {window:?}: no summarize request may run"
+        );
+        assert!(
+            records.take_pending().is_none(),
+            "window {window:?}: no event is queued"
+        );
+        assert_eq!(
+            model.estimation_passes.load(Ordering::Relaxed),
+            0,
+            "window {window:?}: no estimation pass may run while no threshold can trigger"
+        );
+    }
+}
+
 /// A short history that crosses the threshold still serves
 /// unchanged: nothing is summarizable, so no request runs.
 #[tokio::test]
