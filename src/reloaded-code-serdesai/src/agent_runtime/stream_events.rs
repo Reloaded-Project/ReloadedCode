@@ -25,6 +25,14 @@
 //! executing a step's tool calls, so [`RunEvent::StepEnd`] closes the
 //! step before its [`RunEvent::ToolExecuted`] items arrive.
 //!
+//! # Repo-initiated compaction events
+//!
+//! When the build enables context compaction, each applied outcome
+//! publishes as one [`RunEvent::ContextCompressed`] ahead of the
+//! vendor event that followed it: after the compacted step's
+//! `ContextInfo` and before that step's content. Injected events pass
+//! the run-event chain like any mapped event.
+//!
 //! The match over [`AgentStreamEvent`] is exhaustive: a new vendor
 //! variant fails compilation here, keeping vendor coupling inside
 //! this module.
@@ -33,6 +41,7 @@
 //! [error]: serdes_ai::agent::AgentRunError
 //! [task]: super::task::HookedAgent::run_stream
 
+use super::compact::{CompactionGate, CompactionRecords, Held};
 use futures::{Stream, StreamExt};
 use reloaded_code_core::hooks::{
     HookSet, RunEvent, RunEventContext, RunMessage, RunMessageRole, RunToolCallSummary,
@@ -70,6 +79,10 @@ pub(super) struct RunEventStream {
     /// `None` when no run-event hooks are registered, so polling maps
     /// and yields directly without hook work.
     dispatch: Option<RunEventDispatch>,
+    /// Compaction-record publication gate, when the agent's model
+    /// runs context compaction. `None` keeps polling on the vendor
+    /// path with no compaction work.
+    compaction: Option<CompactionGate>,
     /// Set once a run-event hook failure was yielded; every later poll
     /// ends the stream.
     terminated: bool,
@@ -90,12 +103,15 @@ impl RunEventStream {
     ///
     /// The stream takes ownership of a hook chain only when one is
     /// registered; an empty chain keeps polling on the direct mapping
-    /// path with no per-event hook work.
+    /// path with no per-event hook work. Recorded compaction outcomes
+    /// from earlier runs on this agent are dropped, so this stream
+    /// publishes only its own.
     pub(super) fn new(
         inner: AgentStream,
         hooks: &HookSet,
         agent_name: &str,
         model_name: &str,
+        compaction: Option<&CompactionRecords>,
     ) -> Self {
         let dispatch = (!hooks.run_event_hooks_is_empty()).then(|| RunEventDispatch {
             hooks: hooks.clone(),
@@ -105,6 +121,7 @@ impl RunEventStream {
         Self {
             inner,
             dispatch,
+            compaction: compaction.map(CompactionGate::new),
             terminated: false,
         }
     }
@@ -118,40 +135,85 @@ impl Stream for RunEventStream {
         if this.terminated {
             return Poll::Ready(None);
         }
-        let Some(dispatch) = this.dispatch.as_ref() else {
-            // Empty chain: identical to the direct mapping path.
-            return match this.inner.poll_next_unpin(cx) {
-                Poll::Ready(Some(Ok(event))) => Poll::Ready(Some(Ok(map_vendor_event(event)))),
-                Poll::Ready(Some(Err(error))) => Poll::Ready(Some(Err(error))),
-                Poll::Ready(None) => Poll::Ready(None),
-                Poll::Pending => Poll::Pending,
-            };
-        };
-        // A suppressed event must not surface, so keep polling until an
-        // event publishes; the surrounding events keep their order.
         loop {
-            match this.inner.poll_next_unpin(cx) {
-                Poll::Pending => return Poll::Pending,
-                Poll::Ready(None) => return Poll::Ready(None),
-                Poll::Ready(Some(Err(error))) => return Poll::Ready(Some(Err(error))),
-                Poll::Ready(Some(Ok(event))) => {
-                    let ctx = RunEventContext {
-                        agent_name: &dispatch.agent_name,
-                        model_name: &dispatch.model_name,
-                    };
-                    match dispatch
-                        .hooks
-                        .dispatch_run_event(&ctx, map_vendor_event(event))
-                    {
-                        Ok(Some(event)) => return Poll::Ready(Some(Ok(event))),
-                        Ok(None) => continue,
-                        Err(error) => {
-                            this.terminated = true;
-                            return Poll::Ready(Some(Err(hook_error_item(error))));
-                        }
+            // The gate publishes an anchored record ahead of the
+            // vendor event it holds back; see `CompactionGate`.
+            let event = match this.compaction.as_mut().and_then(CompactionGate::take_held) {
+                Some(Held::Record(event)) => event,
+                Some(Held::Vendor(stashed)) => {
+                    let event = map_vendor_event(stashed);
+                    if let Some(gate) = this.compaction.as_mut() {
+                        gate.track(&event);
                     }
+                    event
+                }
+                None => match this.inner.poll_next_unpin(cx) {
+                    Poll::Pending => return Poll::Pending,
+                    Poll::Ready(None) => return Poll::Ready(None),
+                    Poll::Ready(Some(Err(error))) => return Poll::Ready(Some(Err(error))),
+                    Poll::Ready(Some(Ok(event))) => {
+                        if let Some(gate) = this.compaction.as_mut()
+                            && gate.anchored_pending()
+                        {
+                            gate.defer(event);
+                            continue;
+                        }
+                        let event = map_vendor_event(event);
+                        if let Some(gate) = this.compaction.as_mut() {
+                            gate.track(&event);
+                        }
+                        event
+                    }
+                },
+            };
+            // Empty run-event chain: identical to the direct mapping
+            // path.
+            let Some(dispatch) = this.dispatch.as_ref() else {
+                return Poll::Ready(Some(Ok(event)));
+            };
+            let ctx = RunEventContext {
+                agent_name: &dispatch.agent_name,
+                model_name: &dispatch.model_name,
+            };
+            // A suppressed event must not surface, so keep polling
+            // until an event publishes; the surrounding events keep
+            // their order.
+            match dispatch.hooks.dispatch_run_event(&ctx, event) {
+                Ok(Some(event)) => return Poll::Ready(Some(Ok(event))),
+                Ok(None) => continue,
+                Err(error) => {
+                    this.terminated = true;
+                    return Poll::Ready(Some(Err(hook_error_item(error))));
                 }
             }
+        }
+    }
+}
+
+/// Renders user prompt content as audit text.
+///
+/// Plain text passes through; multi-part prompts are serialized so
+/// image and mixed content stay observable in the transcript. Inline
+/// binary parts collapse to a media type plus byte length placeholder
+/// so payloads never bloat the transcript. Shared with the compaction
+/// wiring, which renders the same view for summaries.
+pub(super) fn user_content_text(content: UserContent) -> String {
+    match content {
+        UserContent::Text(text) => text,
+        ref other => user_content_text_ref(other),
+    }
+}
+
+/// Borrowed form of [`user_content_text`] for callers that keep the
+/// content; renders the same view.
+pub(super) fn user_content_text_ref(content: &UserContent) -> String {
+    match content {
+        UserContent::Text(text) => text.clone(),
+        UserContent::Parts(parts) => {
+            // After the map: binary parts are placeholders; text and
+            // URL parts serialize exactly as before.
+            let redacted: Vec<_> = parts.iter().map(redact_binary_part).collect();
+            serde_json::to_string(&redacted).unwrap_or_else(|_| format!("{redacted:?}"))
         }
     }
 }
@@ -247,6 +309,32 @@ fn map_vendor_event(event: AgentStreamEvent) -> RunEvent {
             partial_thinking,
             pending_tools,
         },
+    }
+}
+
+/// Serializes one prompt part for the audit trail.
+///
+/// Text and URL parts keep their JSON shape; binary parts become a
+/// placeholder carrying their media type and byte length.
+fn redact_binary_part(part: &UserContentPart) -> serde_json::Value {
+    let placeholder = |kind: &str, media_type: &str, bytes: usize| serde_json::json!({ "type": kind, "media_type": media_type, "bytes": bytes });
+    match part {
+        UserContentPart::Image {
+            image: ImageContent::Binary(binary),
+        } => placeholder("image", binary.media_type.mime_type(), binary.data.len()),
+        UserContentPart::Audio {
+            audio: AudioContent::Binary(binary),
+        } => placeholder("audio", binary.media_type.mime_type(), binary.data.len()),
+        UserContentPart::Video {
+            video: VideoContent::Binary(binary),
+        } => placeholder("video", binary.media_type.mime_type(), binary.data.len()),
+        UserContentPart::Document {
+            document: DocumentContent::Binary(binary),
+        } => placeholder("document", binary.media_type.mime_type(), binary.data.len()),
+        UserContentPart::File {
+            file: FileContent::Binary(binary),
+        } => placeholder("file", binary.mime_type.as_str(), binary.data.len()),
+        other => serde_json::to_value(other).unwrap_or(serde_json::Value::Null),
     }
 }
 
@@ -396,50 +484,6 @@ fn tool_result_message(tool_call_id: Option<String>, output: String) -> RunMessa
             tool_call_id,
             output,
         }),
-    }
-}
-
-/// Renders user prompt content as audit text.
-///
-/// Plain text passes through; multi-part prompts are serialized so
-/// image and mixed content stay observable in the transcript. Inline
-/// binary parts collapse to a media type plus byte length placeholder
-/// so payloads never bloat the transcript.
-fn user_content_text(content: UserContent) -> String {
-    match content {
-        UserContent::Text(text) => text,
-        UserContent::Parts(parts) => {
-            // After the map: binary parts are placeholders; text and
-            // URL parts serialize exactly as before.
-            let redacted: Vec<_> = parts.iter().map(redact_binary_part).collect();
-            serde_json::to_string(&redacted).unwrap_or_else(|_| format!("{redacted:?}"))
-        }
-    }
-}
-
-/// Serializes one prompt part for the audit trail.
-///
-/// Text and URL parts keep their JSON shape; binary parts become a
-/// placeholder carrying their media type and byte length.
-fn redact_binary_part(part: &UserContentPart) -> serde_json::Value {
-    let placeholder = |kind: &str, media_type: &str, bytes: usize| serde_json::json!({ "type": kind, "media_type": media_type, "bytes": bytes });
-    match part {
-        UserContentPart::Image {
-            image: ImageContent::Binary(binary),
-        } => placeholder("image", binary.media_type.mime_type(), binary.data.len()),
-        UserContentPart::Audio {
-            audio: AudioContent::Binary(binary),
-        } => placeholder("audio", binary.media_type.mime_type(), binary.data.len()),
-        UserContentPart::Video {
-            video: VideoContent::Binary(binary),
-        } => placeholder("video", binary.media_type.mime_type(), binary.data.len()),
-        UserContentPart::Document {
-            document: DocumentContent::Binary(binary),
-        } => placeholder("document", binary.media_type.mime_type(), binary.data.len()),
-        UserContentPart::File {
-            file: FileContent::Binary(binary),
-        } => placeholder("file", binary.mime_type.as_str(), binary.data.len()),
-        other => serde_json::to_value(other).unwrap_or(serde_json::Value::Null),
     }
 }
 
@@ -739,7 +783,13 @@ mod tests {
             },
         ]);
 
-        let rendered = user_content_text(content);
+        // The borrowed renderer serves the compaction transcript, so
+        // both forms must render the same view of the same content.
+        let borrowed = user_content_text_ref(&content);
+        let rendered = user_content_text(content.clone());
+        let plain = user_content_text(UserContent::text("plain"));
+        assert_eq!(rendered, borrowed, "both renderers must agree on parts");
+        assert_eq!(plain, user_content_text_ref(&UserContent::text("plain")));
 
         assert!(
             rendered.contains("look at this")

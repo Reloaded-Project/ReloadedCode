@@ -10,6 +10,7 @@
 #[cfg(not(all(feature = "linux-bubblewrap", target_os = "linux")))]
 use super::build::Profile;
 use super::build::{AgentBuildError, attach_standard_tools, prepare_build};
+use super::compact::{CompactModel, CompactionRecords};
 use super::stream_events::RunEventStream;
 use crate::task::TaskHandle;
 use futures::Stream;
@@ -20,10 +21,11 @@ use reloaded_code_core::hooks::{
     EndReason, HookRunContext, HookSet, ModelSettingsOverrides, PreambleRole, RunConfig, RunEvent,
     RunExecutor, RunHookFuture, RunOutput, RunUsage,
 };
-use reloaded_code_core::{CredentialLookup, CredentialResolver, models::ModelCatalog};
+use reloaded_code_core::{
+    CompactPolicy, CredentialLookup, CredentialResolver, models::ModelCatalog,
+};
 use serdes_ai::core::{UserContent, UserContentPart};
 use serdes_ai::{Agent, AgentBuilder, RunOptions};
-#[cfg(any(test, feature = "mock"))]
 use serdes_ai_models::BoxedModel;
 use std::path::Path;
 use std::pin::Pin;
@@ -65,6 +67,9 @@ pub struct HookedAgent {
     hooks: HookSet,
     agent_name: String,
     model_name: String,
+    /// Applied compactions awaiting stream publication, present when
+    /// the agent's model runs context compaction.
+    compaction: Option<CompactionRecords>,
 }
 
 /// Result type returned by `HookedAgent::run`. Provides `.output()` and
@@ -104,6 +109,9 @@ pub(crate) struct TaskBuildContext<C: CredentialLookup + Send + Sync + ?Sized = 
     model_catalog: Arc<ModelCatalog>,
     credentials: Arc<C>,
     workspace_root: Arc<Path>,
+    /// Compaction policy for builds that enable context compaction;
+    /// `None` keeps every built model unwrapped.
+    compaction: Option<CompactPolicy>,
     #[cfg(any(test, feature = "mock"))]
     model_override: Option<BoxedModel>,
     #[cfg(all(feature = "linux-bubblewrap", target_os = "linux"))]
@@ -144,6 +152,7 @@ where
                 model_catalog,
                 credentials,
                 workspace_root,
+                compaction: None,
                 #[cfg(any(test, feature = "mock"))]
                 model_override: None,
                 #[cfg(all(feature = "linux-bubblewrap", target_os = "linux"))]
@@ -310,6 +319,37 @@ where
             .model_override = Some(Arc::new(model));
         self
     }
+
+    /// Enables opt-in context compaction with `policy`.
+    ///
+    /// Every agent built from this context wraps its model so each
+    /// step request is checked against the policy's trigger
+    /// threshold; over it, older history is summarized through the
+    /// run's own model and a recent window stays verbatim. Start from
+    /// [`CompactPolicy::default`] and override the fields that
+    /// differ; the defaults trigger 32,000 tokens below the model's
+    /// context limit and cap the summarize request at 32,000 output
+    /// tokens.
+    ///
+    /// A context that skips this keeps compaction disabled: no model
+    /// wrapper, no per-request estimation, no compaction events.
+    ///
+    /// # Arguments
+    /// - `policy`: When to compact and how large the summarize request
+    ///   may be.
+    ///
+    /// # Returns
+    /// `Self` for chaining.
+    ///
+    /// # Panics
+    /// Panics if the [`AgentBuildContext`] has already been cloned (i.e., the
+    /// inner `Arc` is not unique). This must be called before sharing the context.
+    pub fn with_compaction(mut self, policy: CompactPolicy) -> Self {
+        Arc::get_mut(&mut self.context)
+            .expect("with_compaction must be called before sharing the context")
+            .compaction = Some(policy);
+        self
+    }
 }
 
 impl HookedAgent {
@@ -319,12 +359,14 @@ impl HookedAgent {
         hooks: HookSet,
         agent_name: String,
         model_name: String,
+        compaction: Option<CompactionRecords>,
     ) -> Self {
         Self {
             inner,
             hooks,
             agent_name,
             model_name,
+            compaction,
         }
     }
 
@@ -453,6 +495,11 @@ impl HookedAgent {
     /// - **Run**: [`RunHook`][run-hook]s never fire here; they fire
     ///   only on [`Self::run`], because dispatching them would buffer
     ///   the whole run before the first event.
+    /// - **Compaction**: when the build enables context compaction,
+    ///   each applied compaction publishes one
+    ///   [`RunEvent::ContextCompressed`] through the run-event chain,
+    ///   after the compacted step's `ContextInfo` and before that
+    ///   step's content.
     ///
     /// # Errors
     ///
@@ -489,6 +536,7 @@ impl HookedAgent {
                 &self.hooks,
                 &self.agent_name,
                 &self.model_name,
+                self.compaction.as_ref(),
             )));
         }
 
@@ -529,6 +577,7 @@ impl HookedAgent {
             &self.hooks,
             &self.agent_name,
             &self.model_name,
+            self.compaction.as_ref(),
         )))
     }
 }
@@ -589,6 +638,7 @@ where
             model_catalog,
             credentials,
             workspace_root,
+            compaction: None,
             #[cfg(any(test, feature = "mock"))]
             model_override: None,
             bash_sandbox: Some(bash_sandbox),
@@ -614,6 +664,7 @@ where
             model_catalog,
             credentials,
             workspace_root,
+            compaction: None,
             #[cfg(any(test, feature = "mock"))]
             model_override: None,
             #[cfg(all(feature = "linux-bubblewrap", target_os = "linux"))]
@@ -728,6 +779,16 @@ where
         .unwrap_or_else(|| prepared.model().clone());
     #[cfg(not(any(test, feature = "mock")))]
     let model = prepared.model().clone();
+    // Context compaction wraps the model when the build enables it, so
+    // every step request passes the policy threshold check before the
+    // model serves it. A disabled build keeps its model untouched.
+    let (model, compaction) = match context.compaction {
+        Some(policy) => {
+            let (wrapped, records) = CompactModel::new(model, policy);
+            (Arc::new(wrapped) as BoxedModel, Some(records))
+        }
+        None => (model, None),
+    };
     let builder = AgentBuilder::<(), String>::from_arc(model);
     // Create a TaskHandle for delegation if Task tool is attached later.
     let task_handle = TaskHandle::new(context.clone(), current_depth);
@@ -749,7 +810,13 @@ where
     let agent = builder.system_prompt(prompt_builder.build()).build();
     let hooks = context.runtime().hooks().clone();
     let model_name = prepared.model().name().to_string();
-    Ok(HookedAgent::new(agent, hooks, name.to_string(), model_name))
+    Ok(HookedAgent::new(
+        agent,
+        hooks,
+        name.to_string(),
+        model_name,
+        compaction,
+    ))
 }
 
 /// Prepends a config-injected head (from [`run_config_head`]) to a
