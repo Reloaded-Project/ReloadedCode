@@ -20,6 +20,8 @@ use std::fmt;
 pub struct CompactEntry {
     role: RunMessageRole,
     text: String,
+    /// Preserved payload: the type-erased native history entry the
+    /// runtime wiring reuses when the entry survives compaction.
     preserved: Option<Box<dyn Any + Send>>,
 }
 
