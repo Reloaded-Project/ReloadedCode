@@ -50,10 +50,14 @@ already been cloned.
 | `trigger_fraction`     | 3/4     | Trigger floor: the threshold never falls below this fraction of the context limit, so small windows compact. |
 | `summarize_max_output` | 32,000  | Output-token cap of the summarize request, clamped to the model's advertised maximum output.                 |
 
-A 200,000-token window triggers at 168,000 estimated tokens. A
-32,000-token window triggers at 24,000, which is 3/4 of the window.
-Windows at or below 128,000 tokens trigger at the fraction; the margin
-governs above that crossover.
+The trigger threshold is the larger of `context_limit -
+trigger_margin` and `trigger_fraction * context_limit`:
+
+- A 200,000-token window triggers at 168,000 estimated tokens
+  (`trigger_margin`).
+- Windows at or below 128,000 tokens (four times the margin)
+  trigger at 3/4 of the window (`trigger_fraction`): a 32,000-token
+  window triggers at 24,000.
 
 Token counts are estimates: serialized request bytes divided by four.
 The margin absorbs the estimate's error; a provider may still reject a
