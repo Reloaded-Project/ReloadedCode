@@ -28,7 +28,7 @@ use std::sync::{Arc, Mutex};
 const BIG_PROMPT_MARKER: &str = "oversized payload";
 /// Marker opening the Core summarization system prompt; every
 /// summarize request carries it, so served requests classify by it.
-const SUMMARY_PROMPT_MARKER: &str = "You compact conversation history";
+const SUMMARY_PROMPT_MARKER: &str = "You compact a conversation history";
 
 /// Model whose non-streaming requests always fail while its streams
 /// keep serving `inner`, so summarize calls fail while the run itself
@@ -360,10 +360,10 @@ async fn compact_request_maps_small_windows_to_three_quarters() {
     );
 }
 
-/// The summarize request carries the Core long-summary directive and
-/// the rendered transcript of the summarized entries.
+/// The summarize request carries the Core structured-summary
+/// directive and the rendered transcript of the summarized entries.
 #[tokio::test]
-async fn compact_request_prompt_directs_a_maximally_detailed_summary() {
+async fn compact_request_prompt_directs_a_structured_summary() {
     let recorder = Arc::new(RecordingModel::new("folded"));
     let (model, _records) = wrapped(
         recorder.clone(),
@@ -377,12 +377,17 @@ async fn compact_request_prompt_directs_a_maximally_detailed_summary() {
     assert_eq!(summaries.len(), 1, "one summarize request");
     let request = &summaries[0];
     assert!(
-        request.system_text.contains("most detailed summary"),
-        "the prompt must demand maximal detail: {}",
+        request.system_text.contains("<summary>"),
+        "the prompt must demand a structured summary block: {}",
         request.system_text
     );
     assert!(
-        request.system_text.contains("output budget allows"),
+        request.system_text.contains("Task and intent"),
+        "the prompt must name the fixed sections: {}",
+        request.system_text
+    );
+    assert!(
+        request.system_text.contains("Use the output budget"),
         "detail must be bounded by the output budget: {}",
         request.system_text
     );
