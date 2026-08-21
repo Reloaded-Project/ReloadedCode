@@ -68,6 +68,7 @@ nav:
   - Getting Started: getting-started.md
   - Tools: tools.md
   - Agents: agents.md
+  - Compaction: compaction.md
   - Hooks: hooks.md
   - Examples: examples.md
   - Sandboxing: sandboxing.md
