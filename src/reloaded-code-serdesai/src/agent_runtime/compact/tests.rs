@@ -613,6 +613,60 @@ async fn run_stream_amortizes_summarization_over_repeated_overflow_steps() {
     );
 }
 
+/// A default build compacts with no compaction call on the builder:
+/// the overflowing step publishes `ContextCompressed` under the
+/// default policy, and a below-threshold run of the same agent
+/// publishes none.
+#[tokio::test]
+async fn run_stream_compacts_by_default_only_past_the_trigger_threshold() {
+    let (model, served) = overflow_scripted_model(1_024, 2);
+    let hooked = ping_agent(Streamed::new(model))
+        .build("caller")
+        .expect("build should succeed");
+
+    let overflow = collect_events(&hooked, big_prompt()).await;
+    assert!(
+        matches!(overflow.last(), Some(RunEvent::RunComplete { .. })),
+        "the overflow stream should complete: {overflow:?}"
+    );
+    assert!(
+        overflow
+            .iter()
+            .any(|event| matches!(event, RunEvent::ContextCompressed { .. })),
+        "a default build must publish ContextCompressed past the threshold"
+    );
+
+    let small = collect_events(&hooked, "short prompt").await;
+    assert!(
+        matches!(small.last(), Some(RunEvent::RunComplete { .. })),
+        "the below-threshold stream should complete: {small:?}"
+    );
+    assert!(
+        !small
+            .iter()
+            .any(|event| matches!(event, RunEvent::ContextCompressed { .. })),
+        "a default build must not compress below the threshold"
+    );
+
+    // Only the overflow run summarizes: three overflow steps plus
+    // one below-threshold step, with the default policy cap.
+    let (normal, summaries) = split_served(&served);
+    assert_eq!(normal.len(), 4, "three overflow requests, one short");
+    assert_eq!(summaries, 1, "only the overflow run may summarize");
+    let summary = served
+        .lock()
+        .expect("served requests not poisoned")
+        .iter()
+        .find(|request| request.summary)
+        .cloned()
+        .expect("one summarization request");
+    assert_eq!(
+        summary.max_tokens,
+        Some(32_000),
+        "the default policy cap must ride the build"
+    );
+}
+
 /// A streamed run past the threshold publishes exactly one
 /// `ContextCompressed` between the compacted step's `ContextInfo` and
 /// that step's content, and the model serves the compacted history.
@@ -736,12 +790,13 @@ async fn run_stream_fails_open_when_the_summarize_request_errors() {
     );
 }
 
-/// A build that leaves compaction disabled performs no compaction:
-/// the overflowing request serves unchanged and no event appears.
+/// A build that opts out of compaction performs no compaction: the
+/// overflowing request serves unchanged and no event appears.
 #[tokio::test]
 async fn run_stream_without_compaction_serves_overflowing_history_unchanged() {
     let (model, served) = overflow_scripted_model(1_024, 2);
     let hooked = ping_agent(Streamed::new(model))
+        .without_compaction()
         .build("caller")
         .expect("build should succeed");
 
@@ -754,7 +809,7 @@ async fn run_stream_without_compaction_serves_overflowing_history_unchanged() {
         !events
             .iter()
             .any(|event| matches!(event, RunEvent::ContextCompressed { .. })),
-        "no compaction event may appear on a disabled build"
+        "no compaction event may appear on an opted-out build"
     );
 
     // Without the wrapper there is no estimation and no summarize

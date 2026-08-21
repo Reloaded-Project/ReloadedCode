@@ -152,7 +152,7 @@ where
                 model_catalog,
                 credentials,
                 workspace_root,
-                compaction: None,
+                compaction: Some(CompactPolicy::default()),
                 #[cfg(any(test, feature = "mock"))]
                 model_override: None,
                 #[cfg(all(feature = "linux-bubblewrap", target_os = "linux"))]
@@ -320,19 +320,20 @@ where
         self
     }
 
-    /// Enables opt-in context compaction with `policy`.
+    /// Replaces the context's default compaction policy with `policy`.
     ///
-    /// Every agent built from this context wraps its model so each
-    /// step request is checked against the policy's trigger
-    /// threshold; over it, older history is summarized through the
-    /// run's own model and a recent window stays verbatim. Start from
-    /// [`CompactPolicy::default`] and override the fields that
-    /// differ; the defaults trigger 32,000 tokens below the model's
-    /// context limit and cap the summarize request at 32,000 output
-    /// tokens.
+    /// Every context starts with compaction enabled under
+    /// [`CompactPolicy::default`]: each agent built from it wraps
+    /// its model so every step request is checked against the
+    /// policy's trigger threshold. Over it, older history is
+    /// summarized through the run's own model and a recent window
+    /// stays verbatim. Start from [`CompactPolicy::default`] and
+    /// override the fields that differ; the defaults trigger 32,000
+    /// tokens below the model's context limit and cap the summarize
+    /// request at 32,000 output tokens.
     ///
-    /// A context that skips this keeps compaction disabled: no model
-    /// wrapper, no per-request estimation, no compaction events.
+    /// To disable compaction entirely, use
+    /// [`Self::without_compaction`] instead.
     ///
     /// # Arguments
     /// - `policy`: When to compact and how large the summarize request
@@ -348,6 +349,26 @@ where
         Arc::get_mut(&mut self.context)
             .expect("with_compaction must be called before sharing the context")
             .compaction = Some(policy);
+        self
+    }
+
+    /// Disables context compaction for this context.
+    ///
+    /// Every agent built from this context keeps its model
+    /// unwrapped: no per-request token estimation, no summarization,
+    /// no compaction events. A later [`Self::with_compaction`] call
+    /// re-enables compaction with the given policy.
+    ///
+    /// # Returns
+    /// `Self` for chaining.
+    ///
+    /// # Panics
+    /// Panics if the [`AgentBuildContext`] has already been cloned (i.e., the
+    /// inner `Arc` is not unique). This must be called before sharing the context.
+    pub fn without_compaction(mut self) -> Self {
+        Arc::get_mut(&mut self.context)
+            .expect("without_compaction must be called before sharing the context")
+            .compaction = None;
         self
     }
 }
@@ -638,7 +659,7 @@ where
             model_catalog,
             credentials,
             workspace_root,
-            compaction: None,
+            compaction: Some(CompactPolicy::default()),
             #[cfg(any(test, feature = "mock"))]
             model_override: None,
             bash_sandbox: Some(bash_sandbox),
@@ -664,7 +685,7 @@ where
             model_catalog,
             credentials,
             workspace_root,
-            compaction: None,
+            compaction: Some(CompactPolicy::default()),
             #[cfg(any(test, feature = "mock"))]
             model_override: None,
             #[cfg(all(feature = "linux-bubblewrap", target_os = "linux"))]

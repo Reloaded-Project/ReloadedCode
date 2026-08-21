@@ -4,10 +4,10 @@
 //!
 //! Both vendor run paths call the model once per step with the whole
 //! conversation, so the model boundary is the public seam where the
-//! wrapper sees each step's history. When the build enables
-//! compaction, `build_agent` wraps the resolved model in
-//! [`CompactModel`]; a build that leaves compaction disabled keeps
-//! its model untouched and nothing here runs.
+//! wrapper sees each step's history. `build_agent` wraps the
+//! resolved model in [`CompactModel`] under the context's policy,
+//! which defaults to [`CompactPolicy::default`]; a context that
+//! opts out keeps its model untouched and nothing here runs.
 //!
 //! Each model request estimates context usage with the same heuristic
 //! the vendor's `ContextInfo` uses: serialized request bytes over
@@ -42,6 +42,7 @@
 //! [`Compactor`]: reloaded_code_core::Compactor
 //! [`CompactionRecord`]: reloaded_code_core::CompactionRecord
 //! [`CompactPolicy`]: reloaded_code_core::CompactPolicy
+//! [`CompactPolicy::default`]: reloaded_code_core::CompactPolicy::default
 //! [`RunEvent::ContextCompressed`]: reloaded_code_core::hooks::RunEvent::ContextCompressed
 
 use executor::ModelSummaryExecutor;
