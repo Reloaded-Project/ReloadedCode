@@ -34,7 +34,7 @@ html-to-markdown-rs = "3.5"
 # Filesystem/Path
 shellexpand = "3.1.2"
 soft-canonicalize = "0.5.5"
-dirs = "6"
+dirs = "7"
 tempfile = "3.27"
 ignore = "0.4.26"
 
