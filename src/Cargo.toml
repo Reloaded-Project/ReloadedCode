@@ -84,7 +84,7 @@ reloaded-code-provider-config = { version = "0.1.0", path = "reloaded-code-provi
 
 # Dev dependencies
 criterion = "0.8"
-rstest = "0.26"
+rstest = "0.27"
 serial_test = "4"
 wiremock = "0.6"
 indoc = "2"
