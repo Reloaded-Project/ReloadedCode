@@ -66,7 +66,7 @@ crlf-to-lf-inplace = "0.2"
 schemars = "1.2"
 
 # Compression/Encoding
-zstd = "0.13.3"
+zstd = "0.14.0"
 endian-writer = "2.2.0"
 endian-writer-derive = "0.1.0"
 
