@@ -29,7 +29,7 @@ jobs:
           fetch-depth: 0
 
       - name: Apply tidy fixes to changed files
-        uses: Sewer56/rust-llm-tidy-action@v1
+        uses: Sewer56/rust-llm-tidy-action@v2
         with:
           rust-project-path: "."
           changed-files: "true"
