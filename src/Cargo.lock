@@ -1235,15 +1235,15 @@ dependencies = [
 
 [[package]]
 name = "endian-writer-derive"
-version = "0.1.0"
+version = "0.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "160e7b32d1a63d6f02993f5ce2da2b7125480ae40c45d9a0b74d158f203f7e53"
+checksum = "373d31f037f4353538be1e9e607a55ef10657612a94323d18c18df12e7309355"
 dependencies = [
  "endian-writer",
  "memoffset",
  "proc-macro2",
  "quote",
- "syn 2.0.117",
+ "syn 3.0.3",
 ]
 
 [[package]]
