@@ -68,7 +68,7 @@ schemars = "1.2"
 # Compression/Encoding
 zstd = "0.14.0"
 endian-writer = "2.2.0"
-endian-writer-derive = "0.1.0"
+endian-writer-derive = "0.2.0"
 
 # serdes-ai ecosystem
 serdes-ai = { version = "0.2.6", default-features = false }
