@@ -44,7 +44,7 @@ indexmap = { version = "2", features = ["serde"] }
 tinyvec = { version = "1.11", features = ["alloc"] }
 lite-strtab = "0.2"
 ahash = { version = "0.8", features = ["serde"] }
-parking_lot = "0.12"
+parking_lot = "0.13"
 
 # Bit operations
 bitfields = "3.0.0"
